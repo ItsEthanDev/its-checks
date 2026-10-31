@@ -43,7 +43,7 @@ npx --yes 'YOUR-ACCOUNT/YOUR-FORK'
 npx --yes 'YOUR-ACCOUNT/YOUR-FORK#<full-commit-sha>'
 ```
 
-Bunx GitHub launch forms also worked in the minimal probe:
+Bunx can also launch the source package:
 
 ```sh
 bun x --package 'github:ItsEthanDev/its-checks' its-checks
@@ -66,7 +66,9 @@ Policy lookup is relative to the executed package. Project operations use the ca
 
 The source CLI uses the same PTY suite through `bun run test:cli`. Unit, typecheck, real-manager, and reference tool-compatibility suites remain separate checks. No prebuilt-artifact generation or comparison is required.
 
-The earlier minimal GitHub experiment recorded 33 successful process invocations (16 npm/npx, 17 Bunx), distinct upstream/fork policy with identical package/bin names, commit/tag selection, policy-only updates, cache limits, and exact target-state preservation. Its code, raw outputs, and complete fixture Git bundles are retained on local branch `experiment/github-launch-probe` under `experiments/github-launch-probe/`. Those results establish launcher behavior, not a full source-package GitHub smoke test; that check follows the source package's first push.
+The real source package was also exercised from GitHub using default-branch and commit-pinned npm/npx and Bunx commands. A temporary npm target's seven installed baseline dependency manifests were inspected with hooks disabled before normal installation. Setup wrote configuration before the authored local lifecycle command ran. The generated formatting/check commands passed; subsequent default and pinned launches performed exact no-op reruns, including after native manifest formatting. Noninteractive execution refused without changing the target. These were one-off live-policy smoke checks, not maintained tests of editable policy opinions.
+
+The earlier minimal GitHub experiment recorded 33 successful process invocations (16 npm/npx, 17 Bunx), distinct upstream/fork policy with identical package/bin names, commit/tag selection, policy-only updates, cache limits, and exact target-state preservation. Its code, raw outputs, and complete fixture Git bundles are retained on local branch `experiment/github-launch-probe` under `experiments/github-launch-probe/`. That experiment's prebuilt probe is historical evidence, not the product's source-distribution design.
 
 Other platforms, launcher versions, hosted CI, Convex policy compatibility, and general dependency-graph combinations remain unverified. This distribution path does not require registry publication or deployment.
 
