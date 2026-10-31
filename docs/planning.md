@@ -30,7 +30,7 @@ The result contains:
 - `files`: path-sorted operations with exact `before`/`after` states, `kind`, `conflict`, and reasons;
 - `packageEntries`: section/name-ordered dependency/script entries with exact before/after string requirements (or `null` for absence), classifications, and conflict flags;
 - `requiresConfirmation`: whether any operation replaces existing values or removes existing setup;
-- `deferred` and `complete`: explicitly unplanned script/automation work. **Do not apply an incomplete plan.**
+- `deferred` and `complete`: explicitly unplanned script work when its adapter is omitted. Automation is fully planned. **Do not apply an incomplete plan.**
 
 File classifications are `creation`, `addition`, `replacement`, `removal`, and `noop`. Existing `package.json` with only new entries is an `addition`, not a conflicting replacement. Removing an absent entry/file is a no-op. Entry additions never conflict; changed existing entries and removals do. Dedicated-file replacements and existing saved-intent replacements conflict.
 
@@ -75,7 +75,7 @@ This gives one deterministic location for same-version cross-section contributio
 
 Only selected bundles' explicit `migration` declarations apply. The planner also has an explicit list of competing Oxc filenames: `.oxfmtrc.jsonc`, `.oxlintrc.jsonc`, and `oxfmt.config.*`/`oxlint.config.*` for `ts`, `mts`, `cts`, `js`, `mjs`, `cjs`. These are replacement/removal candidates, **not a claim that every name auto-discovers in every release**. Executable files are read only as bytes, never imported or executed. No filename search, shell parsing, or inference finds other legacy setup.
 
-A selected output cannot also be a migration removal. Non-Oxc native files are treated as dedicated artifacts: identical contributions share a destination; different bytes or executable flags at the same destination fail with both source identities instead of guessing a merge. Existing dedicated content is replaceable with confirmation. A deselected bundle's currently described dedicated file is removed with confirmation unless a selected bundle still supplies it. Edited dedicated content remains a removal candidate; shared automation files are the exception below.
+A selected output cannot also be a migration removal. Non-Oxc native files are treated as dedicated artifacts: identical contributions share a destination; different bytes or executable flags at the same destination fail with both source identities instead of guessing a merge. Existing dedicated content is replaceable with confirmation, except automation destinations which require an ownership marker. A deselected bundle's currently described dedicated file is removed with confirmation unless a selected bundle still supplies it. Edited dedicated content remains a removal candidate; automation uses the preservation rules below.
 
 Renamed/disappeared files, scripts, dependencies, and retired bundles may remain for manual cleanup. There is no attempt to infer historical ownership or reconstruct vanished policy.
 
@@ -83,7 +83,7 @@ Renamed/disappeared files, scripts, dependencies, and retired bundles may remain
 
 Pass `scripts: createScriptPlanner(targetManager)` from `src/scripts.ts` through `PlanOptions.scripts(context)`. The adapter returns an Effect containing the complete scripts map. The context exposes the ordinary manifest after dependency planning, ordered selected bundles, and identifiable deselected bundles. The adapter owns composition, exact wrapper recognition, preserving unrelated commands, and typed conflicts; see the [script contract and shell support matrix](scripts.md). Its result becomes part of the same exact manifest change plan. Without this adapter, declared selected/deselected scripts are listed in `deferred`, existing scripts remain untouched, and `complete` is false.
 
-Every native file or removal under `.husky/` or `.github/workflows/` is safely deferred to #8. The planner never overwrites an unrelated workflow or guesses a shared hook merge. These paths are absent from executable file operations; `deferred` records what needs the preservation adapter and `complete` is false. No automation preservation or installation is claimed.
+Native files and removals under `.husky/` and `.github/workflows/` use built-in [automation preservation](automation.md). Dedicated files require an explicit native ownership comment; unrelated content is a hard planning conflict. The shared pre-commit hook uses one marked invocation block and a separate policy-authored file. Automation observations and exact operations belong to this same snapshot, confirmation, and complete plan; no application-time merge or automation execution occurs.
 
 ## Target safety and verification
 

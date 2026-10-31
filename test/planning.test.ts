@@ -230,20 +230,17 @@ test("scripts have an ordinary-manifest adapter; absent adapters defer rather th
   assert.deepEqual(value(adapted, "package.json").scripts, { install: "exit 99", placeholder: "adapter-owned result" });
 });
 
-test("hooks and workflows are safely deferred, including migration and deselection, not replaced or removed", async (t) => {
+test("unrelated workflows block automation planning rather than becoming replaceable dedicated configuration", async (t) => {
   const f = await setup(t);
   await f.add("automation/ci", { name: "CI", migration: { removeFiles: [".github/workflows/old.yml"] } });
-  await f.write("typescript/automation/ci/files/.github/workflows/check.yml", "name: checks\non: push\n");
-  await f.write("typescript/automation/ci/files/.husky/pre-commit", "echo managed\n");
+  await f.write("typescript/automation/ci/files/.github/workflows/check.yml", "# its-checks: managed\nname: checks\non: push\n");
   await f.writeProject(".github/workflows/check.yml", "name: unrelated\non: push\n");
   await f.writeProject(".husky/pre-commit", "echo unrelated\n");
   const selected = await f.resolve({ integrations: [], automation: ["ci"] });
-  const plan = await run(planProject(f.project, selected));
-  assert.equal(plan.complete, false);
-  assert.deepEqual(plan.deferred.map((entry) => entry.path), [".github/workflows/check.yml", ".github/workflows/old.yml", ".husky/pre-commit"]);
-  assert.equal(plan.files.some((file) => file.path.startsWith(".github/") || file.path.startsWith(".husky/")), false);
-  const deselect = await run(planProject(f.project, await f.resolve(), { previous: selected.intent, currentBundles: selected.policy.bundles }));
-  assert.deepEqual(deselect.deferred.map((entry) => entry.path), [".github/workflows/check.yml", ".husky/pre-commit"]);
+  const before = await snapshot(f.project);
+  await assert.rejects(run(planProject(f.project, selected)), /Unrelated content.*Move or rename/);
+  await assert.rejects(run(planProject(f.project, await f.resolve(), { previous: selected.intent, currentBundles: selected.policy.bundles })), /Unrelated content/);
+  assert.deepEqual(await snapshot(f.project), before);
 });
 
 test("malformed manifests fail with typed target diagnostics before mutation", async (t) => {

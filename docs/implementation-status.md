@@ -15,7 +15,7 @@ Initial baseline: `3422686` on `main`. No Git remote is configured; GitHub API c
 | #5 | Standalone config composition, dependency collision checks, targeted manifest edits, explicit migration and no-history deselection, deterministic read-only plans | #3, #4 | accepted |
 | #6 | Same-name sequential fail-fast scripts, exact deduplication, reserved helpers, intact wrappers/restoration and edit conflicts | #5 | accepted |
 | #7 | Approved-plan-only application, no-op writes, intent before installation, truthful partial failure/retry | #4–#6 | accepted |
-| #8 | Dedicated workflow conflicts, marked shared hooks and unrelated-content preservation | #7 | pending |
+| #8 | Dedicated workflow conflicts, marked shared hooks and unrelated-content preservation | #7 | accepted |
 | #9 | Target npm/pnpm/Yarn/Bun detection, actual install-state/no-op/retry, lifecycle and runner behavior | #7 | pending |
 | #10 | Interactive-only Clack flow, explicit choices each run, inputs, cancellation, one conflict confirmation, truthful reporting | #4, #8, #9 | pending |
 | #11 | Real baseline/Tailwind/Husky/Actions policy compatibility; policy-only changes; author guidance and owner acceptance fixture | #10 | pending |
@@ -54,6 +54,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #7: accepted application after source/feature-test inspection. Integrated `npm test`: 101 passed; typecheck passed. Evidence: `test/application.test.ts`, `docs/application.md`. Partial filesystem/dependency failures are exercised through external seams; actual manager state remains #9. No rollback or concurrent-filesystem sandbox claim.
 
+- #8: accepted integrated automation preservation after code/tests inspection. Integrated `npm test`: 119 passed; typecheck passed. Evidence: `test/automation.test.ts`, `docs/automation.md`. All automation now uses complete snapshots; previous deferred-plan test replaced by hard-conflict behavior tests. No hook/Actions execution claimed.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -66,5 +68,7 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 - [#6 wrapper recognition and namespace conflicts](https://github.com/ItsEthanDev/its-checks/issues/6#issuecomment-6541765788).
 
 - [#7 approval, partial writes and recovery contract](https://github.com/ItsEthanDev/its-checks/issues/7#issuecomment-6541816469).
+
+- [#8 native ownership markers and reversible hook blocks](https://github.com/ItsEthanDev/its-checks/issues/8#issuecomment-6541859120).
 
 Final review index belongs on spec #1.
