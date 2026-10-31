@@ -58,7 +58,7 @@ test("released baseline + Tailwind + automation through normal npm adapter, real
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-compat-"));
   t.after(() => process.env.ITS_CHECKS_KEEP_FIXTURES ? console.error(`Fixture: ${root}`) : fs.rm(root, { recursive: true, force: true }));
   const project = path.join(root, "project");
-  await fs.cp(path.resolve("examples/typescript"), project, { recursive: true });
+  await fs.cp(path.resolve("test/fixtures/projects/typescript"), project, { recursive: true });
   // Inspectable original lifecycle: append a local sentinel; preserved ahead of Husky.
   const pkg = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
   pkg.scripts = { postinstall: `node -e 'require("node:fs").appendFileSync("lifecycle.log","installed\\n")'` };
@@ -104,7 +104,7 @@ test("released baseline + Tailwind + automation through normal npm adapter, real
   assert.equal((await run(applyPlan(baseRerun, { approved: true, dependencies }))).dependencyWork, "not-required");
   assert.equal(installs, 1);
 
-  await fs.cp(path.resolve("examples/tailwind/src"), path.join(project, "src"), { recursive: true });
+  await fs.cp(path.resolve("test/fixtures/projects/tailwind/src"), path.join(project, "src"), { recursive: true });
   await fs.writeFile(path.join(project, "src/card.tsx"), 'export const Card=()=> <div className="p-4 flex bg-brand !font-bold block">Hello</div>;\n');
   const combined = await plan(all);
   const combinedAudit = await inspectInstall(combined, path.join(root, "audit-tailwind"), project);

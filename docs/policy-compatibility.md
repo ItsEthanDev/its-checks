@@ -14,7 +14,7 @@ Checked 2026-10-31 on Linux x64, Node **24.21.0**, npm **11.19.0**, POSIX `/bin/
 
 **Only this Tailwind v4 combination is supported by shipped policy.** Tailwind v3 is not selected or tested. There is no Effect integration and no ESLint fallback. npm installs ESLint as the plugin's peer, but generated commands exclusively run Oxlint. The plugin's published package is 4.4.0 even though its internal `plugin.meta.version` string says `4.4.0-beta.0`; compatibility assertions use its package manifest and actual rule behavior, not that stale internal string.
 
-Oxlint's JS-plugin API is alpha. This is evidence for the two enabled rules on TS/TSX, not a blanket claim that every plugin rule, parser, JSX framework, or future package version works. The supplied examples are lint/format targets, not applications or JSX typecheck/build fixtures. Baseline checks are not type-aware; no TypeScript typechecking command or parser service is implied.
+Oxlint's JS-plugin API is alpha. This is evidence for the two enabled rules on TS/TSX, not a blanket claim that every plugin rule, parser, JSX framework, or future package version works. The supplied project fixtures are lint/format targets, not applications or JSX typecheck/build fixtures. Baseline checks are not type-aware; no TypeScript typechecking command or parser service is implied.
 
 ## Repeat the evidence
 
@@ -28,7 +28,7 @@ npm run test:policy
 
 `test/policy.test.ts` uses real shipped files through discovery, input resolution, planning, and application, substituting only dependency operations. It verifies preservation, explicit config migration without execution, no-op reruns, deselection, and policy-only changes to baseline/integration, script/dependency declarations, native automation commands, and discovery/application of a new integration directory. Agent-authored changes exercise the seam; they do not attest owner acceptance.
 
-`test/policy-compatibility.integration.ts` copies `examples/typescript`, then adds `examples/tailwind` sources and selects all shipped bundles through the real loader/planner/application and **normal npm dependency adapter**. It checks:
+`test/policy-compatibility.integration.ts` copies `test/fixtures/projects/typescript`, then adds `test/fixtures/projects/tailwind` sources and selects all shipped bundles through the real loader/planner/application and **normal npm dependency adapter**. It checks:
 
 - Exact installed package versions; baseline formatting/lint failures and fixes; successful common commands.
 - Oxfmt transforms `p-4 flex bg-brand font-bold!` into `flex bg-brand p-4 font-bold!` using a stylesheet with a custom brand color.

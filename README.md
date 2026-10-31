@@ -37,6 +37,6 @@ The target manager's ordinary `run <name>` also works. Generated wrappers preser
 
 ## Change the opinions
 
-Edit [`policy/`](policy/), not installer code. See the [fork-author guide](docs/fork-author.md), [released compatibility evidence and limits](docs/policy-compatibility.md), and [independent owner acceptance procedure](docs/owner-acceptance.md). Representative packages are under [`examples/`](examples/).
+Edit [`policy/`](policy/), not installer code. See the [fork-author guide](docs/fork-author.md), [released compatibility evidence and limits](docs/policy-compatibility.md), and [independent owner acceptance procedure](docs/owner-acceptance.md). Representative project fixtures are under [`test/fixtures/projects/`](test/fixtures/projects/).
 
 **Release gates remain:** the owner has not performed the independent editing pass; the pinned schema's remote availability is not established; Git-reference distribution/compiled packaging is deferred to #2. No package-manager download command or published executable is claimed. The source CLI and editable policy require no build step.

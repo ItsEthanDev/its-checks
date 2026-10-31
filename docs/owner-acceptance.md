@@ -9,7 +9,7 @@ With repository development dependencies installed and the [tested npm version](
 ```sh
 CHECKOUT="$PWD"
 TARGET="$(mktemp -d /tmp/its-checks-owner-XXXXXX)"
-cp -R examples/tailwind/. "$TARGET/"
+cp -R test/fixtures/projects/tailwind/. "$TARGET/"
 git -C "$TARGET" init --quiet
 cd "$TARGET"
 node "$CHECKOUT/src/cli.ts"
