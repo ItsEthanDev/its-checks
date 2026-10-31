@@ -174,3 +174,45 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.match(crash, /next assessment requires installation|retry cannot be guaranteed/);
   if (manager === "bun") assert.match(crash, /Bun recovery BLOCKED: no approved direct dependency symlink/);
 });
+
+test("Bun failure reconciles only approved removed store links and reports partial effects", async (t) => {
+  const f = await fixture(t);
+  const removed = ["removed", "external", "regular", "peer", "optional"];
+  await put(f.project, "package.json", { packageManager: `bun@${testedVersions.bun}`,
+    devDependencies: Object.fromEntries([...removed, "retained"].map((name) => [name, "1.0.0"])),
+    peerDependencies: { peer: "1.0.0" }, optionalDependencies: { optional: "1.0.0" } });
+  await put(f.project, "bunfig.toml", '[install]\nlinker = "isolated"\n');
+  await installed(f.project, "bun");
+  const storeTarget = await fs.realpath(path.join(f.project, "node_modules/removed"));
+  const storeBytes = await fs.readFile(path.join(storeTarget, "package.json"));
+  await fs.symlink(await fs.readlink(path.join(f.project, "node_modules/removed")), path.join(f.project, "node_modules/unlisted"));
+  await fs.unlink(path.join(f.project, "node_modules/external"));
+  await put(f.project, "external/package.json", { name: "external", version: "1.0.0" });
+  await fs.symlink("../external", path.join(f.project, "node_modules/external"));
+  await fs.unlink(path.join(f.project, "node_modules/regular"));
+  await put(f.project, "node_modules/regular/package.json", { name: "regular", version: "1.0.0" });
+  const preserved = ["external", "regular", "peer", "optional", "unlisted"];
+  const before = await Promise.all(preserved.map((name) => fs.readFile(path.join(f.project, "node_modules", name, "package.json"))));
+  await f.add("base", { name: "Base", migration: { removeDevDependencies: removed } });
+  const resolution = await run(resolveTargetManager(f.project));
+  if (resolution.kind !== "resolved") throw Error("Expected Bun");
+  const lock = await fs.readFile(path.join(f.project, "bun.lock"));
+  const adapter = createDependencyAdapter(resolution.target, { run: (_cmd, args) => Effect.succeed({
+    code: args[0] === "install" ? 42 : 0, stdout: args[0] === "--version" ? testedVersions.bun : "",
+    stderr: args[0] === "install" ? "late lifecycle failure" : "" }) });
+  const plan = await run(planProject(f.project, await run(resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {})), {
+    scripts: resolution.target.scripts }));
+  const failure = await run(applyPlan(plan, { approved: true, dependencies: adapter }).pipe(Effect.match({
+    onSuccess: () => { throw Error("Expected failure"); }, onFailure: (error) => error })));
+  assert.ok(failure instanceof ApplicationError);
+  assert.match(failure.message, /late lifecycle failure/);
+  assert.match(failure.message, /Unlinked approved removed dependencies node_modules\/removed \(store targets preserved\)/);
+  assert.match(failure.message, /no rollback/);
+  await assert.rejects(fs.lstat(path.join(f.project, "node_modules/removed")), { code: "ENOENT" });
+  assert.deepEqual(await fs.readFile(path.join(storeTarget, "package.json")), storeBytes);
+  for (const [index, name] of preserved.entries()) {
+    assert.deepEqual(await fs.readFile(path.join(f.project, "node_modules", name, "package.json")), before[index]);
+    assert.equal((await fs.lstat(path.join(f.project, "node_modules", name))).isSymbolicLink(), name !== "regular");
+  }
+  assert.deepEqual(await fs.readFile(path.join(f.project, "bun.lock")), lock, "authored lock is not invalidated");
+});

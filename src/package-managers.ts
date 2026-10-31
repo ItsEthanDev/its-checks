@@ -278,20 +278,24 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
     if (metadata[manager]) yield* io(invalidateMetadata);
     const result = yield* command(["install"]).pipe(Effect.catch((cause) => Effect.succeed({ code: -1, stdout: "", stderr: cause.message })));
     let problem = result.code === 0 ? undefined : `${manager} install exited ${result.code}: ${result.stderr}\n${result.stdout}`;
+    const removedLinks: string[] = [];
     const verification = yield* Effect.gen(function*() {
       const manifest = yield* io(() => text(root, "package.json"));
       if (manifest !== expected.bytes) return "package.json no longer matches approved bytes; inspect and replan";
-      if (result.code !== 0) return undefined;
       if (manager === "bun") {
-        // Bun 1.4 leaves obsolete direct links behind. Reconcile only explicitly approved removals.
+        // Reconcile approved removals even after failure: a fresh plan loses their identity once intent is saved.
         yield* io(async () => {
           const wanted = entries(expected.manifest);
           for (const entry of plan.packageEntries) if (entry.section !== "scripts" && entry.after === null && !Object.hasOwn(wanted, entry.name) && !Object.hasOwn(expected.manifest.peerDependencies ?? {}, entry.name)) {
             const link = await bunLink(entry.name);
-            if (link) await fs.unlink(link);
+            if (link) {
+              await fs.unlink(link);
+              removedLinks.push(`node_modules/${entry.name}`);
+            }
           }
         });
       }
+      if (result.code !== 0) return undefined;
       const versions = yield* archiveVersions(plan);
       const matched = yield* io(() => matching(plan, versions, true));
       return matched ? undefined : `${manager} install returned success but actual installation/lock state does not match the approved manifest\n${result.stdout}\n${result.stderr}`;
@@ -311,7 +315,8 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
         }
         throw new Error("Bun recovery BLOCKED: no approved direct dependency symlink into node_modules/.bun to invalidate; retry cannot be guaranteed");
       }).pipe(Effect.catch((cause) => Effect.succeed(`Recovery invalidation failed: ${cause.message}; retry cannot be guaranteed.`)));
-      return yield* Effect.fail(new OperationError({ detail: `${problem}\n${invalidation}\nConfiguration, intent, lockfile changes and lifecycle effects remain; no rollback.` }));
+      const removals = removedLinks.length ? `\nUnlinked approved removed dependencies ${removedLinks.join(", ")} (store targets preserved).` : "";
+      return yield* Effect.fail(new OperationError({ detail: `${problem}${removals}\n${invalidation}\nConfiguration, intent, lockfile changes and lifecycle effects remain; no rollback.` }));
     }
   }) };
 }

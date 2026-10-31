@@ -7,6 +7,7 @@ import { Effect } from "effect";
 import { loadPolicy } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
 import { planProject } from "../src/planning.ts";
+import { loadPreviousIntent } from "../src/selections.ts";
 import { applyPlan, ApplicationError } from "../src/application.ts";
 import { createDependencyAdapter, resolveTargetManager, testedVersions, nodeManagerOperations } from "../src/package-managers.ts";
 import type { PackageManager } from "../src/scripts.ts";
@@ -41,9 +42,12 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   if (manager === "bun") await put(path.join(project, "bunfig.toml"), '[install]\nlinker = "isolated"\n');
   await put(path.join(policy, "bundle.json"), { schemaVersion: 1, source: {
     repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/selections.schema.json" } });
+  let selected = manager === "bun" ? { integrations: ["managed"], automation: [] } : empty;
   const declaration = (version: string | null) => ({ name: "Base", scripts: { check: helper },
-    ...(version ? { devDependencies: { "managed-dep": `file:../${version}.tgz` } }
+    ...(manager === "bun" ? {} : version ? { devDependencies: { "managed-dep": `file:../${version}.tgz` } }
       : { migration: { removeDevDependencies: ["managed-dep"] } }) });
+  if (manager === "bun") await put(path.join(policy, "typescript/integrations/managed/bundle.json"), {
+    name: "Managed", devDependencies: { "managed-dep": "file:../one.tgz" } });
   await put(path.join(policy, "typescript/base/bundle.json"), declaration("one"));
   await put(path.join(policy, "typescript/base/files/.oxlintrc.json"), { rules: { "no-debugger": "error" } });
   const resolution = await run(resolveTargetManager(project));
@@ -53,7 +57,12 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   const adapter = createDependencyAdapter(resolution.target, { run: (cmd, args, cwd) => {
     calls.push([cmd, ...args]); return nodeManagerOperations.run(cmd, args, cwd);
   } });
-  const plan = async () => run(planProject(project, await run(resolveInputs(await run(loadPolicy(policy, empty)), {})), { scripts: resolution.target.scripts }));
+  const plan = async () => {
+    const previous = await run(loadPreviousIntent(project));
+    const currentBundles = previous ? (await run(loadPolicy(policy, previous))).bundles : [];
+    return run(planProject(project, await run(resolveInputs(await run(loadPolicy(policy, selected)), {})), {
+      scripts: resolution.target.scripts, ...(previous ? { previous } : {}), currentBundles }));
+  };
   const apply = async () => run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
   const count = () => calls.filter((args) => args[1] === "install").length;
   const log = () => fs.readFile(path.join(project, "lifecycle.log"), "utf8");
@@ -73,6 +82,8 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.equal(count(), beforeNoop);
   assert.equal(await log(), "postinstall\n");
   await put(path.join(policy, "typescript/base/bundle.json"), declaration("two"));
+  if (manager === "bun") await put(path.join(policy, "typescript/integrations/managed/bundle.json"), {
+    name: "Managed", devDependencies: { "managed-dep": "file:../two.tgz" } });
   assert.equal((await apply()).dependencyWork, "completed");
   assert.equal(await version(), "2.0.0");
   assert.equal(await log(), "postinstall\npostinstall\n");
@@ -121,8 +132,30 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   const recoveredCount = count();
   assert.equal((await apply()).dependencyWork, "not-required");
   assert.equal(count(), recoveredCount);
+  selected = empty;
   await put(path.join(policy, "typescript/base/bundle.json"), declaration(null));
-  assert.equal((await apply()).dependencyWork, "completed");
+  if (manager === "bun") {
+    // A late removal failure persists the new manifest/intent before a fresh plan loses removal identity.
+    const removedTarget = await fs.realpath(path.join(project, "node_modules/managed-dep"));
+    const removedBytes = await fs.readFile(path.join(removedTarget, "package.json"));
+    await fs.writeFile(path.join(project, "fail-lifecycle"), "");
+    const removalFailure = await run(applyPlan(await plan(), { approved: true, dependencies: adapter }).pipe(Effect.match({
+      onSuccess: () => { throw Error("Expected removal lifecycle failure"); }, onFailure: (error) => error })));
+    assert.ok(removalFailure instanceof ApplicationError);
+    assert.equal(removalFailure.phase, "dependencies");
+    assert.match(removalFailure.message, /42|postinstall/);
+    assert.match(removalFailure.message, /Unlinked approved removed dependencies node_modules\/managed-dep \(store targets preserved\)/);
+    await assert.rejects(fs.lstat(path.join(project, "node_modules/managed-dep")), { code: "ENOENT" });
+    assert.equal((JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"))).devDependencies["managed-dep"], undefined);
+    const retry = await plan();
+    assert.ok(!retry.packageEntries.some((entry) => entry.name === "managed-dep"), "fresh plan no longer identifies the removal");
+    assert.equal(await run(adapter.assess(retry)), "required");
+    await fs.unlink(path.join(project, "fail-lifecycle"));
+    assert.equal((await run(applyPlan(retry, { approved: true, dependencies: adapter }))).dependencyWork, "completed");
+    assert.equal((await apply()).dependencyWork, "not-required");
+    await assert.rejects(fs.lstat(path.join(project, "node_modules/managed-dep")), { code: "ENOENT" });
+    assert.deepEqual(await fs.readFile(path.join(removedTarget, "package.json")), removedBytes, "removed link target is preserved");
+  } else assert.equal((await apply()).dependencyWork, "completed");
   await assert.rejects(fs.stat(path.join(project, "node_modules/managed-dep/package.json")), { code: "ENOENT" });
   assert.equal(await version("unrelated-dep"), "1.0.0");
   assert.equal((await apply()).dependencyWork, "not-required");
@@ -130,5 +163,5 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.deepEqual(final.custom, { preserved: true });
   assert.equal(final.scripts.postinstall, lifecycle);
   assert.equal(final.devDependencies["unrelated-dep"], "file:../keep.tgz");
-  t.diagnostic(`${count()} real installs (includes one intentional lifecycle failure); local archives only; no-op runs execute no install`);
+  t.diagnostic(`${count()} real installs (includes ${manager === "bun" ? "two intentional lifecycle failures" : "one intentional lifecycle failure"}); local archives only; no-op runs execute no install`);
 });

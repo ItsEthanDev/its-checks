@@ -64,6 +64,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #11: accepted functional policy and author/owner artifacts after inspecting native files and tests. Orchestrator `npm test`: 140 passed; typecheck passed; `npm run test:policy`: 1 passed, 2 normal npm adapter installs following lifecycle-graph audit, real Oxfmt/Oxlint/Tailwind checks/fixes, real local Husky pass/fail, matching no-op. Evidence: `test/policy.test.ts`, `test/policy-compatibility.integration.ts`, `docs/policy-compatibility.md`. Full policy graph on pnpm/Yarn/Bun unverified; remote Actions not executed. Human independent editing pass still pending. Observed 7 moderate transitive plugin-peer advisories documented; no automatic override. Schema content is locally pinned; remote URL availability unverified.
 
+- #9 Bun removal correction: reproduced late-failure deselection leaving an obsolete direct link after fresh retry lost removal identity. Reconcile only approved removed .bun-store links even after nonzero install, guarded by exact approved manifest; targets preserved and partial effects reported. Orchestrator `npm test`: 141 passed; typecheck passed; real managers: 4 passed, 25 installs including 5 intentional lifecycle failures. Evidence: manager seam and real-manager regressions.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -87,5 +89,7 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - [#11 initial policy and compatibility tradeoffs](https://github.com/ItsEthanDev/its-checks/issues/11#issuecomment-6542237245).
 - [Schema revision/publication distinction](https://github.com/ItsEthanDev/its-checks/issues/1#issuecomment-6542238502).
+
+- [#9 verified failed-removal correction](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6542275348).
 
 Final review index belongs on spec #1.
