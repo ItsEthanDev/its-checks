@@ -46,7 +46,7 @@ Husky runs the entire package's `check` without fixing or staging files. GitHub 
 
 Rerun the same source command to load edited policy or change choices. Each run shows all choices and input questions. `.its-checks.json` prefills still-available selections and saved answers; answers take precedence over declaration defaults, including `false`, `0`, and empty strings.
 
-The file records **intended setup**, not successful installation. Matching configuration does not suppress dependency assessment. A fully matching package has no writes or installation. Schema decoding is offline: setup does not fetch the saved schema or repository.
+The file records **intended setup**, not successful installation. Matching configuration does not suppress dependency assessment. A fully matching package has no writes or installation. Whitespace and object-key order in `package.json`, including Oxfmt's native package sorting, do not require installation. Matching manifest values retain their formatted bytes. Schema decoding is offline: setup does not fetch the saved schema or repository.
 
 Deselecting proposes cleanup using prior selected IDs and their **current** bundle definitions. Selected requirements shared with another bundle remain. Deselected answers are dropped; reselecting later uses defaults again. Retired IDs are reported and dropped when saving, but their historical files, scripts, and dependencies cannot be reconstructed. Renamed or vanished policy entries can require manual cleanup. Keep prior intent while recovering; deleting it loses this cleanup information.
 
@@ -75,7 +75,6 @@ When retiring Husky, inspect other hooks before manually changing `core.hooksPat
 
 ## Known limitations
 
-- Oxfmt package-key sorting can rewrite `package.json` and cause repeat setup/install churn: [issue #12](https://github.com/ItsEthanDev/its-checks/issues/12). The current policy does not disable that sorting.
 - Policy validation checks structure, not runtime tool compatibility. Exercise the generated commands with your selected rules and dependencies. Convex integration and hosted Actions execution remain unverified; manager support alone does not establish native package or plugin compatibility.
 - Tailwind policy targets v4, not v3. Oxlint's JavaScript plugin API is alpha; plugin loading does not guarantee every rule or parser works. JavaScript plugin rules still lack TypeScript type information, even with native type-aware lint enabled. Review transitive plugin dependencies and advisories when installing.
 - Other platforms, shells, manager versions, and workspace configurations are outside the [supported environment scope](package-managers.md#supported-environments).

@@ -51,9 +51,11 @@ The actual executable must match the table. Same-manager declarations must use t
 
 ## Installation and no-op behavior
 
-Setup checks the environment before writing. It compares the approved manifest, lock requirements/resolutions, native inventory, direct installed versions, and manager-specific store/link state. Missing packages, stale locks, or missing inventory request installation even if configuration matches. Native metadata is not a cryptographic check of every installed file.
+Setup checks the environment before writing. Dependency assessment compares semantic requirements, lock requirements/resolutions, native inventory, direct installed versions, and manager-specific store/link state. JSON whitespace, object-key order, and manifest mtime alone do not request installation. Missing packages, stale locks, or missing inventory still request installation even if configuration matches. Native metadata is not a cryptographic check of every installed file.
 
-When needed, setup runs normal `<manager> install`, requires the manifest to remain exactly approved, and checks resulting installed state. A zero exit status with mismatched state is still a failure. Requirements are passed literally to the manager, not independently resolved by setup. A matching package has no installation or inventory invalidation.
+Plan changes to root lifecycle commands or their generated `its-checks:` helpers request installation. With a lifecycle command present, planned changes to configuration files also request installation so that lifecycle execution sees the new configuration. Unrelated manifest fields and non-lifecycle scripts alone do not request it.
+
+When needed, setup runs normal `<manager> install`, requires the manifest to remain exactly approved, and checks resulting installed state. Semantic assessment does not weaken application safeguards: any target byte or mode change since approval still requires a fresh plan. A zero exit status with mismatched state is still a failure. Requirements are passed literally to the manager, not independently resolved by setup. A matching package has no installation or inventory invalidation.
 
 ## Failure and retry
 
@@ -72,4 +74,6 @@ npm/pnpm/Yarn also invalidate their inventory before a required install to avoid
 
 **Bun retry is not guaranteed without an eligible approved direct dependency link**, including dependency-free late lifecycle failures. An invalidation failure is reported alongside the original failure. Setup does not delete broader dependency trees or authored lockfiles for recovery.
 
-Native inventory cannot prove arbitrary root lifecycle completion. External installs, abrupt termination before invalidation, or independent lifecycle/configuration edits can leave apparently complete installed state. Inspect the failure and invalidate the relevant native inventory or affected installed dependency before rerunning; automatic recovery is not guaranteed. No persistent success marker or installation history is stored.
+Native inventory cannot prove arbitrary root lifecycle completion or record which command bytes last ran. Lifecycle/configuration edits made before planning, changes inside delegated scripts, external installs, and abrupt termination before invalidation can leave apparently complete installed state. A no-op assessment establishes matching dependency state, not that these lifecycle effects completed. Manifest mtime cannot resolve this ambiguity: formatters change it too.
+
+If lifecycle execution is needed independently of a plan change, inspect the commands and run the target manager's normal install yourself, checking its result, or invalidate the relevant native inventory/eligible Bun dependency link before rerunning setup. Automatic recovery is not guaranteed. No persistent success marker or installation history is stored.

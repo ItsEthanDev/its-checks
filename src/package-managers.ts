@@ -80,6 +80,17 @@ const equal = (a: unknown, b: unknown): boolean => {
   const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
   return Object.keys(x).length === Object.keys(y).length && Object.keys(x).every((k) => Object.hasOwn(y, k) && equal(x[k], y[k]));
 };
+// Compare commands, not JSON layout or unrelated public scripts. Generated lifecycle
+// helpers can change while their public wrapper stays identical. Arbitrary shell
+// delegation/configuration cannot be inferred from native installation inventory.
+const lifecycleNames = ["preinstall", "install", "postinstall", "prepublish", "preprepare", "prepare", "postprepare"];
+const lifecycleCommands = (manifest: Manifest) => Object.fromEntries(lifecycleNames.flatMap((name) =>
+  [name, `its-checks:${name}`].filter((key) => Object.hasOwn(manifest.scripts ?? {}, key))
+    .map((key) => [key, manifest.scripts[key]])));
+const installationInputs = (manifest: Manifest) => ({
+  ...Object.fromEntries([...sections, "peerDependencies"].map((section) => [section, manifest[section] ?? {}])),
+  lifecycle: lifecycleCommands(manifest),
+});
 function approved(plan: ChangePlan, target: TargetManager): { bytes: string; manifest: Manifest } {
   if (path.resolve(plan.snapshot.root) !== target.root) throw new Error("Target manager belongs to another package root");
   const state = plan.files.find((f) => f.path === "package.json")?.after ?? plan.snapshot.files["package.json"];
@@ -166,18 +177,22 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
   });
   async function matching(plan: ChangePlan, versions: Record<string, string>, verifyingInstall = false): Promise<boolean> {
     const desired = approved(plan, target);
-    if (await text(root, "package.json") !== desired.bytes) return false;
+    const current = await text(root, "package.json");
+    if (current === undefined || !equal(installationInputs(JSON.parse(current)), installationInputs(desired.manifest))) return false;
     const wanted = entries(desired.manifest);
     for (const entry of plan.packageEntries) if (entry.section !== "scripts" && entry.after === null && !Object.hasOwn(wanted, entry.name) && !Object.hasOwn(desired.manifest.peerDependencies ?? {}, entry.name) &&
       await text(root, `node_modules/${entry.name}/package.json`) !== undefined) return false;
-    if (!verifyingInstall && Object.keys(desired.manifest.scripts ?? {}).some((name) => ["preinstall", "install", "postinstall", "prepare"].includes(name)) &&
-      plan.files.some((file) => file.path !== ".its-checks.json" && !equal(file.before, file.after))) return false;
+    if (!verifyingInstall) {
+      const before = plan.snapshot.files["package.json"];
+      const prior = before?.kind === "file" ? JSON.parse(Buffer.from(before.base64, "base64").toString("utf8")) : {};
+      if (!equal(lifecycleCommands(prior), lifecycleCommands(desired.manifest))) return false;
+      if (Object.keys(lifecycleCommands(desired.manifest)).length && plan.files.some((file) =>
+        file.path !== "package.json" && file.path !== ".its-checks.json" && !equal(file.before, file.after))) return false;
+    }
     const marker = metadata[manager];
     if (marker) {
       const state = await text(root, marker);
       if (state === undefined) return false;
-      if (!verifyingInstall && (await fs.stat(path.join(root, "package.json"))).mtimeMs >
-        (await fs.stat(path.join(root, marker))).mtimeMs) return false;
     }
     if (manager === "npm") {
       const raw = await text(root, "npm-shrinkwrap.json") ?? await text(root, "package-lock.json");

@@ -133,6 +133,33 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.equal(installs, 1);
   assert.equal((await get(f.project, "package.json")).scripts.install, "exit 99");
   assert.equal((await get(f.project, "package.json")).devDependencies.unrelated, "1.0.0");
+  // Formatting/mtime, object order, unrelated values and non-lifecycle commands
+  // are not evidence that dependency installation or lifecycle execution is due.
+  for (const rewrite of [
+    (value: Record<string, any>) => JSON.stringify(value, null, 4) + "\n\n",
+    (value: Record<string, any>) => JSON.stringify(Object.fromEntries(Object.entries(value).reverse())),
+    (value: Record<string, any>) => JSON.stringify({ ...value, description: "unrelated edit", scripts: { ...value.scripts, custom: "echo changed" } }),
+  ]) {
+    const approved = await plan();
+    await put(f.project, "package.json", rewrite(await get(f.project, "package.json")));
+    const newer = new Date(Date.now() + 2000);
+    await fs.utimes(path.join(f.project, "package.json"), newer, newer);
+    assert.equal(await run(adapter.assess(approved)), "not-required", "semantic preview is distinct from exact application approval");
+    const stale = await run(applyPlan(approved, { approved: true, dependencies: adapter }).pipe(Effect.match({
+      onFailure: (error) => error.message, onSuccess: () => "unexpected success" })));
+    assert.match(stale, /Target changed since planning/);
+    const unapproved = await run(adapter.install(approved).pipe(Effect.match({
+      onFailure: (error) => error.message, onSuccess: () => "unexpected success" })));
+    assert.match(unapproved, /exact approved target manifest/);
+    const matching = await plan();
+    assert.ok(matching.files.every((file) => file.kind === "noop"));
+    assert.equal(await run(adapter.assess(matching)), "not-required");
+    const report = await run(applyPlan(matching, { approved: true, dependencies: adapter }));
+    assert.equal(report.dependencyWork, "not-required");
+    assert.ok(report.completed.every((operation) => operation.kind === "assess-dependencies"));
+    assert.equal((await run(applyPlan(await plan(), { approved: true, dependencies: adapter }))).dependencyWork, "not-required");
+    assert.equal(installs, 1);
+  }
   // Saved intent is identical; actual installed version drift still requires installation.
   const pkg = path.join(f.project, "node_modules/managed/package.json");
   await fs.writeFile(pkg, '{"name":"managed","version":"0.0.1"}');
@@ -173,6 +200,43 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.match(crash, /spawn failed after partial work/);
   assert.match(crash, /next assessment requires installation|retry cannot be guaranteed/);
   if (manager === "bun") assert.match(crash, /Bun recovery BLOCKED: no approved direct dependency symlink/);
+});
+
+for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${manager}: lifecycle command/helper changes require execution, unrelated script changes do not`, async (t) => {
+  const f = await fixture(t);
+  await put(f.project, "package.json", { name: "lifecycle", packageManager: `${manager}@${testedVersions[manager]}` });
+  if (manager === "bun") await put(f.project, "bunfig.toml", '[install]\nlinker = "isolated"\n');
+  if (manager === "pnpm") await put(f.project, ".npmrc", "manage-package-manager-versions=false\n");
+  const declaration = (scripts: Record<string, string>) => ({ name: "Base", devDependencies: { managed: "1.0.0" }, scripts });
+  await f.add("base", declaration({ check: "echo check" }));
+  const resolution = await run(resolveTargetManager(f.project));
+  if (resolution.kind !== "resolved") throw Error("Expected manager");
+  let installs = 0;
+  const adapter = createDependencyAdapter(resolution.target, { run: (_command, args) => {
+    if (args[0] !== "install") return Effect.succeed({ code: 0, stdout: args[0] === "--version" ? testedVersions[manager] : "false", stderr: "" });
+    return Effect.tryPromise({ try: async () => {
+      installs++;
+      await installed(f.project, manager);
+      return { code: 0, stdout: "", stderr: "" };
+    }, catch: (cause) => { throw cause; } });
+  } });
+  const plan = async () => run(planProject(f.project, await run(resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {})), { scripts: resolution.target.scripts }));
+  const apply = async () => run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
+  assert.equal((await apply()).dependencyWork, "completed");
+  for (const prepare of ["echo first", "echo second"]) {
+    const priorWrapper = (await get(f.project, "package.json")).scripts.prepare;
+    await f.add("base", declaration({ check: "echo check", prepare }));
+    const next = await plan();
+    assert.equal(await run(adapter.assess(next)), "required");
+    assert.equal((await run(applyPlan(next, { approved: true, dependencies: adapter }))).dependencyWork, "completed");
+    if (prepare === "echo second") assert.equal((await get(f.project, "package.json")).scripts.prepare, priorWrapper, "only the generated helper changed");
+    assert.equal((await apply()).dependencyWork, "not-required");
+  }
+  await f.add("base", declaration({ check: "echo unrelated change", prepare: "echo second" }));
+  const unrelated = await plan();
+  assert.equal(await run(adapter.assess(unrelated)), "not-required");
+  assert.equal((await run(applyPlan(unrelated, { approved: true, dependencies: adapter }))).dependencyWork, "not-required");
+  assert.equal(installs, 3);
 });
 
 test("Bun failure reconciles only approved removed store links and reports partial effects", async (t) => {

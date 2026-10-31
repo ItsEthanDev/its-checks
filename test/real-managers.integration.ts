@@ -81,6 +81,26 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.equal((await apply()).dependencyWork, "not-required");
   assert.equal(count(), beforeNoop);
   assert.equal(await log(), "postinstall\n");
+  // Independent of Oxfmt: whitespace, key order and a newer mtime must not
+  // invalidate any manager's otherwise matching native lock/tree/inventory.
+  for (const layout of ["whitespace", "key-order"]) {
+    const file = path.join(project, "package.json");
+    const manifest = JSON.parse(await fs.readFile(file, "utf8"));
+    await fs.writeFile(file, layout === "whitespace" ? JSON.stringify(manifest, null, 4) + "\n\n"
+      : JSON.stringify(Object.fromEntries(Object.entries(manifest).reverse())) + "\n");
+    const newer = new Date(Date.now() + 2000);
+    await fs.utimes(file, newer, newer);
+    for (let rerun = 0; rerun < 2; rerun++) {
+      const matching = await plan();
+      assert.ok(matching.files.every((entry) => entry.kind === "noop"));
+      assert.equal(await run(adapter.assess(matching)), "not-required");
+      const report = await run(applyPlan(matching, { approved: true, dependencies: adapter }));
+      assert.equal(report.dependencyWork, "not-required");
+      assert.ok(report.completed.every((entry) => entry.kind === "assess-dependencies"));
+      assert.equal(count(), beforeNoop);
+      assert.equal(await log(), "postinstall\n");
+    }
+  }
   await put(path.join(policy, "typescript/base/bundle.json"), declaration("two"));
   if (manager === "bun") await put(path.join(policy, "typescript/integrations/managed/bundle.json"), {
     name: "Managed", devDependencies: { "managed-dep": "file:../two.tgz" } });
@@ -159,6 +179,23 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   await assert.rejects(fs.stat(path.join(project, "node_modules/managed-dep/package.json")), { code: "ENOENT" });
   assert.equal(await version("unrelated-dep"), "1.0.0");
   assert.equal((await apply()).dependencyWork, "not-required");
+  // Root lifecycle command changes, including helper-only updates behind an
+  // unchanged wrapper, still execute once with real native managers.
+  const beforeLifecycle = count();
+  let wrapper: string | undefined;
+  for (const value of ["first", "second"]) {
+    await put(path.join(policy, "typescript/base/bundle.json"), { ...declaration(null), scripts: {
+      check: helper, prepare: `node -e 'require("node:fs").appendFileSync("prepare.log","${value}\\n")'`,
+    } });
+    assert.equal(await run(adapter.assess(await plan())), "required");
+    assert.equal((await apply()).dependencyWork, "completed");
+    const current = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8")).scripts.prepare;
+    if (wrapper) assert.equal(current, wrapper);
+    wrapper = current;
+    assert.equal((await apply()).dependencyWork, "not-required");
+  }
+  assert.equal(count(), beforeLifecycle + 2);
+  assert.equal(await fs.readFile(path.join(project, "prepare.log"), "utf8"), "first\nsecond\n");
   const final = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
   assert.deepEqual(final.custom, { preserved: true });
   assert.equal(final.scripts.postinstall, lifecycle);

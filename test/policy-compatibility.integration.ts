@@ -19,7 +19,7 @@ const run = Effect.runPromise;
 const exec = promisify(execFile);
 // Fixed toolchain reference, independent of editable policy/.
 // Keep these pins and native files test-owned; do not refresh them from live policy.
-const policy = path.resolve("test/fixtures/policies/reference");
+const referencePolicy = path.resolve("test/fixtures/policies/reference");
 const empty = { integrations: [], automation: [] };
 const all = { integrations: ["tailwind"], automation: ["husky", "github-actions"] };
 const answers = { "integrations/tailwind": { "formatter-stylesheet": "src/styles.css", "linter-stylesheet": "src/styles.css" } };
@@ -59,7 +59,13 @@ async function inspectInstall(plan: ChangePlan, audit: string, project: string) 
 test("pinned reference baseline + Tailwind + automation through normal npm adapter, real Oxc and local Husky", { timeout: 180_000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-compat-"));
   t.after(() => process.env.ITS_CHECKS_KEEP_FIXTURES ? console.error(`Fixture: ${root}`) : fs.rm(root, { recursive: true, force: true }));
-  const project = path.join(root, "project");
+  const project = path.join(root, "project"), policy = path.join(root, "policy");
+  await fs.cp(referencePolicy, policy, { recursive: true });
+  // Fixed policy variation: native package sorting is valid and must converge with setup.
+  const formatterPolicy = path.join(policy, "typescript/base/files/.oxfmtrc.json");
+  const formatter = JSON.parse(await fs.readFile(formatterPolicy, "utf8"));
+  formatter.sortPackageJson = true;
+  await fs.writeFile(formatterPolicy, JSON.stringify(formatter, null, 2) + "\n");
   await fs.cp(path.resolve("test/fixtures/projects/typescript"), project, { recursive: true });
   // Inspectable original lifecycle: append a local sentinel; preserved ahead of Husky.
   const pkg = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
@@ -102,12 +108,25 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
   assert.match(formatCheck.output, /Format issues found in above \d+ files\. Run without `--check` to fix\./);
   assert.match((await command("npm", ["run", "lint"])).output, /no-debugger/);
   await fs.unlink(path.join(project, "src/bad.ts"));
+  const beforeFormat = await fs.readFile(path.join(project, "package.json"), "utf8");
   await good("npm", ["run", "format"]);
+  const formatted = await fs.readFile(path.join(project, "package.json"), "utf8");
+  assert.notEqual(formatted, beforeFormat, "Oxfmt actually changed manifest layout/key order");
+  assert.deepEqual(JSON.parse(formatted), JSON.parse(beforeFormat), "formatting preserves manifest values");
   await good("npm", ["run", "lint:fix"]);
   await good("npm", ["run", "check"]);
-  const baseRerun = await plan();
-  assert.equal((await run(applyPlan(baseRerun, { approved: true, dependencies }))).dependencyWork, "not-required");
-  assert.equal(installs, 1);
+  for (let cycle = 0; cycle < 2; cycle++) {
+    const baseRerun = await plan();
+    assert.ok(baseRerun.files.every((file) => file.kind === "noop"));
+    assert.equal(baseRerun.files.some((file) => file.conflict), false);
+    assert.equal(await run(dependencies.assess(baseRerun)), "not-required", "formatting alone must not request installation in preview");
+    const report = await run(applyPlan(baseRerun, { approved: true, dependencies }));
+    assert.equal(report.dependencyWork, "not-required");
+    assert.ok(report.completed.every((operation) => operation.kind === "assess-dependencies"), "no file writes or install");
+    assert.equal(installs, 1);
+    assert.equal(await fs.readFile(path.join(project, "package.json"), "utf8"), formatted);
+    await good("npm", ["run", "format"]);
+  }
 
   await fs.cp(path.resolve("test/fixtures/projects/tailwind/src"), path.join(project, "src"), { recursive: true });
   await fs.writeFile(path.join(project, "src/card.tsx"), 'export const Card=()=> <div className="p-4 flex bg-brand !font-bold block">Hello</div>;\n');
