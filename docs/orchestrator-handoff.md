@@ -4,7 +4,7 @@
 
 Implement its-checks through the approved implementation tickets, using subagents for each implementation slice. Preserve the orchestrator's context for coordination, decisions, acceptance, and final verification.
 
-This handoff does not start implementation. Begin when the user authorizes the implementation run. Follow applicable repository, agent, tool, and action-authorization instructions. Local implementation, verification, and commits are the intended work; pushes, PRs, remote issue updates, releases, deployments, and remote fixture creation require a separate applicable grant.
+This handoff does not start implementation. Begin when the user authorizes the implementation run. Follow applicable repository, agent, tool, and action-authorization instructions. Local implementation, verification, and commits are the intended work. During that run, the orchestrator is also to post decision/assumption comments on spec #1 and implementation tickets #3–#11 in `ItsEthanDev/its-checks`, as described below. Other remote writes—including issue-body/status edits, pushes, PRs, releases, deployments, and remote fixture creation—require a separate applicable grant.
 
 ## Authoritative requirements
 
@@ -23,7 +23,7 @@ Completion criterion: maintain a requirement-to-ticket map and identify all genu
 ## Bootstrap the workspace
 
 1. Inspect current files, Git status, branch, remotes, and applicable instructions. Preserve existing local work. Initialize a local checkout only if needed; do not clone over an occupied directory or discard existing commits.
-2. Verify the repository target is `ItsEthanDev/its-checks` before authenticated access. Read issues without modifying them unless authorized.
+2. Verify the repository target is `ItsEthanDev/its-checks` before authenticated access. Read the requirements; limit issue writes to the decision/assumption comments described in this handoff unless separately authorized.
 3. Inspect available Node, development package manager, Git, and test tools. Verify the actual Effect v4 package/API against first-party documentation. Do not use remembered v3 examples as v4 implementations.
 4. Establish the development dependency/test approach in the first implementation slice. Inspect lifecycle scripts and consequential external effects before running installs or test commands. Handle unavailable tooling as a prerequisite, not permission for system-wide changes.
 5. Make a clean, verified local checkpoint before creating managed worktrees. Preserve unrelated or untracked files; do not stage them merely to obtain a clean worktree.
@@ -57,7 +57,7 @@ Use a fresh bounded subagent for each slice. Give it:
 - Established interfaces and the accepted prerequisite artifacts it may rely on.
 - Acceptance criteria, exclusions, and relevant verification commands.
 - Permission limits: local work only unless separately authorized; no nested delegation unless explicitly assigned; no remote publication or issue closure.
-- A required return report: changed files, commit IDs if any, behavior delivered, tests run and results, limits of those checks, unresolved decisions, and blockers.
+- A required return report: changed files, commit IDs if any, behavior delivered, tests run and results, limits of those checks, material assumptions and design decisions not already recorded in the spec/tickets, unresolved decisions, and blockers.
 
 Subagents implement and verify their own slices. Their reports are evidence to inspect, not acceptance decisions. They must not claim completion because code compiles, tests were weakened, or only their own mocked internals passed.
 
@@ -75,9 +75,23 @@ For each returned slice:
 4. Commit at appropriate verified checkpoints: the bootstrap, each accepted feature slice, and coherent integration fixes. Make checkpoints regularly rather than accumulating the full implementation into one commit. Stage only files belonging to the change.
 5. Leave incomplete work clearly isolated and reported; do not commit it as an accepted feature. If a child made commits, review and integrate those commits instead of creating redundant commits solely for ceremony.
 
-Use a compact local execution log, for example `docs/implementation-status.md`, to record ticket/slice status, accepted commits, important decisions, evidence references, and blockers. Keep detailed command output in bounded artifacts rather than copying it into the log or conversation. Remote issue status remains unchanged without permission.
+Use a compact local execution log, for example `docs/implementation-status.md`, to record ticket/slice status, accepted commits, evidence references, blockers, and links to decision comments. Keep detailed command output in bounded artifacts rather than copying it into the log or conversation. Remote issue status remains unchanged without permission.
 
-Completion criterion: every accepted slice has reviewed evidence, an integrated verification result, and a coherent local commit.
+Completion criterion: every accepted slice has reviewed evidence, an integrated verification result, a coherent local commit, and any material new assumptions/decisions recorded for owner review.
+
+## Decision and assumption comments
+
+Use judgment to resolve implementation details within the agreed scope, and make material choices visible to the owner. The orchestrator owns posting these comments; subagents report their choices for review rather than posting independently.
+
+- Record decisions or assumptions that affect requirements interpretation, externally visible behavior, design contracts, compatibility, or accepted tradeoffs and are not already captured in the spec/tickets. Routine naming, formatting, and mechanical implementation details do not need comments.
+- Put a ticket-specific decision on its owning ticket. Put cross-cutting decisions on spec #1, linking affected tickets. Record each rationale once rather than copying full comments across issues.
+- State the decision/assumption, why it was needed, affected behavior or requirements, verification implications, and whether owner review or approval is needed. Include relevant commit/evidence references when available.
+- Distinguish an autonomous decision within scope from a proposal that changes an agreed requirement. Commenting is not approval: a requirement/scope change remains blocked pending authorization, while independent work continues.
+- Post material choices when settled, before building dependent work on them where practical. If a choice changes, add a superseding explanation so the review trail stays understandable.
+- Before returning the final report, post a concise decision-review index on spec #1 linking the relevant comments and identifying assumptions, proposals awaiting approval, and any superseded choices. This is the owner's list to review on return.
+- Keep comments limited to project-relevant information; do not publish credentials, private environment details, or raw logs. If a comment write has an uncertain result, inspect existing comments before retrying to avoid duplicates.
+
+Completion criterion: the owner can find every material new assumption or design decision through the spec's review index without reading the execution transcript.
 
 ## Autonomous decisions and blockers
 
@@ -112,7 +126,13 @@ Verify the full behavior against #1 and the tickets, including:
 
 Use real policy files and temporary target projects through planning/application seams. Substitute consequential external operations only where appropriate; use real execution for shell, CLI, and package-manager claims that substitutes cannot prove. State unavailable environment coverage as blocked or unverified, not passed. Perform no deployment, publication, GitHub Actions run, or packaging experiment merely to improve coverage.
 
-Finish with a report of accepted tickets/commits, final checks and observed results, remaining limitations, blockers, and exact next human actions. Leave the working tree clean for completed work or explain every remaining change. Do not push or close issues without a separate grant.
+Finish with a report of accepted tickets/commits, final checks and observed results, remaining limitations, blockers, exact next human actions, and a link to the spec's decision-review index. Leave the working tree clean for completed work or explain every remaining change. Do not push or close issues without a separate grant.
+
+## Remove this handoff after completion
+
+Once the autonomous implementation phase and orchestrator-owned final verification are complete, publish the decision-review index and preserve the final verification evidence/status outside this file. Then delete `docs/orchestrator-handoff.md` and commit its removal as the final local cleanup checkpoint. Verify that this deletion is the intended tracked change and check for stale references to the handoff.
+
+Do not delete the handoff when execution stops early on a genuine implementation blocker; retain it for resumption. The pending human policy-editing acceptance pass and explicitly deferred packaging experiment do not prevent cleanup after the autonomous phase is complete. Report those gates honestly as outstanding rather than claiming full release acceptance.
 
 ## Human and deferred acceptance
 
