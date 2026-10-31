@@ -92,4 +92,27 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - [#9 verified failed-removal correction](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6542275348).
 
-Final review index belongs on spec #1.
+[Final decision-review index on spec #1](https://github.com/ItsEthanDev/its-checks/issues/1#issuecomment-6542287939).
+
+## Accepted local commits
+
+| Ticket/checkpoint | Commit |
+| --- | --- |
+| Requirement map/bootstrap inspection | `8dee6a5` |
+| #3 bundles and Effect v4 harness | `39e88cf` |
+| #4 intent, inputs, schema | `85e7090` |
+| #5 configuration/dependency/migration plans | `15180d6` |
+| #6 script preservation/composition | `4ac5cbf` |
+| #7 application and partial reporting | `f8f002c` |
+| #8 automation preservation | `2c2eeac` |
+| #9 real target-manager adapters | `ec891ac` |
+| #10 Clack workflow | `dbfdfa8` |
+| #7 reviewed deselection recovery correction | `0b2c70f` |
+| #11 functional policy and owner procedure | `7c98069` |
+| #9 verified Bun late-removal correction | `de52e32` |
+
+## Final acceptance
+
+Orchestrator-owned final verification on `de52e32` after `npm ci --ignore-scripts --no-audit --no-fund`: 141 behavioral tests, typecheck, 4 real PTY cases, 4 real-manager cases (25 installs, 5 intentional lifecycle failures), and 1 real npm policy compatibility case (2 normal installs) all passed, zero skipped. Rendered Clack output and actual artifacts were inspected. [Durable evidence and requirement coverage](verification.md).
+
+No autonomous blocker remains within the documented tested scope. Independent owner editing acceptance (#11), remote schema availability, and separately authorized packaging/distribution (#2) remain open. Full policy graph on managers other than npm, hosted Actions, and other environments remain unverified. No push/publication occurred. Existing untracked Oxc research is unchanged and unstaged. The procedural handoff can now be removed; this status and verification record preserve resumption/review evidence.
