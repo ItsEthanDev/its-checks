@@ -1,15 +1,18 @@
 import { constants } from "node:fs";
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { Data, Effect } from "effect";
 import type { ChangePlan, FileChange, FileState } from "./planning.ts";
 import { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
+import { selectionFilename } from "./selections.ts";
 
 export class OperationError extends Data.TaggedError("OperationError")<{
   readonly detail: string;
 }> { override get message() { return this.detail; } }
 
-/** Consequential external operations. Adapters must fail on incomplete work, not swallow errors. */
+/** Consequential external operations. Adapters must fail on incomplete work, not swallow errors.
+ * Selection-file writes must leave complete old-or-new bytes on failure, never truncated intent. */
 export interface ApplicationFileSystem {
   readonly createDirectory: (absolutePath: string) => Effect.Effect<void, OperationError>;
   readonly writeFile: (absolutePath: string, state: Extract<FileState, { kind: "file" }>, create: boolean) => Effect.Effect<void, OperationError>;
@@ -49,11 +52,26 @@ export class ApplicationError extends Data.TaggedError("ApplicationError")<{
 const io = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operation,
   catch: (cause) => new OperationError({ detail: cause instanceof Error ? cause.message : String(cause) }) });
 
-/** No temporary files, backups, directory deletion, lifecycle execution, or rollback. */
+/** No backups, directory deletion, lifecycle execution, or rollback.
+ * Selection writes use a transient sibling so failed writes do not truncate retry identity. */
 export const nodeApplicationFileSystem: ApplicationFileSystem = {
   createDirectory: (destination) => io(async () => { await fs.mkdir(destination); }),
   removeFile: (destination) => io(() => fs.unlink(destination)),
-  writeFile: (destination, state, create) => Effect.acquireUseRelease(
+  writeFile: (destination, state, create) => path.basename(destination) === selectionFilename ? io(async () => {
+    const temporary = `${destination}.${randomUUID()}.tmp`;
+    const handle = await fs.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
+    try {
+      try {
+        await handle.writeFile(Buffer.from(state.base64, "base64"));
+        await handle.chmod(state.mode);
+      } finally { await handle.close(); }
+      // Never expose partial JSON. Exclusive publication also protects an initially absent selection file.
+      if (create) await fs.link(temporary, destination);
+      else await fs.rename(temporary, destination);
+    } finally {
+      await fs.unlink(temporary).catch((cause: NodeJS.ErrnoException) => { if (cause.code !== "ENOENT") throw cause; });
+    }
+  }) : Effect.acquireUseRelease(
     io(() => fs.open(destination, constants.O_WRONLY | constants.O_NOFOLLOW |
       (create ? constants.O_CREAT | constants.O_EXCL : 0), state.mode)),
     (handle) => io(async () => {
@@ -75,7 +93,10 @@ const operation = (file: FileChange): ApplicationOperation => ({
 /** Execute only the complete, explicitly approved plan. Never reload or recompose policy. */
 export function applyPlan(plan: ChangePlan, options: ApplicationOptions): Effect.Effect<ApplicationReport, ApplicationError> {
   return Effect.gen(function*() {
-    const changes = plan.files.filter((file) => !same(file.before, file.after));
+    // Keep the displayed plan intact. Retain prior IDs until every config/cleanup operation succeeds.
+    const changed = plan.files.filter((file) => !same(file.before, file.after));
+    const changes = [...changed.filter((file) => file.path !== selectionFilename),
+      ...changed.filter((file) => file.path === selectionFilename)];
     const assess: ApplicationOperation = { kind: "assess-dependencies", path: "package.json" };
     const install: ApplicationOperation = { kind: "install-dependencies", path: "package.json" };
     const completed: ApplicationOperation[] = [];

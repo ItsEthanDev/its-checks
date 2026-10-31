@@ -60,6 +60,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #10: accepted Effect workflow and native Clack presentation after source/test inspection. Integrated `npm test`: 136 passed; typecheck passed; `ITS_CHECKS_SHOW_TERMINAL=1 npm run test:cli`: 4 passed. Orchestrator inspected real rendered choices, saved numeric/boolean/string/path prefills, removal plan and single declined confirmation. Child also reran real-manager suite: 4 passed; final orchestration will rerun all suites. Evidence: `test/workflow.test.ts`, `test/cli.pty.py`, `docs/cli.md`. Linux PTY path only; source CLI, no distribution claim.
 
+- #7 recovery correction: independent review found selection-first writes lost deselection identity on later filesystem failure. Fixed by selection-last-before-dependencies and staged complete selection publication; failed-cleanup/replan and partial-selection-write regressions pass. Orchestrator integrated suite: 140 passed and typecheck passed (includes pending #11 policy tests). Real npm shipped-policy/Husky suite also passed. Final review finding resolved; transient sibling is not historical state.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -78,5 +80,7 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 - [#9 native retry evidence](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6541870999), [Bun refinement](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6541881532), [tested matrix and evidence](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6542010741).
 
 - [#10 terminal flow and retired-selection reconciliation](https://github.com/ItsEthanDev/its-checks/issues/10#issuecomment-6542098294).
+
+- [#7 recovery finding](https://github.com/ItsEthanDev/its-checks/issues/7#issuecomment-6542128363) and [verified correction](https://github.com/ItsEthanDev/its-checks/issues/7#issuecomment-6542231478), superseding selection-first ordering.
 
 Final review index belongs on spec #1.

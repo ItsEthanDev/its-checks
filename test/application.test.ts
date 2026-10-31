@@ -7,7 +7,7 @@ import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
 import { planProject, type ChangePlan, type PlanOptions } from "../src/planning.ts";
 import { createScriptPlanner } from "../src/scripts.ts";
-import { loadPreviousIntent } from "../src/selections.ts";
+import { loadPreviousIntent, selectionFilename } from "../src/selections.ts";
 import { applyPlan, ApplicationError, OperationError, nodeApplicationFileSystem, type ApplicationDependencies } from "../src/application.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
@@ -137,6 +137,46 @@ test("deselection removes identifiable contributions, retains unrelated director
   assert.doesNotMatch(manifest.scripts["its-checks:check"], /extra/);
 });
 
+test("failed deselection retains retry identity until all cleanup finishes", async (t) => {
+  const f = await setup(t);
+  await f.add("integrations/extra", { name: "Extra", scripts: { check: "echo extra", extra: "echo exclusive" }, devDependencies: { extra: "1", oxlint: "1.0.0" } });
+  await f.write("typescript/integrations/extra/files/extra/config.sh", "managed");
+  await f.put("package.json", { scripts: { extra: "echo original", unrelated: "echo keep" }, devDependencies: { unrelated: "2" } });
+  const selected = { integrations: ["extra"], automation: [] };
+  await run(applyPlan(await f.plan(selected), { approved: true, dependencies: noInstall }));
+  await f.put("extra/unrelated.txt", "keep");
+  await f.write("typescript/base/files/.oxfmtrc.json", { printWidth: 100 });
+  const replan = async () => {
+    const previous = await run(loadPreviousIntent(f.project));
+    assert.ok(previous);
+    const currentBundles = (await run(loadPolicy(f.policy, previous))).bundles;
+    return f.plan(empty, { previous, currentBundles });
+  };
+  const approved = await replan();
+  const displayed = structuredClone(approved.files);
+  const error = await failure(applyPlan(approved, { approved: true, dependencies: noInstall,
+    fileSystem: { ...nodeApplicationFileSystem, removeFile: () => Effect.fail(new OperationError({ detail: "Cleanup denied" })) },
+  }));
+  assert.equal(error.report.failed?.path, "extra/config.sh");
+  assert.ok(error.report.completed.some((entry) => entry.path === ".oxfmtrc.json"));
+  assert.equal(error.report.completed.some((entry) => entry.path === selectionFilename), false);
+  assert.deepEqual(approved.files, displayed);
+  assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, ["extra"]);
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8")).printWidth, 100);
+  await run(applyPlan(await replan(), { approved: true, dependencies: noInstall }));
+  await assert.rejects(fs.stat(path.join(f.project, "extra/config.sh")), { code: "ENOENT" });
+  assert.equal(await fs.readFile(path.join(f.project, "extra/unrelated.txt"), "utf8"), "keep");
+  const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
+  assert.equal(manifest.devDependencies.extra, undefined);
+  assert.equal(manifest.devDependencies.oxlint, "1.0.0");
+  assert.equal(manifest.devDependencies.unrelated, "2");
+  assert.equal(manifest.scripts.extra, "echo original");
+  assert.equal(manifest.scripts["its-checks:extra"], undefined);
+  assert.equal(manifest.scripts.unrelated, "echo keep");
+  assert.doesNotMatch(manifest.scripts["its-checks:check"], /extra/);
+  assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
+});
+
 test("filesystem failure reports completed files, observed partial bytes/mode, stops and recovers by replanning", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();
@@ -150,15 +190,47 @@ test("filesystem failure reports completed files, observed partial bytes/mode, s
   assert.ok(error instanceof ApplicationError);
   assert.equal(error.phase, "filesystem");
   assert.equal(assessed, false);
-  assert.deepEqual(error.report.completed, [{ kind: "write-file", path: ".its-checks.json" }]);
+  assert.deepEqual(error.report.completed, []);
   assert.equal(error.report.failed?.path, ".oxfmtrc.json");
   assert.deepEqual(error.report.observed, { kind: "file", base64: Buffer.from("partial").toString("base64"), mode: 0o600 });
   assert.ok(error.report.incomplete.some((operation) => operation.path === "package.json"));
   assert.match(error.report.retry!, /fresh plan/);
-  assert.ok(await run(loadPreviousIntent(f.project)));
+  assert.equal(await run(loadPreviousIntent(f.project)), undefined);
   const retry = await f.plan();
   await run(applyPlan(retry, { approved: true, dependencies: noInstall }));
   assert.equal(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"), "{}\n");
+});
+
+test("native selection writes preserve decodable retry identity when staging fails partway", async (t) => {
+  const f = await setup(t);
+  await f.add("integrations/extra", { name: "Extra" });
+  const selected = { integrations: ["extra"], automation: [] };
+  await run(applyPlan(await f.plan(selected), { approved: true, dependencies: noInstall }));
+  const previous = await run(loadPreviousIntent(f.project));
+  assert.ok(previous);
+  const plan = await f.plan(empty, { previous, currentBundles: (await run(loadPolicy(f.policy, selected))).bundles });
+  assert.deepEqual(plan.files.filter((file) => file.kind !== "noop").map((file) => file.path), [selectionFilename]);
+  const before = await snapshot(f.project);
+  const handle = await fs.open(path.join(f.project, selectionFilename), "r");
+  const prototype = Object.getPrototypeOf(handle) as typeof handle;
+  const write = prototype.writeFile;
+  await handle.close();
+  const injected = t.mock.method(prototype, "writeFile", async function(this: typeof handle) {
+    await write.call(this, "partial JSON");
+    throw Error("disk full during staged selection write");
+  });
+  const error = await failure(applyPlan(plan, { approved: true, dependencies: noInstall }));
+  injected.mock.restore();
+  assert.equal(error.phase, "filesystem");
+  assert.equal(error.report.failed?.path, selectionFilename);
+  assert.deepEqual(error.report.completed, []);
+  assert.deepEqual(error.report.observed, plan.files.find((file) => file.path === selectionFilename)!.before);
+  assert.deepEqual(await snapshot(f.project), before); // No leftover staging file.
+  const saved = await run(loadPreviousIntent(f.project));
+  assert.deepEqual(saved?.integrations, ["extra"]);
+  await run(applyPlan(await f.plan(empty, { previous: saved!, currentBundles: (await run(loadPolicy(f.policy, saved!))).bundles }),
+    { approved: true, dependencies: noInstall }));
+  assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
 });
 
 test("installation failure retains all configuration and intent; matching rerun still requests recovery", async (t) => {
@@ -257,7 +329,12 @@ test("file removal failure stops and reports retained migration content", async 
   assert.deepEqual(error.report.failed, { kind: "remove-file", path: "prettier.config.js" });
   assert.notEqual(error.report.observed, "unavailable");
   assert.equal(typeof error.report.observed === "object" && error.report.observed.kind, "file");
-  assert.deepEqual(error.report.incomplete.map((entry) => entry.kind), ["remove-file", "assess-dependencies", "install-dependencies"]);
+  assert.deepEqual(error.report.incomplete, [
+    { kind: "remove-file", path: "prettier.config.js" },
+    { kind: "write-file", path: selectionFilename },
+    { kind: "assess-dependencies", path: "package.json" },
+    { kind: "install-dependencies", path: "package.json" },
+  ]);
   assert.equal(await fs.readFile(path.join(f.project, "prettier.config.js"), "utf8"), "throw Error('never execute');");
 });
 
@@ -268,14 +345,14 @@ test("a symlink introduced during application is rechecked before the next file 
   const error = await failure(applyPlan(await f.plan(), { approved: true, dependencies: noInstall,
     fileSystem: { ...nodeApplicationFileSystem, writeFile: (destination, state, create) =>
       nodeApplicationFileSystem.writeFile(destination, state, create).pipe(Effect.andThen(
-        destination.endsWith(".its-checks.json")
-          ? Effect.tryPromise({ try: () => fs.symlink(outside, path.join(f.project, ".oxfmtrc.json")), catch: (cause) => new OperationError({ detail: String(cause) }) })
+        destination.endsWith(".oxfmtrc.json")
+          ? Effect.tryPromise({ try: () => fs.symlink(outside, path.join(f.project, ".oxlintrc.json")), catch: (cause) => new OperationError({ detail: String(cause) }) })
           : Effect.void)),
     },
   }));
   assert.equal(error.phase, "filesystem");
-  assert.deepEqual(error.report.completed, [{ kind: "write-file", path: ".its-checks.json" }]);
-  assert.equal(error.report.failed?.path, ".oxfmtrc.json");
+  assert.deepEqual(error.report.completed, [{ kind: "write-file", path: ".oxfmtrc.json" }]);
+  assert.equal(error.report.failed?.path, ".oxlintrc.json");
   assert.equal(error.report.observed, "unavailable");
   assert.equal(await fs.readFile(outside, "utf8"), "keep");
 });
@@ -290,7 +367,7 @@ test("a failed operation that already wrote intended bytes is not relabeled succ
     },
   }));
   assert.deepEqual(error.report.completed, []);
-  assert.equal(error.report.failed?.path, ".its-checks.json");
-  assert.deepEqual(error.report.observed, plan.files.find((file) => file.path === ".its-checks.json")!.after);
-  assert.ok(error.report.incomplete.some((entry) => entry.path === ".its-checks.json"));
+  assert.equal(error.report.failed?.path, ".oxfmtrc.json");
+  assert.deepEqual(error.report.observed, plan.files.find((file) => file.path === ".oxfmtrc.json")!.after);
+  assert.ok(error.report.incomplete.some((entry) => entry.path === ".oxfmtrc.json"));
 });
