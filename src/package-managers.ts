@@ -180,8 +180,20 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
     const current = await text(root, "package.json");
     if (current === undefined || !equal(installationInputs(JSON.parse(current)), installationInputs(desired.manifest))) return false;
     const wanted = entries(desired.manifest);
-    for (const entry of plan.packageEntries) if (entry.section !== "scripts" && entry.after === null && !Object.hasOwn(wanted, entry.name) && !Object.hasOwn(desired.manifest.peerDependencies ?? {}, entry.name) &&
-      await text(root, `node_modules/${entry.name}/package.json`) !== undefined) return false;
+    // Removal concerns direct requirements, not a ban on incidental installations.
+    // Hoisted managers may retain the same root location for a remaining dependency
+    // or peer. Only native lock references justify that presence; inventory/version
+    // checks below must still establish that the installation matches the lock.
+    const removals = [...new Set(plan.packageEntries.filter((entry) => entry.section !== "scripts" && entry.after === null &&
+      !Object.hasOwn(wanted, entry.name) && !Object.hasOwn(desired.manifest.peerDependencies ?? {}, entry.name)).map((entry) => entry.name))];
+    const obsolete = async (nativePackages: readonly Manifest[] = [], locations?: Manifest): Promise<boolean> => {
+      const incidental = new Set(nativePackages.flatMap((entry) =>
+        ["dependencies", "optionalDependencies", "peerDependencies"].flatMap((section) => Object.keys(entry[section] ?? {}))));
+      for (const name of removals) if ((!incidental.has(name) || (locations && !Object.hasOwn(locations, `node_modules/${name}`))) &&
+        await text(root, `node_modules/${name}/package.json`) !== undefined) return true;
+      return false;
+    };
+    if (manager !== "npm" && manager !== "yarn" && await obsolete()) return false;
     if (!verifyingInstall) {
       const before = plan.snapshot.files["package.json"];
       const prior = before?.kind === "file" ? JSON.parse(Buffer.from(before.base64, "base64").toString("utf8")) : {};
@@ -200,6 +212,7 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
       const lock = JSON.parse(raw), hidden = JSON.parse((await text(root, metadata.npm!))!);
       if (lock.lockfileVersion !== 3) return false;
       for (const section of sections) if (!equal(lock.packages?.[""]?.[section] ?? {}, desired.manifest[section] ?? {})) return false;
+      if (await obsolete(Object.entries(lock.packages ?? {}).filter(([location]) => location !== "").map(([, entry]) => entry as Manifest), lock.packages ?? {})) return false;
       let installedCount = 0;
       for (const [location, entry] of Object.entries(lock.packages ?? {}) as [string, any][]) {
         if (!location || (entry.optional && !hidden.packages?.[location])) continue;
@@ -235,6 +248,15 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
       const parsed = parseYarnLockfile(raw);
       if (parsed.type !== "success") return false;
       const lock = parsed.object, state = JSON.parse((await text(root, metadata.yarn!))!);
+      const nativePackages: readonly Manifest[] = Object.values(lock);
+      if (await obsolete(nativePackages)) return false;
+      for (const name of removals) {
+        const file = await text(root, `node_modules/${name}/package.json`);
+        if (file === undefined) continue;
+        const versions = nativePackages.flatMap((entry) => [entry.dependencies?.[name], entry.optionalDependencies?.[name]])
+          .filter((spec) => spec !== undefined).map((spec) => lock[`${name}@${spec}`]?.version).filter((version) => version !== undefined);
+        if (!versions.includes(JSON.parse(file).version)) return false;
+      }
       const patterns = Object.entries(wanted).map(([name, spec]) => `${name}@${spec}`).sort();
       if (!equal([...(state.topLevelPatterns ?? [])].sort(), patterns)) return false;
       for (const [pattern, resolution] of Object.entries(state.lockfileEntries ?? {})) {

@@ -239,6 +239,60 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.equal(installs, 3);
 });
 
+test("npm accepts a migrated incidental package only at a native lock-tracked location", async (t) => {
+  const f = await fixture(t);
+  await put(f.project, "package.json", { packageManager: `npm@${testedVersions.npm}`, devDependencies: { remaining: "1.0.0" } });
+  await f.add("base", { name: "Base", migration: { removeDevDependencies: ["incidental"] } });
+  const resolution = await run(resolveTargetManager(f.project));
+  if (resolution.kind !== "resolved") throw Error("Expected npm");
+  const adapter = createDependencyAdapter(resolution.target, { run: (_command, args) => args[0] === "install"
+    ? Effect.promise(async () => { await installed(f.project, "npm"); return { code: 0, stdout: "", stderr: "" }; })
+    : Effect.succeed({ code: 0, stdout: args[0] === "--version" ? testedVersions.npm : "false", stderr: "" }) });
+  const plan = async () => run(planProject(f.project, await run(resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {})), { scripts: resolution.target.scripts }));
+  assert.equal((await run(applyPlan(await plan(), { approved: true, dependencies: adapter }))).dependencyWork, "completed");
+  const lock = await get(f.project, "package-lock.json");
+  lock.packages["node_modules/remaining"].dependencies = { incidental: "1.0.0" };
+  lock.packages["node_modules/remaining/node_modules/incidental"] = { version: "1.0.0" };
+  const sync = async () => {
+    await put(f.project, "package-lock.json", lock);
+    const { "": _root, ...packages } = lock.packages;
+    await put(f.project, "node_modules/.package-lock.json", { lockfileVersion: 3, packages });
+  };
+  await put(f.project, "node_modules/remaining/node_modules/incidental/package.json", { name: "incidental", version: "1.0.0" });
+  await sync();
+  assert.equal(await run(adapter.assess(await plan())), "not-required");
+  await put(f.project, "node_modules/incidental/package.json", { name: "incidental", version: "1.0.0" });
+  assert.equal(await run(adapter.assess(await plan())), "required", "a nested reference does not justify an untracked stale root copy");
+  await fs.rm(path.join(f.project, "node_modules/remaining/node_modules/incidental"), { recursive: true });
+  delete lock.packages["node_modules/remaining/node_modules/incidental"];
+  lock.packages["node_modules/incidental"] = { version: "1.0.0" };
+  await sync();
+  assert.equal(await run(adapter.assess(await plan())), "not-required", "native lock and inventory justify the hoisted copy");
+  await put(f.project, "node_modules/incidental/package.json", { name: "incidental", version: "0.0.1" });
+  assert.equal(await run(adapter.assess(await plan())), "required", "incidental presence does not bypass installed-version checks");
+});
+
+test("Yarn checks the native locked version of a migrated hoisted dependency", async (t) => {
+  const f = await fixture(t);
+  await put(f.project, "package.json", { packageManager: `yarn@${testedVersions.yarn}`, devDependencies: { remaining: "1.0.0" } });
+  await f.add("base", { name: "Base", migration: { removeDevDependencies: ["incidental"] } });
+  const resolution = await run(resolveTargetManager(f.project));
+  if (resolution.kind !== "resolved") throw Error("Expected Yarn");
+  const adapter = createDependencyAdapter(resolution.target, { run: (_command, args) => args[0] === "install"
+    ? Effect.promise(async () => { await installed(f.project, "yarn"); return { code: 0, stdout: "", stderr: "" }; })
+    : Effect.succeed({ code: 0, stdout: args[0] === "--version" ? testedVersions.yarn : "false", stderr: "" }) });
+  const plan = async () => run(planProject(f.project, await run(resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {})), { scripts: resolution.target.scripts }));
+  assert.equal((await run(applyPlan(await plan(), { approved: true, dependencies: adapter }))).dependencyWork, "completed");
+  await put(f.project, "yarn.lock", '# yarn lockfile v1\n\n"remaining@1.0.0":\n  version "1.0.0"\n  resolved "https://fixture.invalid/remaining-1.0.0.tgz"\n  dependencies:\n    incidental "1.0.0"\n\n"incidental@1.0.0":\n  version "1.0.0"\n  resolved "https://fixture.invalid/incidental-1.0.0.tgz"\n');
+  await put(f.project, "node_modules/.yarn-integrity", { topLevelPatterns: ["remaining@1.0.0"], lockfileEntries: {
+    "remaining@1.0.0": "https://fixture.invalid/remaining-1.0.0.tgz", "incidental@1.0.0": "https://fixture.invalid/incidental-1.0.0.tgz",
+  } });
+  await put(f.project, "node_modules/incidental/package.json", { name: "incidental", version: "1.0.0" });
+  assert.equal(await run(adapter.assess(await plan())), "not-required");
+  await put(f.project, "node_modules/incidental/package.json", { name: "incidental", version: "0.0.1" });
+  assert.equal(await run(adapter.assess(await plan())), "required", "incidental hoisting does not justify an incorrect installed version");
+});
+
 test("Bun failure reconciles only approved removed store links and reports partial effects", async (t) => {
   const f = await fixture(t);
   const removed = ["removed", "external", "regular", "peer", "optional"];

@@ -66,6 +66,12 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
   const formatter = JSON.parse(await fs.readFile(formatterPolicy, "utf8"));
   formatter.sortPackageJson = true;
   await fs.writeFile(formatterPolicy, JSON.stringify(formatter, null, 2) + "\n");
+  // Fixed migration variation: remove direct ESLint, not the Tailwind plugin's
+  // incidental peer installation. This must also no-op when ESLint was never direct.
+  const declarationPath = path.join(policy, "typescript/base/bundle.json");
+  const declaration = JSON.parse(await fs.readFile(declarationPath, "utf8"));
+  declaration.migration.removeDevDependencies.push("eslint");
+  await fs.writeFile(declarationPath, JSON.stringify(declaration, null, 2) + "\n");
   await fs.cp(path.resolve("test/fixtures/projects/typescript"), project, { recursive: true });
   // Inspectable original lifecycle: append a local sentinel; preserved ahead of Husky.
   const pkg = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
@@ -138,6 +144,10 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
   assert.equal(await installed("tailwindcss"), "4.3.3");
   assert.equal(await installed("eslint-plugin-tailwindcss"), "4.4.0");
   assert.equal(await installed("husky"), "9.1.7");
+  assert.ok(await installed("eslint"), "Tailwind plugin's peer is installed incidentally");
+  const combinedManifest = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
+  assert.equal(combinedManifest.dependencies?.eslint, undefined);
+  assert.equal(combinedManifest.devDependencies.eslint, undefined);
   assert.equal((await exec("git", ["config", "core.hooksPath"], { cwd: project })).stdout.trim(), ".husky/_");
   assert.equal(await fs.readFile(path.join(project, "lifecycle.log"), "utf8"), "installed\ninstalled\n");
   const lint = await command("npm", ["run", "lint"]);

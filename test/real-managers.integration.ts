@@ -15,7 +15,8 @@ import type { PackageManager } from "../src/scripts.ts";
 const run = Effect.runPromise;
 const empty = { integrations: [], automation: [] };
 // All fixture scripts are authored here and inspected: local Node filesystem operations only.
-// Archives have NO scripts, network references, bin entries or dependencies. Never use shared fixture install: exit 99.
+// Archives have NO scripts, network references or bin entries; dependencies below
+// reference only authored local archives. Never use shared fixture install: exit 99.
 const lifecycle = `node -e 'const f=require("node:fs"); if(!f.existsSync(".oxlintrc.json"))process.exit(81); f.appendFileSync("lifecycle.log","postinstall\\n"); if(f.existsSync("fail-lifecycle"))process.exit(42)'`;
 const original = `node -e 'require("node:fs").appendFileSync("commands.log","original\\n")'`;
 const helper = `node -e 'require("node:fs").appendFileSync("commands.log","helper\\n")'`;
@@ -202,3 +203,82 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.equal(final.devDependencies["unrelated-dep"], "file:../keep.tgz");
   t.diagnostic(`${count()} real installs (includes ${manager === "bun" ? "two intentional lifecycle failures" : "one intentional lifecycle failure"}); local archives only; no-op runs execute no install`);
 });
+
+for (const manager of Object.keys(testedVersions) as PackageManager[]) for (const relationship of manager === "npm" ? ["dependencies", "peerDependencies"] : ["dependencies"]) {
+  test(`${manager}: remove a direct requirement while retaining its incidental ${relationship} installation`, { timeout: 120_000 }, async (t) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), `its-checks-incidental-${manager}-`));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const project = path.join(root, "project"), policy = path.join(root, "policy");
+    const put = async (file: string, value: string | object) => {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n");
+    };
+    // Both packages are authored local archives with no executable code/hooks.
+    // npm is offline so the peer case cannot silently fetch a registry package.
+    for (const [archive, manifest] of [
+      ["leaf", { name: "migration-leaf", version: "1.0.0" }],
+      ["consumer", { name: "remaining-dep", version: "1.0.0", [relationship]: {
+        "migration-leaf": relationship === "peerDependencies" ? "1.0.0" : `file:${path.join(root, "leaf.tgz")}`,
+      } }],
+    ] as const) {
+      const directory = path.join(root, archive, "package");
+      await put(path.join(directory, "package.json"), manifest);
+      const tar = await run(nodeManagerOperations.run("tar", ["-czf", path.join(root, `${archive}.tgz`), "-C", path.dirname(directory), "package"], root));
+      assert.equal(tar.code, 0, tar.stderr);
+    }
+    await put(path.join(project, "package.json"), { name: "incidental-project", private: true,
+      packageManager: `${manager}@${testedVersions[manager]}`,
+      devDependencies: { "remaining-dep": "file:../consumer.tgz", "migration-leaf": "file:../leaf.tgz" } });
+    if (manager === "npm") await put(path.join(project, ".npmrc"), "offline=true\naudit=false\nfund=false\n");
+    if (manager === "pnpm") await put(path.join(project, ".npmrc"), "manage-package-manager-versions=false\n");
+    if (manager === "yarn") await put(path.join(project, ".yarnrc"), "disable-self-update-check true\n");
+    if (manager === "bun") await put(path.join(project, "bunfig.toml"), '[install]\nlinker = "isolated"\n');
+    await put(path.join(policy, "bundle.json"), { schemaVersion: 1, source: {
+      repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/selections.schema.json" } });
+    const declaration = path.join(policy, "typescript/base/bundle.json");
+    await put(declaration, { name: "Base" });
+    const resolution = await run(resolveTargetManager(project));
+    if (resolution.kind !== "resolved") throw Error("Expected manager");
+    let installs = 0;
+    const adapter = createDependencyAdapter(resolution.target, { run: (command, args, cwd) => {
+      if (args[0] === "install") installs++;
+      return nodeManagerOperations.run(command, args, cwd);
+    } });
+    const plan = async () => {
+      const previous = await run(loadPreviousIntent(project));
+      const loaded = await run(loadPolicy(policy, empty));
+      return run(planProject(project, await run(resolveInputs(loaded, {})), {
+        scripts: resolution.target.scripts, ...(previous ? { previous } : {}), currentBundles: loaded.bundles }));
+    };
+    const apply = async () => run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
+    assert.equal((await apply()).dependencyWork, "completed");
+    await put(declaration, { name: "Base", migration: { removeDevDependencies: ["migration-leaf"] } });
+    const removal = await plan();
+    assert.ok(removal.packageEntries.some((entry) => entry.name === "migration-leaf" && entry.kind === "removal" && entry.conflict));
+    assert.equal(await run(adapter.assess(removal)), "required");
+    assert.equal((await run(applyPlan(removal, { approved: true, dependencies: adapter }))).dependencyWork, "completed");
+    const manifest = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
+    assert.equal(manifest.devDependencies["migration-leaf"], undefined);
+    assert.equal(manifest.devDependencies["remaining-dep"], "file:../consumer.tgz");
+    const resolvedLeaf = await run(nodeManagerOperations.run("node", ["-e",
+      'const f=require("node:fs");const p=require.resolve("migration-leaf/package.json",{paths:[f.realpathSync("node_modules/remaining-dep")]});console.log(JSON.parse(f.readFileSync(p)).version)',
+    ], project));
+    assert.equal(resolvedLeaf.code, 0, resolvedLeaf.stderr);
+    assert.equal(resolvedLeaf.stdout.trim(), "1.0.0", "remaining package can still resolve its dependency");
+    for (let rerun = 0; rerun < 2; rerun++) {
+      const matching = await plan();
+      assert.ok(matching.files.every((file) => file.kind === "noop"));
+      assert.equal(await run(adapter.assess(matching)), "not-required");
+      const report = await run(applyPlan(matching, { approved: true, dependencies: adapter }));
+      assert.equal(report.dependencyWork, "not-required");
+      assert.ok(report.completed.every((operation) => operation.kind === "assess-dependencies"));
+    }
+    assert.equal(installs, 2);
+    // A native graph reference is required; an unrelated leftover root package
+    // must not become acceptable just because another migration is incidental.
+    await put(declaration, { name: "Base", migration: { removeDevDependencies: ["migration-leaf", "obsolete-orphan"] } });
+    await put(path.join(project, "node_modules/obsolete-orphan/package.json"), { name: "obsolete-orphan", version: "1.0.0" });
+    assert.equal(await run(adapter.assess(await plan())), "required");
+    assert.equal(installs, 2, "assessment never reconciles native state itself");
+  });
+}

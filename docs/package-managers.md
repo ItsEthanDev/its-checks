@@ -32,7 +32,7 @@ Setup rejects a missing setting or a hoisted environment. Bun local archive asse
 
 npm, pnpm, and Yarn must not report `true` for `config get ignore-scripts`. Setup runs normal installation without script suppression. Generated helpers use `<manager> run its-checks:<name>`; keep commands compatible with POSIX `/bin/sh`.
 
-Other versions, Windows, macOS, custom script shells, production-only installs, Yarn Berry/PnP, and manager plugin/config overrides are not supported claims. Workspace behavior, registry authentication, peer/optional/platform dependency combinations, aliases, Git/linked-directory dependencies, and changed-in-place local archives are not established. Use immutable local archive paths for updates. The manager matrix establishes adapter reconciliation and lifecycle behavior, not the current whole Oxc/plugin policy graph's compatibility on each manager.
+Other versions, Windows, macOS, custom script shells, production-only installs, Yarn Berry/PnP, and manager plugin/config overrides are not supported claims. Workspace behavior, registry authentication, general peer/optional/platform dependency combinations, aliases, Git/linked-directory dependencies, and changed-in-place local archives are not established. Use immutable local archive paths for updates. The manager matrix establishes adapter reconciliation and lifecycle behavior, not the current whole Oxc/plugin policy graph's compatibility on each manager.
 
 ## Select the manager
 
@@ -52,6 +52,8 @@ The actual executable must match the table. Same-manager declarations must use t
 ## Installation and no-op behavior
 
 Setup checks the environment before writing. Dependency assessment compares semantic requirements, lock requirements/resolutions, native inventory, direct installed versions, and manager-specific store/link state. JSON whitespace, object-key order, and manifest mtime alone do not request installation. Missing packages, stale locks, or missing inventory still request installation even if configuration matches. Native metadata is not a cryptographic check of every installed file.
+
+Dependency removal deletes the declared direct requirement, not every installed copy. npm and Yarn may keep a hoisted package when another package's native lock entry still references it as a dependency or peer. That incidental installation is accepted only alongside matching native lock/inventory and the adapter's installed-version checks. pnpm and Bun's isolated layouts may keep the incidental copy separately while removing the old direct link. Unreferenced obsolete root packages still request reconciliation.
 
 Plan changes to root lifecycle commands or their generated `its-checks:` helpers request installation. With a lifecycle command present, planned changes to configuration files also request installation so that lifecycle execution sees the new configuration. Unrelated manifest fields and non-lifecycle scripts alone do not request it.
 
