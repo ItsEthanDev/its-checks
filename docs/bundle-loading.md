@@ -1,6 +1,6 @@
 # Bundle-loading reference
 
-`src/bundles.ts` is the public read-only seam. This module discovers and validates external policy; it does not compose a plan, bind input answers, write target files, install packages, or execute policy. There is no shipped policy yet.
+`src/bundles.ts` is the public read-only seam. This module discovers and validates external policy; it does not compose a plan, bind input answers, write target files, install packages, or execute policy. [Shipped policy](policy-compatibility.md) is maintained separately under `policy/`; [fork authors](fork-author.md) edit its declarations and native files.
 
 ## Development
 

@@ -55,7 +55,7 @@ Each bundle may supply either `.json` or `.jsonc` for each tool, not both. Both 
 
 Map fields must be objects; list fields must be arrays. Other native fields remain opaque and are not checked against an Oxc schema here. Top-level `null` is an atomic value, not an installer deletion instruction. Paths in fragments, overrides, installed-package presets, and plugin entries are authored relative to the **target package root** and remain unchanged. The output does not reference generator-local policy fragments.
 
-The [Oxc research](research/oxc-configuration.md) is not released-version proof. No tool version compatibility is asserted by this composer. Release/tool compatibility, accepted native option shapes, and actual plugin behavior require #11 verification. Composition does not rely on undocumented native inheritance.
+The [Oxc research](research/oxc-configuration.md) is not released-version proof. No tool version compatibility is asserted by this composer. [Shipped-policy compatibility](policy-compatibility.md) records separate released-package execution, accepted native options, and plugin evidence. Composition does not rely on undocumented native inheritance.
 
 ## Dependencies and the shared manifest
 

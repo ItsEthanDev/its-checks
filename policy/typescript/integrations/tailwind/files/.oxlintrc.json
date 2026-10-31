@@ -1,0 +1,8 @@
+{
+  "jsPlugins": ["eslint-plugin-tailwindcss"],
+  "settings": { "tailwindcss": { "cssConfigPath": "src/styles.css" } },
+  "rules": {
+    "tailwindcss/no-contradicting-classname": "error",
+    "tailwindcss/important-modifier-suffix": "error"
+  }
+}

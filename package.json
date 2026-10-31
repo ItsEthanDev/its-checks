@@ -8,7 +8,8 @@
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "test:managers": "node --test --test-concurrency=1 test/real-managers.integration.ts",
-    "test:cli": "python3 test/cli.pty.py"
+    "test:cli": "python3 test/cli.pty.py",
+    "test:policy": "node --test --test-concurrency=1 test/policy-compatibility.integration.ts"
   },
   "dependencies": {
     "@clack/prompts": "1.8.1",

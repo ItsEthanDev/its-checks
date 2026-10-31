@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/ItsEthanDev/its-checks",
+    "revision": "85e709004b65df77a1fa13ac8f7c119784c82602",
+    "selectionSchema": "schemas/selections.schema.json"
+  }
+}

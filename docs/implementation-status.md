@@ -18,7 +18,7 @@ Initial baseline: `3422686` on `main`. No Git remote is configured; GitHub API c
 | #8 | Dedicated workflow conflicts, marked shared hooks and unrelated-content preservation | #7 | accepted |
 | #9 | Target npm/pnpm/Yarn/Bun detection, actual install-state/no-op/retry, lifecycle and runner behavior | #7 | accepted (bounded matrix) |
 | #10 | Interactive-only Clack flow, explicit choices each run, inputs, cancellation, one conflict confirmation, truthful reporting | #4, #8, #9 | accepted |
-| #11 | Real baseline/Tailwind/Husky/Actions policy compatibility; policy-only changes; author guidance and owner acceptance fixture | #10 | pending |
+| #11 | Real baseline/Tailwind/Husky/Actions policy compatibility; policy-only changes; author guidance and owner acceptance fixture | #10 | machine work accepted; human gate pending |
 | #2 | Git-reference distribution, executable freshness/caching, upstream/fork launch experiments | separate authorization | deferred |
 
 Final machine acceptance belongs to the orchestrator. Owner-independent baseline/integration editing remains a human gate; packaging #2 remains deferred.
@@ -62,6 +62,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #7 recovery correction: independent review found selection-first writes lost deselection identity on later filesystem failure. Fixed by selection-last-before-dependencies and staged complete selection publication; failed-cleanup/replan and partial-selection-write regressions pass. Orchestrator integrated suite: 140 passed and typecheck passed (includes pending #11 policy tests). Real npm shipped-policy/Husky suite also passed. Final review finding resolved; transient sibling is not historical state.
 
+- #11: accepted functional policy and author/owner artifacts after inspecting native files and tests. Orchestrator `npm test`: 140 passed; typecheck passed; `npm run test:policy`: 1 passed, 2 normal npm adapter installs following lifecycle-graph audit, real Oxfmt/Oxlint/Tailwind checks/fixes, real local Husky pass/fail, matching no-op. Evidence: `test/policy.test.ts`, `test/policy-compatibility.integration.ts`, `docs/policy-compatibility.md`. Full policy graph on pnpm/Yarn/Bun unverified; remote Actions not executed. Human independent editing pass still pending. Observed 7 moderate transitive plugin-peer advisories documented; no automatic override. Schema content is locally pinned; remote URL availability unverified.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -82,5 +84,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 - [#10 terminal flow and retired-selection reconciliation](https://github.com/ItsEthanDev/its-checks/issues/10#issuecomment-6542098294).
 
 - [#7 recovery finding](https://github.com/ItsEthanDev/its-checks/issues/7#issuecomment-6542128363) and [verified correction](https://github.com/ItsEthanDev/its-checks/issues/7#issuecomment-6542231478), superseding selection-first ordering.
+
+- [#11 initial policy and compatibility tradeoffs](https://github.com/ItsEthanDev/its-checks/issues/11#issuecomment-6542237245).
+- [Schema revision/publication distinction](https://github.com/ItsEthanDev/its-checks/issues/1#issuecomment-6542238502).
 
 Final review index belongs on spec #1.

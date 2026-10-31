@@ -1,0 +1,27 @@
+{
+  "name": "TypeScript",
+  "description": "Oxfmt formatting and Oxlint correctness checks",
+  "scripts": {
+    "format:check": "oxfmt --check .",
+    "format": "oxfmt .",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "oxlint --fix --deny-warnings .",
+    "check": "node --run format:check && node --run lint"
+  },
+  "devDependencies": {
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0"
+  },
+  "migration": {
+    "removeFiles": [
+      ".prettierrc",
+      ".prettierrc.json",
+      "prettier.config.js",
+      "prettier.config.mjs",
+      ".eslintrc.json",
+      "eslint.config.js",
+      "eslint.config.mjs"
+    ],
+    "removeDevDependencies": ["prettier"]
+  }
+}

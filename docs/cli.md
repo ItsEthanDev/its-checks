@@ -1,6 +1,6 @@
 # Interactive source CLI
 
-`src/cli.ts` connects the read-only planner and exact-plan application through Effect **4.1.1** and native **@clack/prompts 1.8.1**. There is no shipped policy yet; this source entrypoint requires an authored `policy/` in the executed checkout. Release policy belongs to #11. Compiled executables, package-manager launch commands, and Git-reference distribution remain unverified and are not supplied here.
+`src/cli.ts` connects the read-only planner and exact-plan application through Effect **4.1.1** and native **@clack/prompts 1.8.1**. The source entrypoint loads the shipped editable `policy/` in the executed checkout; see [released policy compatibility](policy-compatibility.md) and [fork-author guidance](fork-author.md). Compiled executables, package-manager launch commands, and Git-reference distribution remain unverified and are not supplied here.
 
 With Node 24+, run the source entrypoint from the package you want to configure:
 

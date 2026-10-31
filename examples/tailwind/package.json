@@ -1,0 +1,6 @@
+{
+  "name": "tailwind-example",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.19.0"
+}

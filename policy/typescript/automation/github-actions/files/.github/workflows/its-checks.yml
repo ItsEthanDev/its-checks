@@ -1,0 +1,56 @@
+# its-checks: managed
+name: Quality
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Read package manager
+        id: manager
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const supported = { npm: '11.19.0', pnpm: '12.9.0', yarn: '1.22.22', bun: '1.4.0' };
+          const declared = JSON.parse(fs.readFileSync('package.json')).packageManager;
+          const [name, version] = (declared ?? '').split('@');
+          if (!supported[name] || version?.split('+')[0] !== supported[name]) {
+            throw new Error('Set packageManager to an exact tested version; see its-checks docs/package-managers.md');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `name=${name}\nversion=${supported[name]}\n`);
+          NODE
+      - uses: pnpm/action-setup@v4
+        if: steps.manager.outputs.name == 'pnpm'
+        with:
+          version: 12.9.0
+          run_install: false
+      - uses: oven-sh/setup-bun@v2
+        if: steps.manager.outputs.name == 'bun'
+        with:
+          bun-version: 1.4.0
+      - name: Install npm or Yarn
+        if: steps.manager.outputs.name == 'npm' || steps.manager.outputs.name == 'yarn'
+        env:
+          MANAGER: ${{ steps.manager.outputs.name }}
+          VERSION: ${{ steps.manager.outputs.version }}
+        run: npm install --global "$MANAGER@$VERSION"
+      - name: Install locked dependencies
+        env:
+          HUSKY: "0"
+          MANAGER: ${{ steps.manager.outputs.name }}
+        run: |
+          case "$MANAGER" in
+            npm) npm ci ;;
+            pnpm) pnpm install --frozen-lockfile ;;
+            yarn) yarn install --frozen-lockfile ;;
+            bun) bun install --frozen-lockfile ;;
+          esac
+      - run: node --run check
