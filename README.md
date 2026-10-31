@@ -20,3 +20,4 @@ After setup, run `node --run fmt` to format or `node --run check` to check forma
 - [Usage](docs/usage.md): setup, daily commands, reruns, conflicts, and recovery.
 - [Policy reference](docs/policy.md): edit opinions, add bundles, declare inputs, and manage cleanup.
 - [Package managers](docs/package-managers.md): exact versions, required settings, and retry limits.
+- [Distribution validation](docs/distribution.md): experimental Git launch results and remaining checks.
