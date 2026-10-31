@@ -17,7 +17,7 @@ Initial baseline: `3422686` on `main`. No Git remote is configured; GitHub API c
 | #7 | Approved-plan-only application, no-op writes, intent before installation, truthful partial failure/retry | #4–#6 | accepted |
 | #8 | Dedicated workflow conflicts, marked shared hooks and unrelated-content preservation | #7 | accepted |
 | #9 | Target npm/pnpm/Yarn/Bun detection, actual install-state/no-op/retry, lifecycle and runner behavior | #7 | accepted (bounded matrix) |
-| #10 | Interactive-only Clack flow, explicit choices each run, inputs, cancellation, one conflict confirmation, truthful reporting | #4, #8, #9 | pending |
+| #10 | Interactive-only Clack flow, explicit choices each run, inputs, cancellation, one conflict confirmation, truthful reporting | #4, #8, #9 | accepted |
 | #11 | Real baseline/Tailwind/Husky/Actions policy compatibility; policy-only changes; author guidance and owner acceptance fixture | #10 | pending |
 | #2 | Git-reference distribution, executable freshness/caching, upstream/fork launch experiments | separate authorization | deferred |
 
@@ -58,6 +58,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #9: accepted supported matrix after source/test inspection and orchestrator execution. `npm test`: 126 passed; typecheck passed; `npm run test:managers`: 4 passed, 24 real installs including 4 late lifecycle failures, retry/no-op/update/remove/lock drift/wrappers. Exact environments: npm 11.19.0; pnpm 12.9.0 with CLI management disabled; Yarn Classic 1.22.22; Bun 1.4.0 isolated. See `docs/package-managers.md`. Yarn Berry/PnP and other versions/platforms unsupported. Bun failure without an eligible generated direct dependency link cannot guarantee retry; external/abrupt lifecycle-only failures can leave indistinguishable state. These limits are not claimed passed. CLI must preview dependency/environment assessment before mutation.
 
+- #10: accepted Effect workflow and native Clack presentation after source/test inspection. Integrated `npm test`: 136 passed; typecheck passed; `ITS_CHECKS_SHOW_TERMINAL=1 npm run test:cli`: 4 passed. Orchestrator inspected real rendered choices, saved numeric/boolean/string/path prefills, removal plan and single declined confirmation. Child also reran real-manager suite: 4 passed; final orchestration will rerun all suites. Evidence: `test/workflow.test.ts`, `test/cli.pty.py`, `docs/cli.md`. Linux PTY path only; source CLI, no distribution claim.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -74,5 +76,7 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 - [#8 native ownership markers and reversible hook blocks](https://github.com/ItsEthanDev/its-checks/issues/8#issuecomment-6541859120).
 
 - [#9 native retry evidence](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6541870999), [Bun refinement](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6541881532), [tested matrix and evidence](https://github.com/ItsEthanDev/its-checks/issues/9#issuecomment-6542010741).
+
+- [#10 terminal flow and retired-selection reconciliation](https://github.com/ItsEthanDev/its-checks/issues/10#issuecomment-6542098294).
 
 Final review index belongs on spec #1.
