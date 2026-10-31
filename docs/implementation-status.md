@@ -14,7 +14,7 @@ Initial baseline: `3422686` on `main`. No Git remote is configured; GitHub API c
 | #4 | Saved intent, offline revision-pinned schema/source provenance, declared inputs of every bundle kind, prefill/binding | #3 | accepted |
 | #5 | Standalone config composition, dependency collision checks, targeted manifest edits, explicit migration and no-history deselection, deterministic read-only plans | #3, #4 | accepted |
 | #6 | Same-name sequential fail-fast scripts, exact deduplication, reserved helpers, intact wrappers/restoration and edit conflicts | #5 | accepted |
-| #7 | Approved-plan-only application, no-op writes, intent before installation, truthful partial failure/retry | #4–#6 | pending |
+| #7 | Approved-plan-only application, no-op writes, intent before installation, truthful partial failure/retry | #4–#6 | accepted |
 | #8 | Dedicated workflow conflicts, marked shared hooks and unrelated-content preservation | #7 | pending |
 | #9 | Target npm/pnpm/Yarn/Bun detection, actual install-state/no-op/retry, lifecycle and runner behavior | #7 | pending |
 | #10 | Interactive-only Clack flow, explicit choices each run, inputs, cancellation, one conflict confirmation, truthful reporting | #4, #8, #9 | pending |
@@ -52,6 +52,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #6: accepted script adapter after inspecting code and real-shell feature tests. Integrated `npm test`: 88 passed; typecheck passed. Evidence: `test/scripts.test.ts`, `docs/scripts.md`. Real Linux `/bin/sh` (Bash), fake manager runners only; actual manager/lifecycle evidence remains #9.
 
+- #7: accepted application after source/feature-test inspection. Integrated `npm test`: 101 passed; typecheck passed. Evidence: `test/application.test.ts`, `docs/application.md`. Partial filesystem/dependency failures are exercised through external seams; actual manager state remains #9. No rollback or concurrent-filesystem sandbox claim.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -62,5 +64,7 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - [Shared #6/#9 runner and shell contract](https://github.com/ItsEthanDev/its-checks/issues/1#issuecomment-6541718736).
 - [#6 wrapper recognition and namespace conflicts](https://github.com/ItsEthanDev/its-checks/issues/6#issuecomment-6541765788).
+
+- [#7 approval, partial writes and recovery contract](https://github.com/ItsEthanDev/its-checks/issues/7#issuecomment-6541816469).
 
 Final review index belongs on spec #1.
