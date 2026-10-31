@@ -1,90 +1,75 @@
-# Target-project package managers
+# Target package managers
 
-`src/package-managers.ts` resolves the target manager, supplies its script planner, and implements `ApplicationDependencies`. It does not choose a launch/distribution manager, change dependency requirements, persist success state, or present prompts.
+Install the target manager yourself and make its exact executable available on `PATH`. The manager used to install checkout dependencies does not select the target manager.
 
-## Resolve before planning
+## Supported environments
 
-```ts
-const resolution = yield* resolveTargetManager(projectRoot);
-// Present a question when resolution.kind === "question"; do not mutate or default.
-// Feed the explicit answer back to resolveTargetManager(projectRoot, answer).
-if (resolution.kind === "resolved") {
-  const target = resolution.target;
-  const plan = yield* planProject(projectRoot, resolvedPolicy, {
-    scripts: target.scripts,
-  });
-  const dependencies = createDependencyAdapter(target);
-  const dependencyPreview = yield* dependencies.assess(plan); // optional, read-only
-  // Present this exact plan and obtain approval before applyPlan.
-  const report = yield* applyPlan(plan, { approved: true, dependencies });
-}
-```
+The adapter's tested environment is Linux x64, Node **24.21.0**, POSIX `/bin/sh`, normal lifecycle execution, and development dependencies enabled.
 
-`resolveTargetManager` reads the current directory's `package.json`, `packageManager`, and lockfile presence. npm evidence includes `package-lock.json` and `npm-shrinkwrap.json`; pnpm uses `pnpm-lock.yaml`; Yarn uses `yarn.lock`; Bun uses `bun.lock` or legacy `bun.lockb`. Multiple files for the same manager identify that manager. Missing evidence, unknown/malformed declarations, different-manager lockfiles, and declaration/lock disagreement return a `question` with evidence and all four choices. A declaration does not silently override conflicting locks. An explicit answer selects the manager; other declarations/lockfiles remain untouched. A subsequent invocation can therefore ask again until the project resolves its evidence.
-
-Resolution identifies a manager, not compatibility. The adapter checks the actual executable version and rejects an unsupported same-manager declaration before launching it. Integrity suffixes on an otherwise exact `packageManager` version are accepted. No semver compatibility range is asserted. A declaration for a different manager can remain after an explicit answer; the chosen manager's executable must still match the tested version.
-
-## Tested environments
-
-All real checks ran on Linux x64, Node **24.21.0**, POSIX `/bin/sh`, normal lifecycle execution, development dependencies enabled, and isolated temporary packages. Windows, macOS, custom script shells, production-only installs, Yarn Berry, PnP, and other versions are not claimed.
-
-| Target | Exact version | Required environment | Runner |
-| --- | --- | --- | --- |
-| npm | 11.19.0 | npm lock v3 and regular `node_modules` | `npm run its-checks:<name>` |
-| pnpm | 12.9.0 | Default isolated linker; project `.npmrc` contains `manage-package-manager-versions=false` | `pnpm run its-checks:<name>` |
-| Yarn Classic | 1.22.22 | Default `node_modules`; no PnP | `yarn run its-checks:<name>` |
-| Bun | 1.4.0 | Text `bun.lock`; explicit `[install]` / `linker = "isolated"` in `bunfig.toml` | `bun run its-checks:<name>` |
-
-The adapter rejects missing required pnpm/Bun configuration instead of changing a project's linker or CLI-management policy. pnpm's CLI-management feature can download a CLI and write extra lockfile documents even during inspection; disabling it is necessary for the read-only seam. Native multi-document pnpm locks are parsed without treating the CLI-management document as the package importer. npm/pnpm/Yarn `config get ignore-scripts` must not report `true`.
-
-Yarn Classic is a repo-local development dependency so `npm run test:managers` has a Yarn binary without a system installation. Its preinstall script only handles global Corepack symlinks; it was inspected and installation used `--ignore-scripts`. Yarn 4.14.0 was probed but is **not supported**: its portable shell did not execute the existing multiline POSIX wrappers correctly, and normal Yarn 4 installation did not execute root `prepare`. No policy workaround or Yarn 4 compatibility claim is included.
-
-The real suite uses pinned local `.tgz` fixtures without package scripts, remote dependencies, or binaries. This establishes direct dependency installation/reconciliation, not Oxc/Tailwind/native package compatibility (#11). Registry authentication, workspaces, peer/optional/platform dependency combinations, aliases, git/linked-directory dependencies, changed-in-place local archives, and manager plugin/config overrides are not established by these checks. Use immutable local archive paths for updates. Bun local archive assessment also requires POSIX `tar` to read `package/package.json` without extracting or executing it.
-
-## Assessment and exact-manifest installation
-
-`assess(plan)` returns `required` or `not-required` without installation. Before application, differences between disk and the approved manifest imply work. After configuration is written, application **always reassesses**; a preview is not cached authorization or proof of success. Saved selections never control dependency necessity.
-
-Assessment compares the exact approved manifest to disk, then checks native state:
-
-- npm: root lock requirements, installed hidden-lock entries, and locked installed package versions; platform-omitted optional entries can be absent.
-- pnpm: importer requirements, equality of the package lock document and virtual-store lock, native modules metadata, and direct installed versions.
-- Yarn Classic: top-level integrity patterns, lock resolutions against native integrity entries, and direct installed versions.
-- Bun: workspace requirements, lock resolutions, installed direct versions, and direct links into the project's `.bun` store. Local archives additionally check archive integrity and the installed store location against the requested archive.
-
-Native metadata missing, missing packages, wrong versions, stale resolutions, or mismatched locks request work. Pending approved configuration changes with root lifecycle scripts also request installation. npm/pnpm/Yarn additionally compare manifest freshness with native install metadata. These are state/inventory checks, not cryptographic verification of every installed file or proof that intact native metadata cannot hide transitive/content corruption.
-
-`install(plan)` refuses a disk manifest differing from the approved bytes, runs normal `<manager> install` with no script-suppressing or add/remove/version-selection flags, verifies the manifest stayed exact, and assesses the resulting state. An exit-zero subprocess with mismatched installed state is a failure. Native managers resolve the literal planned requirements; the adapter implements no version resolver. Lifecycle commands see the already-written configuration and intended selections. Existing project scripts and unrelated dependencies remain in the approved manifest.
-
-Before a required npm/pnpm/Yarn installation, the adapter invalidates their disposable native inventory, forcing missing links to be reconciled rather than trusting a stale fast path. It never does this on a matching no-op. Bun 1.4 leaves some obsolete direct links after normal installation; the adapter unlinks only a dependency explicitly removed by the approved package entries, absent from every remaining dependency section, and pointing into the target's `.bun` store. This reconciliation runs after installation even on failure, provided the manifest still matches the approved bytes. A fresh plan after saved intent changes may no longer identify the removed dependency. Failure diagnostics list any reconciled removals as partial effects. Store package contents, unrelated links, regular package directories, and authored lockfiles are not deleted.
-
-## Failure and retry limits
-
-Normal install is not transactional. The adapter returns `OperationError` through the common [application report](application.md), preserving subprocess diagnostics and stating that configuration, saved intent, lockfile changes, and lifecycle effects remain. It never describes partial work as success or rollback.
-
-On an **observed adapter installation failure**, retry evidence is invalidated using existing installation artifacts only:
-
-| Manager | Invalidated artifact | Why normal installation recreates it |
+| Manager | Exact version | Required target environment |
 | --- | --- | --- |
-| npm | `node_modules/.package-lock.json` | Disposable hidden inventory of installed packages |
-| pnpm | `node_modules/.modules.yaml` and `node_modules/.pnpm-workspace-state-v1.json` | Modules layout inventory and fast-path workspace validation cache |
-| Yarn Classic | `node_modules/.yarn-integrity` | Installed-tree integrity inventory |
-| Bun isolated | One direct dependency symlink named by the approved manifest, verified to point inside target `node_modules/.bun` | Missing direct dependency is relinked from the retained store |
+| npm | 11.19.0 | Lockfile v3 and regular `node_modules` |
+| pnpm | 12.9.0 | Default isolated linker; project `.npmrc` setting below |
+| Yarn Classic | 1.22.22 | Default `node_modules`; no PnP |
+| Bun | 1.4.0 | Text `bun.lock`; explicit isolated linker setting below |
 
-No authored lockfile, manifest, dependency package directory, symlink target, historical ownership file, or new success marker is deleted/created for recovery. Nonregular native metadata is not removed. Invalidation failure reports both the original installation failure and the invalidation problem, explicitly saying retry is not guaranteed.
+For pnpm, put this in the target's `.npmrc`:
 
-**Bun recovery is blocked when no approved direct dependency symlink into its store exists**, including dependency-free late lifecycle failures or a hoisted installation. The adapter reports this rather than deleting broader content. The verified Bun failure/retry case retains direct dependencies. This limitation is not a guarantee of recovery for every Bun project.
-
-Native artifacts alone cannot prove that an arbitrary root lifecycle script completed. npm can write lock/inventory state before root lifecycle execution. External installs, abrupt termination before invalidation, and independently edited lifecycle/configuration without corresponding native evidence can therefore leave an indistinguishable state. Those cases are **not established recovery guarantees**; inspect/fix the lifecycle failure and invalidate native install inventory or the affected installed dependency before rerunning. There is deliberately no persistent installer success/history file. Filesystem checks are not a concurrency lock or a sandbox for untrusted lifecycle scripts.
-
-## Verification commands
-
-```sh
-npm test
-npm run typecheck
-npm run test:managers
+```ini
+manage-package-manager-versions=false
 ```
 
-The ordinary suite tests manager questions and application behavior through `ManagerOperations.run(command, args, cwd)`, substituting only external processes. It checks exact approved manifests, configuration-before-install, matching no-op, actual version drift, late failures and retries, exit-zero false success, process errors, disabled lifecycle/environment errors, and invalidation failure. The shared fixture's `install: exit 99` is preserved but never executed.
+This prevents CLI management from downloading a CLI or changing lock state during read-only assessment. Setup rejects a missing setting instead of changing it.
 
-`test/real-managers.integration.ts` is separate from `npm test`. All four prerequisites are mandatory: an absent/wrong manager fails the suite instead of silently skipping. The documented command prepends repo-local Yarn through npm's normal script PATH. Four real-manager cases perform 25 installations total: six each for npm/pnpm/Yarn and seven for Bun. Each manager has an intentional root `postinstall` failure; Bun also fails during integration deselection, then replans from saved intent and retries without retaining the removed dependency's direct link. They verify additions, archive/version updates, explicit removals, unrelated dependency preservation, config-first lifecycle execution, stale locks, missing-link repair, failure with dependencies/locks already present, retained intent/configuration, successful retry, repeated zero-install no-ops, and actual generated public/helper wrappers. All fixture scripts are visible at the top of the test and perform only local Node filesystem operations; archives contain only an inspected manifest with no scripts. A temporary local tar archive is a dependency fixture, not a distribution/publishing experiment. Set `ITS_CHECKS_KEEP_FIXTURES=1` only for local diagnosis when retaining temporary test directories is desired.
+For Bun, put this in the target's `bunfig.toml`:
+
+```toml
+[install]
+linker = "isolated"
+```
+
+Setup rejects a missing setting or a hoisted environment. Bun local archive assessment also needs POSIX `tar` to read the archive's package manifest.
+
+npm, pnpm, and Yarn must not report `true` for `config get ignore-scripts`. Setup runs normal installation without script suppression. Generated helpers use `<manager> run its-checks:<name>`; keep commands compatible with POSIX `/bin/sh`.
+
+Other versions, Windows, macOS, custom script shells, production-only installs, Yarn Berry/PnP, and manager plugin/config overrides are not supported claims. Workspace behavior, registry authentication, peer/optional/platform dependency combinations, aliases, Git/linked-directory dependencies, and changed-in-place local archives are not established. Use immutable local archive paths for updates. The manager matrix establishes adapter reconciliation and lifecycle behavior, not the current whole Oxc/plugin policy graph's compatibility on each manager.
+
+## Select the manager
+
+Setup reads the target's `packageManager` and these lockfiles:
+
+| Manager | Evidence |
+| --- | --- |
+| npm | `package-lock.json`, `npm-shrinkwrap.json` |
+| pnpm | `pnpm-lock.yaml` |
+| Yarn | `yarn.lock` |
+| Bun | `bun.lock`, legacy `bun.lockb` |
+
+Legacy Bun lock presence identifies the manager; it does not establish a supported installed environment. Missing evidence, malformed declarations, or disagreement asks you to choose. A declaration does not override conflicting locks. Your answer leaves existing declarations/lockfiles untouched, so ambiguity can recur.
+
+The actual executable must match the table. Same-manager declarations must use the exact version, for example `npm@11.19.0`; integrity suffixes are accepted, ranges are not. An explicit choice can leave a different-manager declaration, but does not waive executable/environment checks. The [Actions workflow](../policy/typescript/automation/github-actions/files/.github/workflows/its-checks.yml) additionally requires an exact supported declaration and committed compatible lockfile.
+
+## Installation and no-op behavior
+
+Setup checks the environment before writing. It compares the approved manifest, lock requirements/resolutions, native inventory, direct installed versions, and manager-specific store/link state. Missing packages, stale locks, or missing inventory request installation even if configuration matches. Native metadata is not a cryptographic check of every installed file.
+
+When needed, setup runs normal `<manager> install`, requires the manifest to remain exactly approved, and checks resulting installed state. A zero exit status with mismatched state is still a failure. Requirements are passed literally to the manager, not independently resolved by setup. A matching package has no installation or inventory invalidation.
+
+## Failure and retry
+
+Installation is not transactional. Configuration, intent, lockfile changes, and lifecycle effects remain after failure. Inspect and fix the cause, then [rerun from a fresh plan](usage.md#recover-from-failure).
+
+On an observed installation failure, setup invalidates only these disposable artifacts to make work visible on retry:
+
+| Manager | Retry artifact |
+| --- | --- |
+| npm | `node_modules/.package-lock.json` |
+| pnpm | `node_modules/.modules.yaml` and `node_modules/.pnpm-workspace-state-v1.json` |
+| Yarn Classic | `node_modules/.yarn-integrity` |
+| Bun isolated | One approved direct dependency symlink verified to point into the target's `node_modules/.bun` store |
+
+npm/pnpm/Yarn also invalidate their inventory before a required install to avoid stale fast paths. Nonregular metadata is not removed. Bun reconciles obsolete direct store links only for explicitly approved removed dependencies absent from remaining dependency sections, even after a failed install if the manifest still matches. Store contents and unrelated links remain.
+
+**Bun retry is not guaranteed without an eligible approved direct dependency link**, including dependency-free late lifecycle failures. An invalidation failure is reported alongside the original failure. Setup does not delete broader dependency trees or authored lockfiles for recovery.
+
+Native inventory cannot prove arbitrary root lifecycle completion. External installs, abrupt termination before invalidation, or independent lifecycle/configuration edits can leave apparently complete installed state. Inspect the failure and invalidate the relevant native inventory or affected installed dependency before rerunning; automatic recovery is not guaranteed. No persistent success marker or installation history is stored.
