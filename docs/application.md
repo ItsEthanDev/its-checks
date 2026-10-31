@@ -26,7 +26,7 @@ A snapshot check is not a filesystem lock. Root ancestors are trusted local path
 - `assess(plan)` is read-only and returns `"required"` or `"not-required"` from actual dependency state. It runs even when every configuration file matches. Do not use saved intent as proof of installation or treat unchanged manifest requirements as proof of installed packages.
 - `install(plan)` reconciles the approved manifest when assessment returns `"required"`. It must not choose different requirements or independently replan configuration. Return `OperationError` on failure, including a useful description of any observed downstream partial work.
 
-The adapter is required; application supplies no pretend-success default. A matching, installed project has no writes or installation. A matching project after a failed installation can still request installation. Manager detection, actual dependency-state checks, manager commands, lockfiles, and lifecycle behavior belong to the package-manager adapter (#9), not this module.
+The adapter is required; application supplies no pretend-success default. A matching, installed project has no writes or installation. A matching project after a failed installation can still request installation. `createDependencyAdapter(target)` implements this seam using the [target-package-manager contract](package-managers.md): explicit resolution, tested versions/environments, native lock/installed-state inspection, normal installation, and bounded failure invalidation. These operations remain outside application itself.
 
 ## Filesystem adapter and reports
 
@@ -49,4 +49,4 @@ Application stops at the first typed failure. It does not attempt later writes o
 
 `test/application.test.ts` uses temporary projects and real native policy, applying plans through the public interface. It covers declined/unapproved, incomplete and stale plans; exact approved output despite later policy edits; replacement, explicit migration and deselection; unrelated manifest/files; executable and existing modes; missing parents; matching bytes and mtimes with forbidden mutation adapters; symlinks; injected partial filesystem failure; retained configuration/intent on install failure; and matching-config recovery through the dependency seam.
 
-Run `npm test` and `npm run typecheck`. These tests do not execute the fixture's existing `install: exit 99`, real package managers, hooks, UI, remote services, distribution, or compatibility experiments. Actual dependency-state detection is not established by the test adapter.
+Run `npm test` and `npm run typecheck`. These tests do not execute the fixture's existing `install: exit 99`, real package managers, hooks, UI, remote services, distribution, or compatibility experiments. The separate [package-manager suites](package-managers.md#verification-commands) establish actual direct dependency reconciliation and bounded native lifecycle recovery for the documented versions/environments.
