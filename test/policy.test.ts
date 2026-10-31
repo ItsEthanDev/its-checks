@@ -12,13 +12,14 @@ import { createScriptPlanner } from "../src/scripts.ts";
 import { loadPreviousIntent } from "../src/selections.ts";
 
 const run = Effect.runPromise;
-const shipped = path.resolve("policy");
+// Fixed, test-owned native policy; operational policy/ choices are not test expectations.
+const referencePolicy = path.resolve("test/fixtures/policies/reference");
 const all = { integrations: ["tailwind"], automation: ["husky", "github-actions"] };
-const answers = { "integrations/tailwind": { "formatter-stylesheet": "src/styles.css", "linter-stylesheet": "src/styles.css" } };
+const answers = { "integrations/tailwind": { "formatter-stylesheet": "src/theme.css", "linter-stylesheet": "src/theme.css" } };
 const noInstall = { assess: () => Effect.succeed("not-required" as const), install: () => Effect.die("Unexpected installation") };
 
 // Approved seams: discovery, planning and application with native policy; dependency effects only are substituted.
-test("shipped policy composes, preserves shared content, reruns, and removes only current-known deselections", async (t) => {
+test("reference policy composes, preserves shared content, reruns, and removes only current-known deselections", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ name: "fixture", scripts: { check: "echo original" }, custom: true }));
@@ -27,7 +28,7 @@ test("shipped policy composes, preserves shared content, reruns, and removes onl
   await fs.mkdir(path.join(root, ".github/workflows"), { recursive: true });
   await fs.writeFile(path.join(root, ".github/workflows/app.yml"), "name: untouched\n");
   await fs.writeFile(path.join(root, "prettier.config.js"), "throw Error('never evaluate migration');\n");
-  const loaded = await run(loadPolicy(shipped, all));
+  const loaded = await run(loadPolicy(referencePolicy, all));
   const resolved = await run(resolveInputs(loaded, answers));
   const options = { scripts: createScriptPlanner("npm") };
   const initial = await run(planProject(root, resolved, options));
@@ -43,11 +44,14 @@ test("shipped policy composes, preserves shared content, reruns, and removes onl
   assert.equal(lint.rules["no-debugger"], "error");
   assert.equal(lint.rules["tailwindcss/no-contradicting-classname"], "error");
   assert.deepEqual(lint.jsPlugins, ["eslint-plugin-tailwindcss"]);
+  assert.equal(lint.settings.tailwindcss.cssConfigPath, "src/theme.css");
+  const format = JSON.parse(await fs.readFile(path.join(root, ".oxfmtrc.json"), "utf8"));
+  assert.equal(format.sortTailwindcss.stylesheet, "src/theme.css");
   assert.match(await fs.readFile(path.join(root, ".husky/pre-commit"), "utf8"), /^echo unrelated\n/);
   await assert.rejects(fs.stat(path.join(root, "prettier.config.js")), { code: "ENOENT" });
   const repeated = await run(planProject(root, resolved, options));
   assert.ok(repeated.files.every((file) => file.kind === "noop"));
-  const base = await run(resolveInputs(await run(loadPolicy(shipped, { integrations: [], automation: [] })), {}));
+  const base = await run(resolveInputs(await run(loadPolicy(referencePolicy, { integrations: [], automation: [] })), {}));
   const cleanup = await run(planProject(root, base, { ...options, previous: resolved.intent, currentBundles: loaded.bundles }));
   assert.equal(cleanup.requiresConfirmation, true);
   await run(applyPlan(cleanup, { approved: true, dependencies: noInstall }));
@@ -64,7 +68,7 @@ test("native baseline/integration/declarations edits and a new directory reach o
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-author-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const policy = path.join(root, "policy"), target = path.join(root, "project");
-  await fs.cp(shipped, policy, { recursive: true });
+  await fs.cp(referencePolicy, policy, { recursive: true });
   await fs.mkdir(target);
   await fs.writeFile(path.join(target, "package.json"), '{"name":"author-example"}\n');
   const setup = async (integrations = ["tailwind"]) => {

@@ -17,7 +17,9 @@ import { loadPreviousIntent } from "../src/selections.ts";
 
 const run = Effect.runPromise;
 const exec = promisify(execFile);
-const policy = path.resolve("policy");
+// Fixed toolchain reference, independent of editable policy/.
+// Keep these pins and native files test-owned; do not refresh them from live policy.
+const policy = path.resolve("test/fixtures/policies/reference");
 const empty = { integrations: [], automation: [] };
 const all = { integrations: ["tailwind"], automation: ["husky", "github-actions"] };
 const answers = { "integrations/tailwind": { "formatter-stylesheet": "src/styles.css", "linter-stylesheet": "src/styles.css" } };
@@ -54,7 +56,7 @@ async function inspectInstall(plan: ChangePlan, audit: string, project: string) 
   return count;
 }
 
-test("released baseline + Tailwind + automation through normal npm adapter, real Oxc and local Husky", { timeout: 180_000 }, async (t) => {
+test("pinned reference baseline + Tailwind + automation through normal npm adapter, real Oxc and local Husky", { timeout: 180_000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-compat-"));
   t.after(() => process.env.ITS_CHECKS_KEEP_FIXTURES ? console.error(`Fixture: ${root}`) : fs.rm(root, { recursive: true, force: true }));
   const project = path.join(root, "project");
@@ -94,7 +96,10 @@ test("released baseline + Tailwind + automation through normal npm adapter, real
   assert.match(await good("node_modules/.bin/oxfmt", ["--version"]), /0\.75\.0/);
   assert.match(await good("node_modules/.bin/oxlint", ["--version"]), /1\.90\.0/);
   await fs.writeFile(path.join(project, "src/bad.ts"), "export const bad=()=>{debugger;return 1}\n");
-  assert.notEqual((await command("npm", ["run", "format:check"])).code, 0);
+  const formatCheck = await command("npm", ["run", "format:check"]);
+  assert.notEqual(formatCheck.code, 0);
+  assert.match(formatCheck.output, /src\/bad\.ts/);
+  assert.match(formatCheck.output, /Format issues found in above \d+ files\. Run without `--check` to fix\./);
   assert.match((await command("npm", ["run", "lint"])).output, /no-debugger/);
   await fs.unlink(path.join(project, "src/bad.ts"));
   await good("npm", ["run", "format"]);

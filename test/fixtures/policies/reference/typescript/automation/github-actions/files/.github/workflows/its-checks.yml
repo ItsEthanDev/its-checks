@@ -1,0 +1,8 @@
+# its-checks: managed
+name: Quality
+on: [push]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: node --run check

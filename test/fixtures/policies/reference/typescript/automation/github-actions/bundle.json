@@ -1,0 +1,4 @@
+{
+  "name": "GitHub Actions checks",
+  "description": "Minimal test-owned workflow for native file ownership and edits"
+}
