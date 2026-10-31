@@ -24,8 +24,8 @@ const io = <A>(ctx: Context, operation: () => Promise<A>) => Effect.tryPromise({
 const validate = (ctx: Context, field: string, valid: boolean, detail: string) =>
   valid ? Effect.void : Effect.fail(fail(ctx, field, detail));
 
-/** Portable target-relative names; never interpret Windows paths on a POSIX host. */
-function safePath(value: string): boolean {
+/** @internal Portable target-relative names, shared with saved intent; never interpret Windows paths on POSIX. */
+export function safePath(value: string): boolean {
   return value.length > 0 && !/[\\:<>"|?*\x00-\x1f\x7f]/.test(value) &&
     value.split("/").every((part) => part.length > 0 && part !== "." && part !== ".." &&
       !/[. ]$/.test(part) && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part) &&
@@ -35,7 +35,8 @@ function safePath(value: string): boolean {
 const checkPath = (ctx: Context, field: string, value: string) =>
   validate(ctx, field, safePath(value), `Expected a safe target-relative POSIX path, got ${JSON.stringify(value)}`);
 
-function readText(ctx: Context) {
+/** @internal Strict local UTF-8 read; never follows the final symbolic link. */
+export function readText(ctx: Context) {
   return Effect.gen(function*() {
     const stat = yield* io(ctx, () => fs.lstat(ctx.source));
     yield* validate(ctx, "$", stat.isFile(), "Expected a regular file; symbolic links are not supported");
@@ -47,7 +48,8 @@ function readText(ctx: Context) {
   });
 }
 
-function json(ctx: Context, content: string, comments: boolean) {
+/** @internal Strict JSON/JSONC parsing shared with saved intent. */
+export function json(ctx: Context, content: string, comments: boolean) {
   return Effect.try({
     try: () => {
       const errors: ParseError[] = [];

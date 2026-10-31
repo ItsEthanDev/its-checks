@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "its-checks saved project intent",
+  "description": "Intended integrations, automation, and project-specific input answers for one target package. This is not proof of successful installation and contains no ownership inventory. Repository: https://github.com/ItsEthanDev/its-checks",
+  "$comment": "Source repository: https://github.com/ItsEthanDev/its-checks. Fork authors should update this link. The generator pins each generated file's $schema URL to source.revision; no runtime fetch is required.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schemaVersion", "source", "integrations", "automation", "answers"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri",
+      "description": "HTTPS raw JSON Schema URL at the immutable generating revision. Must match source repository, revision, and selectionSchema; this equality is checked offline by the installer."
+    },
+    "schemaVersion": {
+      "const": 1,
+      "description": "Version of the saved-intent data format."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision", "selectionSchema"],
+      "description": "Editable generator identity copied from policy/bundle.json, not inferred from the target project.",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://",
+          "description": "Generator source repository URL. Credentials, query strings, and fragments are rejected by the installer."
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^(?:[a-f0-9]{40}|[a-f0-9]{64})$",
+          "description": "Full immutable Git commit containing this schema and identifying the generating policy. Branch names and tags are not accepted."
+        },
+        "selectionSchema": {
+          "type": "string",
+          "pattern": "\\.json$",
+          "description": "Safe repository-relative POSIX path to this JSON Schema, normally schemas/selections.schema.json. Absolute/traversing paths and unsafe portable filename components are rejected by the installer."
+        }
+      }
+    },
+    "integrations": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" },
+      "description": "Integration directory IDs to preselect in the next dialogue; not automatic selections."
+    },
+    "automation": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" },
+      "description": "Automation directory IDs to preselect in the next dialogue; not installation status."
+    },
+    "answers": {
+      "type": "object",
+      "propertyNames": { "pattern": "^(?:base|(?:integrations|automation)/[a-z0-9]+(?:-[a-z0-9]+)*)$" },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "$ref": "#/$defs/id" },
+        "additionalProperties": { "type": ["string", "number", "boolean"] },
+        "description": "Answers keyed by declared input ID. Paths are strings relative to the target package; their existence is not required. Input-specific type/path validation uses the current selected declarations."
+      },
+      "description": "Answers namespaced by base, integrations/<id>, or automation/<id>, used only for dialogue prefill. Fresh output contains only currently selected, declared inputs."
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+      "description": "Stable lowercase directory or input ID, optionally separated by hyphens."
+    }
+  }
+}

@@ -11,7 +11,7 @@ Initial baseline: `3422686` on `main`. No Git remote is configured; GitHub API c
 | Ticket | Requirements / acceptance seam | Depends on | Status |
 | --- | --- | --- | --- |
 | #3 | Effect v4 bootstrap; external bundle schemas, native JSONC/shell/YAML, discovery, validation/source errors | none | accepted |
-| #4 | Saved intent, offline revision-pinned schema/source provenance, declared inputs of every bundle kind, prefill/binding | #3 | pending |
+| #4 | Saved intent, offline revision-pinned schema/source provenance, declared inputs of every bundle kind, prefill/binding | #3 | accepted |
 | #5 | Standalone config composition, dependency collision checks, targeted manifest edits, explicit migration and no-history deselection, deterministic read-only plans | #3, #4 | pending |
 | #6 | Same-name sequential fail-fast scripts, exact deduplication, reserved helpers, intact wrappers/restoration and edit conflicts | #5 | pending |
 | #7 | Approved-plan-only application, no-op writes, intent before installation, truthful partial failure/retry | #4–#6 | pending |
@@ -46,8 +46,12 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 - Requirements/bootstrap inspection: native subissue list and complete issue bodies #1–#11 read through GitHub API.
 - #3: accepted bundle-loading seam and exact Effect 4.1.1 harness after inspecting implementation and fixture tests. Integrated `npm test`: 47 passed; `npm run typecheck`: passed; `git diff --check`: passed. Evidence: `test/bundles.test.ts`, reference: `docs/bundle-loading.md`. No shipped policy or tool-specific configuration compatibility claimed.
 
+- #4: accepted offline intent/input seams and real JSON Schema after inspecting code and behavioral fixtures. Integrated `npm test`: 54 passed; typecheck and diff checks passed. Evidence: `test/inputs.test.ts`, `docs/saved-intent.md`. Shipped metadata must pin the schema-containing local commit; remote schema availability is not established under the no-push constraint.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
+
+- [#4 saved intent, input and schema choices](https://github.com/ItsEthanDev/its-checks/issues/4#issuecomment-6541628770).
 
 Final review index belongs on spec #1.
