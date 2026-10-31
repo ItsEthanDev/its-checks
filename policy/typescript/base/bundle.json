@@ -2,11 +2,11 @@
   "name": "TypeScript",
   "description": "Oxfmt formatting and Oxlint correctness checks",
   "scripts": {
-    "format:check": "oxfmt --check .",
-    "format": "oxfmt .",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
-    "check": "node --run format:check && node --run lint"
+    "check": "node --run fmt:check && node --run lint"
   },
   "devDependencies": {
     "oxfmt": "0.75.0",
@@ -21,8 +21,9 @@
       "prettier.config.mjs",
       ".eslintrc.json",
       "eslint.config.js",
-      "eslint.config.mjs"
+      "eslint.config.mjs",
+      "biome.json"
     ],
-    "removeDevDependencies": ["prettier"]
+    "removeDevDependencies": ["prettier", "biome", "@biomejs/biome", "eslint"]
   }
 }

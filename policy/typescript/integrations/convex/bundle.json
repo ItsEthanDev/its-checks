@@ -1,0 +1,7 @@
+{
+  "name": "Convex",
+  "description": "Catch common mistakes in your convex directory",
+  "devDependencies": {
+    "@convex-dev/eslint-plugin": "5.0.1"
+  }
+}

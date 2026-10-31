@@ -85,11 +85,12 @@ test("native baseline/integration/declarations edits and a new directory reach o
   await fs.writeFile(path.join(policy, "typescript/automation/husky/files/.husky/its-checks-pre-commit"), "# its-checks: managed\nnode --run lint\n");
   const workflow = path.join(policy, "typescript/automation/github-actions/files/.github/workflows/its-checks.yml");
   await fs.writeFile(workflow, (await fs.readFile(workflow, "utf8")).replace("- run: node --run check", "- run: node --run lint"));
+  const existingIntegrations = (await run(discoverPolicy(policy))).integrations.map((entry) => entry.id);
   const directory = path.join(policy, "typescript/integrations/strict/files");
   await fs.mkdir(directory, { recursive: true });
   await fs.writeFile(path.join(path.dirname(directory), "bundle.json"), '{"name":"Strict","scripts":{"check":"echo strict"}}');
   await fs.writeFile(path.join(directory, ".oxlintrc.json"), '{"rules":{"eqeqeq":"error"}}');
-  assert.deepEqual((await run(discoverPolicy(policy))).integrations.map((entry) => entry.id), ["strict", "tailwind"]);
+  assert.deepEqual((await run(discoverPolicy(policy))).integrations.map((entry) => entry.id), [...existingIntegrations, "strict"].sort());
   assert.equal((await setup(["tailwind", "strict"])).requiresConfirmation, true);
   const read = async (file: string) => fs.readFile(path.join(target, file), "utf8");
   assert.equal(JSON.parse(await read(".oxfmtrc.json")).semi, false);
