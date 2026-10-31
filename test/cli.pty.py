@@ -25,7 +25,7 @@ class Terminal:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 45, 140, 0, 0))
         env = {k: v for k, v in os.environ.items() if k not in ("CI", "NO_COLOR")}
         env.update(TERM="xterm-256color", FORCE_COLOR="0")
-        self.process = subprocess.Popen(["node", str(entry)], cwd=cwd, stdin=slave, stdout=slave, stderr=slave, env=env)
+        self.process = subprocess.Popen(["bun", str(entry)], cwd=cwd, stdin=slave, stdout=slave, stderr=slave, env=env)
         os.close(slave)
         self.output = ""
         self.cursor = 0
@@ -242,7 +242,7 @@ class CliChecks(unittest.TestCase):
         shutil.rmtree(self.policy)
         (self.project / "package.json").unlink()
         before = self.state()
-        result = subprocess.run(["node", str(self.entry)], cwd=self.project, input="", capture_output=True, text=True, timeout=10)
+        result = subprocess.run(["bun", str(self.entry)], cwd=self.project, input="", capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 1)
         self.assertIn("requires an interactive terminal", result.stderr)
         self.assertNotIn("ENOENT", result.stderr)

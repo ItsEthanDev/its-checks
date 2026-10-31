@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { Effect } from "effect";
 import { parseAllDocuments, parse as parseYaml } from "yaml";
-import yarnLockfile from "@yarnpkg/lockfile";
+import { parse as parseYarnLockfile } from "@yarnpkg/lockfile";
 import { parse as parseJsonc } from "jsonc-parser";
 import { OperationError, type ApplicationDependencies } from "./application.ts";
 import type { ChangePlan } from "./planning.ts";
@@ -217,7 +217,7 @@ export function createDependencyAdapter(target: TargetManager, operations: Manag
     if (manager === "yarn") {
       const raw = await text(root, "yarn.lock");
       if (!raw) return false;
-      const parsed = yarnLockfile.parse(raw);
+      const parsed = parseYarnLockfile(raw);
       if (parsed.type !== "success") return false;
       const lock = parsed.object, state = JSON.parse((await text(root, metadata.yarn!))!);
       const patterns = Object.entries(wanted).map(([name, spec]) => `${name}@${spec}`).sort();

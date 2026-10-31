@@ -2,7 +2,7 @@
 
 ## Before setup
 
-Use Node 24+ and a source checkout with its dependencies installed as shown in the [quickstart](../README.md#quickstart). Make the target manager available on `PATH` and check its [required version and settings](package-managers.md#supported-environments).
+Use Bun 1.4.0 to run the installer from a source checkout with its dependencies installed as shown in the [quickstart](../README.md#quickstart). The supplied target policy requires Node 24+ for its commands; npm, pnpm, and Yarn also run on Node. Make the target manager available on `PATH` and check its [required version and settings](package-managers.md#supported-environments).
 
 Inspect or save your target's current configuration, scripts, and dependencies before applying changes. Setup installs dependencies with lifecycle scripts enabled, including existing project scripts. It is not a sandbox or a transactional installer.
 
@@ -10,7 +10,7 @@ Run from the single package root you want to change:
 
 ```sh
 cd /path/to/target-package
-node /absolute/path/to/its-checks/src/cli.ts
+bun /absolute/path/to/its-checks/src/cli.ts
 ```
 
 Only that directory's `package.json` is targeted; setup does not search workspaces. Both stdin and stdout must be terminals. Arguments, unattended flags, and piped input/output are not supported. Policy comes from the executed checkout's `policy/`, not the target directory.

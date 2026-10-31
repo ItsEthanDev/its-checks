@@ -1,10 +1,10 @@
 # Target package managers
 
-Install the target manager yourself and make its exact executable available on `PATH`. The manager used to install checkout dependencies does not select the target manager.
+Install the target manager yourself and make its exact executable available on `PATH`. Bun 1.4.0 installs checkout dependencies and runs the installer; it does not select or replace the target manager.
 
 ## Supported environments
 
-The adapter's tested environment is Linux x64, Node **24.21.0**, POSIX `/bin/sh`, normal lifecycle execution, and development dependencies enabled.
+The adapter's tested environment is Linux x64 with the installer running on Bun **1.4.0**, target Node **24.21.0**, POSIX `/bin/sh`, normal target lifecycle execution, and development dependencies enabled. The supplied target policy still uses Node commands, even for Bun-managed targets.
 
 | Manager | Exact version | Required target environment |
 | --- | --- | --- |
