@@ -156,7 +156,8 @@ export function planProject(projectRoot: string, resolved: ResolvedInputs, optio
       if (Object.hasOwn(manifest, section) || Object.keys(entries).length) manifest[section] = entries;
     }
     if (options.scripts) {
-      manifest.scripts = yield* options.scripts({ manifest, selected, deselected });
+      const scripts = yield* options.scripts({ manifest, selected, deselected });
+      if (Object.hasOwn(manifest, "scripts") || Object.keys(scripts).length) manifest.scripts = scripts;
     } else {
       for (const name of [...new Set([...selected, ...deselected].flatMap((bundle) => Object.keys(bundle.declaration.scripts ?? {})))].sort()) {
         defer(`package.json#scripts.${name}`, "Script composition requires the #6 adapter; existing scripts remain untouched");

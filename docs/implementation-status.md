@@ -13,7 +13,7 @@ Initial baseline: `3422686` on `main`. No Git remote is configured; GitHub API c
 | #3 | Effect v4 bootstrap; external bundle schemas, native JSONC/shell/YAML, discovery, validation/source errors | none | accepted |
 | #4 | Saved intent, offline revision-pinned schema/source provenance, declared inputs of every bundle kind, prefill/binding | #3 | accepted |
 | #5 | Standalone config composition, dependency collision checks, targeted manifest edits, explicit migration and no-history deselection, deterministic read-only plans | #3, #4 | accepted |
-| #6 | Same-name sequential fail-fast scripts, exact deduplication, reserved helpers, intact wrappers/restoration and edit conflicts | #5 | pending |
+| #6 | Same-name sequential fail-fast scripts, exact deduplication, reserved helpers, intact wrappers/restoration and edit conflicts | #5 | accepted |
 | #7 | Approved-plan-only application, no-op writes, intent before installation, truthful partial failure/retry | #4–#6 | pending |
 | #8 | Dedicated workflow conflicts, marked shared hooks and unrelated-content preservation | #7 | pending |
 | #9 | Target npm/pnpm/Yarn/Bun detection, actual install-state/no-op/retry, lifecycle and runner behavior | #7 | pending |
@@ -50,6 +50,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 
 - #5: accepted read-only planning/composition after code and fixture inspection. Integrated `npm test`: 79 passed; typecheck passed. Evidence: `test/planning.test.ts`, `docs/planning.md`. Scripts and automation are explicitly deferred/incomplete without their adapters; #7 must reject incomplete plans. No application/tool-version claims.
 
+- #6: accepted script adapter after inspecting code and real-shell feature tests. Integrated `npm test`: 88 passed; typecheck passed. Evidence: `test/scripts.test.ts`, `docs/scripts.md`. Real Linux `/bin/sh` (Bash), fake manager runners only; actual manager/lifecycle evidence remains #9.
+
 ## Decision review
 
 - [#3 bootstrap and declaration contract](https://github.com/ItsEthanDev/its-checks/issues/3#issuecomment-6541569287).
@@ -57,5 +59,8 @@ Node `24.21.0`, npm `11.19.0`, pnpm `12.9.0`, Bun `1.4.0`; Git and gh available.
 - [#4 saved intent, input and schema choices](https://github.com/ItsEthanDev/its-checks/issues/4#issuecomment-6541628770).
 
 - [#5 composition, dependency placement and plan contract](https://github.com/ItsEthanDev/its-checks/issues/5#issuecomment-6541716302).
+
+- [Shared #6/#9 runner and shell contract](https://github.com/ItsEthanDev/its-checks/issues/1#issuecomment-6541718736).
+- [#6 wrapper recognition and namespace conflicts](https://github.com/ItsEthanDev/its-checks/issues/6#issuecomment-6541765788).
 
 Final review index belongs on spec #1.
