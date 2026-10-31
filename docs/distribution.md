@@ -1,59 +1,87 @@
 # Git-repository launch validation
 
-Status: **local Git feasibility passed; GitHub execution remains unverified**. This is the first stage of [issue #2](https://github.com/ItsEthanDev/its-checks/issues/2), not a release or a replacement for the [source-checkout quickstart](../README.md#quickstart).
+Status: **minimal GitHub launch validated; remote fixture cleanup blocked by credential scope**. These findings address [issue #2](https://github.com/ItsEthanDev/its-checks/issues/2). The real installer is not packaged yet; use the [source-checkout quickstart](../README.md#quickstart).
 
-## Local evidence
+## Evidence and scope
 
-The minimal probe is preserved on local branch `experiment/github-launch-probe`, commit `c7dd4eb25c5bfff41ad6d78e82705b19bd2bdc42`, under `experiments/github-launch-probe/`. That branch has not been pushed. Its README describes the experiment and its `verify.ts` reproduces the observations with Bun. It does not run or modify the installer.
+The throwaway probe, raw command results, fixture histories, and cleanup receipt are preserved on local branch `experiment/github-launch-probe`, commit `8d340cd6641b620fbd432a7be9343199121abb50`, under `experiments/github-launch-probe/`. This branch has not been pushed or merged into the product. The fixture Git bundles were verified, cloned, and checked at every tested revision before deletion was attempted.
 
-Tested environment: Linux x64, Bun 1.4.0, Node 24.21.0, npm/npx 11.19.0, Git 2.55.0, POSIX shell. Bun compiled the probe once and ran its prebuilt JavaScript through a Bun shebang. npm/npx required Node and Git as launcher prerequisites.
+Tested environment: Linux x64, Bun 1.4.0, Node 24.21.0, npm/npx 11.19.0, Git 2.55.0, POSIX shell. Bun compiled the minimal CLI once and ran its prebuilt JavaScript through a Bun shebang. npm/npx additionally used Node; Git was available throughout. This does not establish other runtime versions or platforms.
 
-Two temporary Git repositories had identical package name, binary name, version, and compiled executable, but different external policy files. A separate consumer had its own decoy policy. Both repositories had no runtime dependencies or lifecycle hooks. Their non-lifecycle `compile` script deliberately failed if invoked. Caches and HOME were isolated; all temporary repositories, installations, and caches were removed afterward.
+The operator authorized two disposable public GitHub repositories:
 
-| Probe | Observed result |
-| --- | --- |
-| npm exec, full commit SHA | Correct repository policy and consumer cwd |
-| npm exec, immutable tag | Original tagged policy |
-| npx, inferred binary name | Same result as explicit npm exec |
-| Switch repositories with identical package/bin names and versions | Each repository's own policy; no cross-repository cache mix-up |
-| Policy-only commit, unchanged executable | New policy with no compilation |
-| Warm `#main` after the policy commit | New policy, normally and with `--prefer-online` |
-| New full commit SHA, then old tag | New policy, then original policy |
-| Consumer after all launches | No dependency, lockfile, manifest, or policy writes |
-| Bunx, local `git+file` spec, direct and explicit-package forms | Both rejected with `unrecognised dependency format` |
+- `ItsEthanDev/its-checks-launch-probe-upstream`
+- `ItsEthanDev/its-checks-launch-probe-fork`
 
-All ten npm/npx invocations passed. The two Bunx failures establish only a limitation of the tested local URL forms; GitHub/HTTPS Bunx launch remains unverified.
+Both had the same package name, binary name (`its-checks`), package version (`0.0.0`), and prebuilt executable, with different external policy files. The fork-shaped repository was independent, not a GitHub fork relationship. Each contained only `package.json`, `bin/cli.js`, and `policy/identity.json`: no runtime dependencies, TypeScript sources, lifecycle hooks, or workflows. A non-lifecycle `compile` command deliberately exited 97 if invoked.
 
-The tested local command forms are:
+A separate temporary consumer had its own manifest and decoy policy. Package launches used a separate HOME and npm/Bun package caches. Bunx also populated execution caches in the OS temporary directory; the ten directories observed being created by these runs were removed afterward, along with the fixture/package-cache tree. No global installation of `its-checks`, registry publication, product-main push, or deployment was performed.
+
+## Remote observations
+
+33 remote process invocations completed successfully: 16 npm/npx and 17 Bunx. All read the consumer's manifest, preserved its cwd, and loaded policy from the executed package, not the consumer's decoy policy. No additional consumer files were observed. Dedicated pinned npm and Bunx follow-ups also compared exact consumer entries, bytes, modes, and mtimes before and after launch; both remained unchanged.
+
+| Probe | npm/npx 11.19.0 | Bunx 1.4.0 |
+| --- | --- | --- |
+| Full HTTPS Git spec at a full commit | Correct policy | Correct policy |
+| GitHub shorthand | Correct policy | Correct policy |
+| Switch repositories with identical package/bin names and versions | Correct upstream/fork policy | Correct upstream/fork policy |
+| Unchanged `probe-v1` tag after later commits | Original v1 policy | Original v1 policy |
+| Policy-only update via a new full commit reference | New policy; no compilation | New policy; no compilation |
+| Warm branch/default reference after policy update | Observed the new policy | Reused stale policy |
+| Consumer cwd and decoy policy | Preserved | Preserved |
+
+npm observed both policy-only updates through warm branch/default references. Its `--prefer-online` branch probe also observed the first update. Bunx's warm `#main` and default references stayed on v2 after v3 was pushed; changing to the full v3 commit reference immediately loaded v3. No refresh interval or cache-clearing workaround was established. **Use a full commit reference, and change that reference to obtain updated policy.** Do not depend on mutable refs refreshing immediately.
+
+The original local-Git stage also passed ten npm/npx probes. Bunx rejected both local `git+file` forms with `unrecognised dependency format`; this did not predict its successful GitHub/HTTPS behavior.
+
+### Tested command forms
+
+These are historical probe commands, not commands for the current product repository. The fixture repositories are disposable and must not become a distribution channel. Replace `<sha>` with one of the recorded full commit hashes:
 
 ```sh
-npm exec --yes --package='git+file:///absolute/upstream#<full-commit-sha>' -- its-checks
-npm exec --yes --package='git+file:///absolute/upstream#probe-v1' -- its-checks
-npm exec --yes --package='git+file:///absolute/upstream#main' -- its-checks
-npx --yes 'git+file:///absolute/upstream#<full-commit-sha>'
+npm exec --yes --package='git+https://github.com/ItsEthanDev/its-checks-launch-probe-upstream.git#<sha>' -- its-checks
+npm exec --yes --package='github:ItsEthanDev/its-checks-launch-probe-upstream#<sha>' -- its-checks
+npx --yes 'ItsEthanDev/its-checks-launch-probe-upstream#<sha>'
+bun x --package 'git+https://github.com/ItsEthanDev/its-checks-launch-probe-upstream.git#<sha>' its-checks
+bun x --package 'github:ItsEthanDev/its-checks-launch-probe-upstream#<sha>' its-checks
 ```
 
-These are probe commands, not working commands for the current product repository. The product does not yet declare a packaged binary.
+Equivalent full-HTTPS forms using the fork URL and fork commit worked with both launchers. Direct inferred-bin npx and Bunx full-HTTPS calls also worked. Explicit package/bin forms avoid relying on binary inference.
 
-## Packaging direction to validate remotely
+| Fixture | Full commit | Policy marker |
+| --- | --- | --- |
+| upstream, `probe-v1` | `63a774917a2c98914eeae98da3ad1896a33f9c0a` | upstream-v1 |
+| upstream, policy-only update | `f888217f7a994cc6d982556cbf8955a5e805e801` | upstream-v2 |
+| upstream, second policy-only update | `854d1a57e195852a3011e4d6c63f1a4e4910d0ea` | upstream-v3 |
+| fork, `probe-v1` | `ee43d4ad5008c0908d723c74f964ab437f94999c` | fork-v1 |
 
-Use committed, prebuilt JavaScript with external policy, a package `bin` entry, and an explicit `files` inclusion list. Keep the current Bun runtime prerequisite unless a separate runtime change is validated. Avoid automatic Git-install compilation: use an explicit maintainer command such as `compile`, rather than `build`, `prepare`, `prepack`, or install hooks.
+The executable's SHA-256 was `9b65e4c741d43247e9b2e79e500148fdf6096b2ed9c781fbd35777deaedafb19` at every remote fixture revision. Both upstream updates changed only `policy/identity.json`. Git source pinning does not by itself pin transitive registry dependencies; this probe intentionally had none.
 
-When integrating the real installer, add a source-to-generated-output check so source changes cannot leave a stale executable. Policy-only changes must not require rebuilding. The minimal probe establishes relative policy lookup and launch behavior, not that a complete installer bundle or its native assets are packaged correctly.
+## Distribution and freshness decision
 
-Prefer full commit references for reproducible source selection and policy updates. The local moving-branch refresh observation does not establish GitHub cache behavior, immutable dependencies, or a refresh interval. No global tool installation or registry publication was required.
+Use committed, prebuilt JavaScript with external policy, a package `bin` entry, and an explicit `files` inclusion list. Retain Bun 1.4.0 as the runtime prerequisite. Forks can keep the same package/bin names and change the Git URL and commit reference; no fork registry publication is required.
 
-## Remaining remote validation
+Compile only through an explicit maintainer command such as `compile`. Do not add automatic Git-install compilation via `build`, `prepare`, `prepack`, or install hooks. The successful probes had no build inputs in the installed package and never invoked their deliberately failing `compile` command.
 
-Repeat the probe against two distinct public GitHub fixture repositories with the same package/bin names: an upstream-shaped repository and a fork-shaped repository. Test full HTTPS Git specs, GitHub shorthand, pinned commits/tags, moving refs with warm caches, and a policy-only commit with an unchanged executable. Capture successful commands and unsupported forms separately.
+When integrating this decision into the real installer:
 
-Creating and populating fixture repositories needs permission separate from pushing normal project code to `ItsEthanDev/its-checks:main`. The product GitHub repository was empty when inspected. No remote writes have been performed for this experiment.
+1. Bundle its runtime JavaScript dependencies and ship required policy/schema assets, without compiling policy into the executable.
+2. Add a generated-output verification command that regenerates from source with the pinned Bun compiler, from a fixed repository root, and compares the checked-in executable. Run that check with the project's verification suite, not as a Git-install hook.
+3. Keep policy-only edits out of compiler inputs so they need no rebuild.
+4. Check the real package contents and run the compiled installer through its interactive workflow before changing the quickstart or claiming product distribution support.
 
-Do not close #2 based on local results. GitHub execution, the final full-installer bundle/freshness check, pnpm/Yarn launchers, other platforms, publication, and deployment remain unverified or outside this stage.
+This is the selected packaging strategy, not a claim that the full installer bundle or freshness check has been implemented. pnpm/Yarn launchers, arbitrary dependency graphs, hosted CI, Windows/macOS, publication, and deployment remain unverified or outside this experiment.
 
-## Primary-source constraints
+## Cleanup blocker
 
-- [npm exec](https://docs.npmjs.com/cli/v11/commands/npm-exec) documents explicit `--package`, binary inference, cache installation, and online/offline preferences. Git mutable-ref refresh timing still needs measurement.
-- [npm Git package specs](https://docs.npmjs.com/cli/v11/using-npm/package-spec#git-urls) document Git URLs and refs, including GitHub shorthand. Combining these with npm exec is the candidate remote launch path.
-- [npm package metadata](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#git-urls-as-dependencies) documents Git dependency build triggers: workspaces and scripts named `build`, `prepare`, `prepack`, `preinstall`, `install`, or `postinstall`. Its `bin` and `files` sections define executable links and packed assets.
-- [Bunx](https://bun.com/docs/pm/bunx) documents npm-package execution and `--package`, not a guarantee that every Git spec accepted by [bun add](https://bun.com/docs/pm/cli/add) works as a launcher. Do not infer launcher support from target-project manager support.
+Both `gh repo delete ... --yes` attempts returned HTTP 403. GitHub reported that the current credential needs the `delete_repo` scope; subsequent read-only checks confirmed that both public fixture repositories still exist. No credential escalation was attempted.
+
+The operator can run `gh auth refresh -h github.com -s delete_repo`, then have the agent retry the two already-authorized deletions, or delete those two repositories manually. The fixture contents and histories are already archived locally. Do not describe remote cleanup as complete until absence is verified.
+
+## Primary sources
+
+- [npm exec](https://docs.npmjs.com/cli/v11/commands/npm-exec): explicit `--package`, binary inference, cache installation, and online/offline preferences. Mutable-ref behavior above is measured, not inferred from this page.
+- [npm Git package specs](https://docs.npmjs.com/cli/v11/using-npm/package-spec#git-urls): Git URLs, refs, and GitHub shorthand.
+- [npm package metadata](https://docs.npmjs.com/cli/v11/configuring-npm/package-json#git-urls-as-dependencies): Git dependency build triggers, executable links, and packed assets.
+- [Bunx](https://bun.com/docs/pm/bunx) and [bun add](https://bun.com/docs/pm/cli/add): launcher and dependency-installation interfaces are distinct. The GitHub launcher support claimed here comes from the remote probes, not from assuming every install spec works in Bunx.
