@@ -1,4 +1,4 @@
-"""Real source CLI + Clack keyboard checks. Python standard library; no terminal mocks."""
+"""Real source/installed CLI + Clack keyboard checks; fixed policy, no terminal mocks."""
 import errno
 import fcntl
 import json
@@ -20,12 +20,12 @@ ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 
 
 class Terminal:
-    def __init__(self, entry, cwd):
+    def __init__(self, command, cwd):
         self.master, slave = pty.openpty()
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 45, 140, 0, 0))
         env = {k: v for k, v in os.environ.items() if k not in ("CI", "NO_COLOR")}
         env.update(TERM="xterm-256color", FORCE_COLOR="0")
-        self.process = subprocess.Popen(["bun", str(entry)], cwd=cwd, stdin=slave, stdout=slave, stderr=slave, env=env)
+        self.process = subprocess.Popen(command, cwd=cwd, stdin=slave, stdout=slave, stderr=slave, env=env)
         os.close(slave)
         self.output = ""
         self.cursor = 0
@@ -77,12 +77,22 @@ class CliChecks(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="its-checks-cli-")
         self.root = Path(self.temp.name)
         checkout = self.root / "executed-checkout"
-        checkout.mkdir()
-        shutil.copytree(REPO / "src", checkout / "src")
-        (checkout / "node_modules").symlink_to(REPO / "node_modules", target_is_directory=True)
-        (checkout / "package.json").write_text('{"type":"module"}')
-        self.entry = checkout / "src/cli.ts"
-        self.policy = checkout / "policy"
+        package_root = os.environ.get("ITS_CHECKS_PACKAGE_ROOT")
+        if package_root:
+            # Copy only the isolated production installation, never checkout dependencies.
+            shutil.copytree(package_root, checkout, symlinks=True)
+            self.entry = checkout / "node_modules/.bin/its-checks"
+            self.command = [str(self.entry)]  # Exercise the installed bin and its Bun shebang.
+            self.policy = checkout / "node_modules/its-checks/policy"
+            shutil.rmtree(self.policy)
+        else:
+            checkout.mkdir()
+            shutil.copytree(REPO / "src", checkout / "src")
+            (checkout / "node_modules").symlink_to(REPO / "node_modules", target_is_directory=True)
+            (checkout / "package.json").write_text('{"type":"module"}')
+            self.entry = checkout / "src/cli.ts"
+            self.command = ["bun", str(self.entry)]
+            self.policy = checkout / "policy"
         self.project = self.root / "target"
         self.project.mkdir()
         self.write(self.policy / "bundle.json", {"schemaVersion": 1, "source": {
@@ -117,7 +127,7 @@ class CliChecks(unittest.TestCase):
         destination.write_text(value if isinstance(value, str) else json.dumps(value) + "\n")
 
     def terminal(self):
-        terminal = Terminal(self.entry, self.project)
+        terminal = Terminal(self.command, self.project)
         self.terminals.append(terminal)
         return terminal
 
@@ -238,11 +248,47 @@ class CliChecks(unittest.TestCase):
         self.assertIn("Cancelled before application. No project writes or installation.", text)
         self.assertEqual(self.state(), before)
 
+    def test_policy_edit_reaches_output_without_changing_entrypoint(self):
+        entry_bytes = self.entry.read_bytes()
+        def answers(terminal):
+            terminal.expect("Choose integrations")
+            terminal.send("\r")
+            terminal.expect("Choose automation")
+            terminal.send("\r")
+            for question in ["Number of fixtures?", "Enable fixture?", "Fixture label?"]:
+                terminal.expect(question)
+                terminal.send("\r")
+        first = self.terminal()
+        answers(first)
+        first.finish(0)
+        policy_file = self.policy / "typescript/base/files/.oxlintrc.json"
+        policy = json.loads(policy_file.read_text())
+        policy["fixturePolicyEdit"] = "changed without rebuilding"
+        self.write(policy_file, policy)
+        second = self.terminal()
+        answers(second)
+        second.expect("Apply this plan, including replacements and removals?")
+        second.send("y\r")
+        text = second.finish(0)
+        self.assertIn("Completed:", text)
+        self.assertEqual(json.loads((self.project / ".oxlintrc.json").read_text())["fixturePolicyEdit"], policy["fixturePolicyEdit"])
+        self.assertEqual(self.entry.read_bytes(), entry_bytes)
+
+    def test_invalid_saved_intent_fails_without_mutation(self):
+        self.write(self.project / ".its-checks.json", "{broken")
+        before = self.state()
+        terminal = self.terminal()
+        text = terminal.finish(1)
+        self.assertIn("Setup failed.", text)
+        self.assertIn(".its-checks.json", text)
+        self.assertNotIn("Completed:", text)
+        self.assertEqual(self.state(), before)
+
     def test_noninteractive_rejected_before_missing_policy_or_project_reads(self):
         shutil.rmtree(self.policy)
         (self.project / "package.json").unlink()
         before = self.state()
-        result = subprocess.run(["bun", str(self.entry)], cwd=self.project, input="", capture_output=True, text=True, timeout=10)
+        result = subprocess.run(self.command, cwd=self.project, input="", capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 1)
         self.assertIn("requires an interactive terminal", result.stderr)
         self.assertNotIn("ENOENT", result.stderr)

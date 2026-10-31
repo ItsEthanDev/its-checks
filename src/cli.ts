@@ -1,10 +1,11 @@
+#!/usr/bin/env bun
 import { fileURLToPath } from "node:url";
 import * as clack from "@clack/prompts";
 import { Effect } from "effect";
 import { createClackPresentation } from "./presentation.ts";
 import { Cancelled, setup } from "./workflow.ts";
 
-// Development source entrypoint only. Policy belongs to the executed checkout, never the target cwd.
+// Policy belongs to the executed package/checkout, never the target cwd.
 const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
 if (!interactive || process.argv.length > 2) {
   console.error(!interactive

@@ -2,7 +2,7 @@
 
 ## Before setup
 
-Use Bun 1.4.0 to run the installer from a source checkout with its dependencies installed as shown in the [quickstart](../README.md#quickstart). The supplied target policy requires Node 24+ for its commands; npm, pnpm, and Yarn also run on Node. Make the target manager available on `PATH` and check its [required version and settings](package-managers.md#supported-environments).
+Use Bun 1.4.0 for the installer runtime and the GitHub launch command in the [quickstart](../README.md#quickstart), or run from a checkout with its dependencies installed. The supplied target policy requires Node 24+ for its commands; npm, pnpm, and Yarn also run on Node. Make the target manager available on `PATH` and check its [required version and settings](package-managers.md#supported-environments).
 
 Inspect or save your target's current configuration, scripts, and dependencies before applying changes. Setup installs dependencies with lifecycle scripts enabled, including existing project scripts. It is not a sandbox or a transactional installer.
 
@@ -10,10 +10,10 @@ Run from the single package root you want to change:
 
 ```sh
 cd /path/to/target-package
-bun /absolute/path/to/its-checks/src/cli.ts
+npx --yes 'ItsEthanDev/its-checks'
 ```
 
-Only that directory's `package.json` is targeted; setup does not search workspaces. Both stdin and stdout must be terminals. Arguments, unattended flags, and piped input/output are not supported. Policy comes from the executed checkout's `policy/`, not the target directory.
+Only that directory's `package.json` is targeted; setup does not search workspaces. Both stdin and stdout must be terminals. Arguments, unattended flags, and piped input/output are not supported. Policy comes from the executed package or checkout's `policy/`, not the target directory. Default-branch launches may reuse cached code/policy; see [launch options and optional commit pinning](distribution.md).
 
 ## Choose and review
 
@@ -44,7 +44,7 @@ Husky runs the entire package's `check` without fixing or staging files. GitHub 
 
 ## Rerun or change selections
 
-Rerun the same source command to load edited policy or change choices. Each run shows all choices and input questions. `.its-checks.json` prefills still-available selections and saved answers; answers take precedence over declaration defaults, including `false`, `0`, and empty strings.
+Rerun setup to change choices or apply policy from the executed package. For checkout edits, rerun the same source command; for GitHub updates, account for the [launcher's cache](distribution.md#default-branch-and-caching). Each run shows all choices and input questions. `.its-checks.json` prefills still-available selections and saved answers; answers take precedence over declaration defaults, including `false`, `0`, and empty strings.
 
 The file records **intended setup**, not successful installation. Matching configuration does not suppress dependency assessment. A fully matching package has no writes or installation. Whitespace and object-key order in `package.json`, including Oxfmt's native package sorting, do not require installation. Matching manifest values retain their formatted bytes. Schema decoding is offline: setup does not fetch the saved schema or repository.
 

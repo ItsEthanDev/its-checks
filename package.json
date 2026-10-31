@@ -3,6 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "bin": { "its-checks": "src/cli.ts" },
+  "files": ["src", "policy", "schemas"],
   "packageManager": "bun@1.4.0",
   "engines": { "bun": ">=1.4.0" },
   "scripts": {
@@ -10,6 +12,7 @@
     "typecheck": "bun --bun tsc --noEmit",
     "test:managers": "bun test --timeout=120000 --max-concurrency=1 ./test/real-managers.integration.ts",
     "test:cli": "python3 test/cli.pty.py",
+    "test:package": "bun test --timeout=120000 ./test/package.integration.ts",
     "test:policy": "bun test --timeout=180000 --max-concurrency=1 ./test/policy-compatibility.integration.ts"
   },
   "dependencies": {
