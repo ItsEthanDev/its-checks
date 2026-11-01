@@ -170,8 +170,8 @@ Deselection uses prior intent and **current** definitions only. Files/dependenci
 
 Root `policy/bundle.json` declares the policy format (`schemaVersion: 1`) and its editable `source` metadata. This authoring metadata selects the repository and editor schema; it is not copied wholesale into the target's saved file. For a fork:
 
-1. Set `source.repository` to your HTTPS repository URL without credentials, query, or fragment. Update the descriptive repository link in [`schemas/intent.schema.json`](../schemas/intent.schema.json).
-2. Commit the schema at a safe repository-relative `.json` path, normally `schemas/intent.schema.json`.
+1. Set `source.repository` to your HTTPS repository URL without credentials, query, or fragment. Update the descriptive repository link in [`schemas/its-checks.schema.json`](../schemas/its-checks.schema.json).
+2. Commit the schema at a safe repository-relative `.json` path, normally `schemas/its-checks.schema.json`.
 3. Set `source.revision` to that known schema-containing commit's full lowercase hash, and `source.selectionSchema` to its path. This selects the **editor schema**, independently of the executing code revision.
 4. Publish that commit and ensure `<repository>/raw/<revision>/<schema-path>` is reachable through a GitHub-compatible raw endpoint. Runtime decoding never fetches it. Ordinary code/policy edits do not require updating this schema pin.
 
@@ -181,7 +181,7 @@ The generated `.its-checks.json` records the following fields (commit values bel
 
 ```json
 {
-  "$schema": "https://example.com/fork/raw/<schema-commit>/schemas/intent.schema.json",
+  "$schema": "https://example.com/fork/raw/<schema-commit>/schemas/its-checks.schema.json",
   "source": "https://example.com/fork",
   "commit": "<actual-generating-commit-when-known>",
   "integrations": ["tailwind"],

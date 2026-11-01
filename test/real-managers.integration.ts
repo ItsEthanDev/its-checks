@@ -42,7 +42,7 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   if (manager === "yarn") await put(path.join(project, ".yarnrc"), 'disable-self-update-check true\n');
   if (manager === "bun") await put(path.join(project, "bunfig.toml"), '[install]\nlinker = "isolated"\n');
   await put(path.join(policy, "bundle.json"), { schemaVersion: 1, source: {
-    repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/intent.schema.json" } });
+    repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/its-checks.schema.json" } });
   let selected = manager === "bun" ? { integrations: ["managed"], automation: [] } : empty;
   const declaration = (version: string | null) => ({ name: "Base", scripts: { check: helper },
     ...(manager === "bun" ? {} : version ? { devDependencies: { "managed-dep": `file:../${version}.tgz` } }
@@ -234,7 +234,7 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) for (cons
     if (manager === "yarn") await put(path.join(project, ".yarnrc"), "disable-self-update-check true\n");
     if (manager === "bun") await put(path.join(project, "bunfig.toml"), '[install]\nlinker = "isolated"\n');
     await put(path.join(policy, "bundle.json"), { schemaVersion: 1, source: {
-      repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/intent.schema.json" } });
+      repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/its-checks.schema.json" } });
     const declaration = path.join(policy, "typescript/base/bundle.json");
     await put(declaration, { name: "Base" });
     const resolution = await run(resolveTargetManager(project));

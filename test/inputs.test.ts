@@ -64,9 +64,9 @@ test("first use enumerates every selected bundle and resolves explicit native va
   assert.deepEqual(await snapshot(f.project), before);
   assert.equal(resolved.selectionFile.path, ".its-checks.json");
   assert.deepEqual(await run(decodeSavedIntent(resolved.selectionFile.content)), resolved.intent);
-  assert.equal(resolved.intent.$schema, `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`);
+  assert.equal(resolved.intent.$schema, `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/its-checks.schema.json`);
   assert.deepEqual(resolved.intent, {
-    $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`,
+    $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/its-checks.schema.json`,
     source: "https://github.com/example/fork",
     integrations: ["tailwind"], automation: ["ci"], answers,
   });
@@ -123,7 +123,7 @@ test("malformed local intent is never treated as first use or trusted via a remo
   const malformed = [
     "{broken", JSON.stringify({ ...intent, schemaVersion: 2 }),
     JSON.stringify({ ...intent, schemaVersion: 1, source: { repository: intent.source,
-      revision: "a".repeat(40), selectionSchema: "schemas/intent.schema.json" } }),
+      revision: "a".repeat(40), selectionSchema: "schemas/its-checks.schema.json" } }),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":null}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":[]}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":1e999}}'),
@@ -153,7 +153,7 @@ test("saved intent preserves the generating commit and input prefills without re
   const f = await inputPolicy(t);
   const policy = await run(loadPolicy(f.policy, all));
   const current = await run(resolveInputs(policy, answers, "b".repeat(40)));
-  assert.deepEqual(current.intent, { $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`,
+  assert.deepEqual(current.intent, { $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/its-checks.schema.json`,
     source: "https://github.com/example/fork", commit: "b".repeat(40), ...all, answers });
   assert.deepEqual(await run(decodeSavedIntent(current.selectionFile.content)), current.intent);
   await fs.writeFile(path.join(f.project, selectionFilename), current.selectionFile.content);
@@ -213,7 +213,7 @@ test("JSON binding treats input IDs as own map keys and preserves target-root pa
 test("the committed schema describes the generated single-file shape and links its repository", async (t) => {
   const f = await fixture(t);
   const generated = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
-  const schema = JSON.parse(await fs.readFile(new URL("../schemas/intent.schema.json", import.meta.url), "utf8"));
+  const schema = JSON.parse(await fs.readFile(new URL("../schemas/its-checks.schema.json", import.meta.url), "utf8"));
   assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
   assert.equal(schema.title, "its-checks saved project intent");
   assert.match(schema.description, /https:\/\/github.com\/ItsEthanDev\/its-checks/);

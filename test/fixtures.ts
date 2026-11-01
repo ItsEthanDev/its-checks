@@ -22,7 +22,7 @@ export async function fixture(t: TestContext) {
     source: {
       repository: "https://github.com/example/fork",
       revision: "a".repeat(40),
-      selectionSchema: "schemas/intent.schema.json",
+      selectionSchema: "schemas/its-checks.schema.json",
     },
   });
   await add("base", {

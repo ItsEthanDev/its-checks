@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "source": {
     "repository": "https://github.com/ItsEthanDev/its-checks",
-    "revision": "3fe528655c2e43e34f5160a577e14573898fbad4",
-    "selectionSchema": "schemas/intent.schema.json"
+    "revision": "0d8024a816ca5417bb0c131e65d0c7a767d6415e",
+    "selectionSchema": "schemas/its-checks.schema.json"
   }
 }
