@@ -30,6 +30,10 @@ After setup: `node --run fmt` to format; `node --run check` to check formatting 
 
 Setup generates `.its-checks.json` in the target project to save your selections, answers, and source identity. Keep it for reruns: setup uses it to prefill choices and clean up deselected integrations and automation.
 
+## Customize
+
+[Fork this repository and customize its policies](docs/customize-policy.md) to use your own formatting, linting, and automation preferences.
+
 ## Develop
 
 Bun is this repository's development package manager. Install dependencies with `bun install --frozen-lockfile --ignore-scripts`.
