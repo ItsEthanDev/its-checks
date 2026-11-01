@@ -103,7 +103,7 @@ function bind(file: NativeFile, input: InputDeclaration, answer: Answer): Native
 }
 
 /** Require explicit typed answers for exactly the selected declarations; return content without writing. */
-export function resolveInputs(policy: LoadedPolicy, supplied: unknown): Effect.Effect<ResolvedInputs, BundleError> {
+export function resolveInputs(policy: LoadedPolicy, supplied: unknown, commit?: string): Effect.Effect<ResolvedInputs, BundleError> {
   return Effect.gen(function*() {
     const ctx = { bundle: "inputs", source: policy.root, field: "answers" };
     const answers = yield* Schema.decodeUnknownEffect(Answers, { onExcessProperty: "error", errors: "all" })(supplied).pipe(
@@ -143,8 +143,8 @@ export function resolveInputs(policy: LoadedPolicy, supplied: unknown): Effect.E
     const selected = (kind: "integration" | "automation") => policy.bundles.filter((bundle) => bundle.kind === kind).map((bundle) => bundle.id);
     const intent: SavedIntent = {
       $schema: yield* selectionSchemaUrl(policy.declaration.source),
-      schemaVersion: 1,
-      source: policy.declaration.source,
+      source: policy.declaration.source.repository,
+      ...(commit === undefined ? {} : { commit }),
       integrations: selected("integration"),
       automation: selected("automation"),
       answers: intendedAnswers,

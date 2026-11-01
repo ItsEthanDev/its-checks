@@ -20,7 +20,7 @@ These commands request the repository's default branch. No documentation edit is
 
 A default-branch URL is a convenience, not a promise that every invocation fetches the newest code. Launchers can reuse cached source and policy. In the minimal GitHub experiment, npm observed policy updates through warm branch/default references, while Bunx reused stale policy. `--prefer-online` asks npm to check freshness but is not a cross-launcher guarantee that every cached installation is refreshed.
 
-If an exact revision matters, use a commit reference. Otherwise accept the launcher's cache behavior or use a freshly updated checkout. Setup does not resolve today's HEAD and mislabel cached code as that revision, nor save an automatic project pin.
+If an exact revision matters, use a commit reference. Otherwise accept the launcher's cache behavior or use a freshly updated checkout. Setup does not resolve today's HEAD and mislabel cached code as that revision, nor save an automatic project pin. Its saved `commit` is optional provenance only: [local execution identity](policy.md#saved-project-intent), when reliably available.
 
 ## Choose a specific commit
 

@@ -26,6 +26,8 @@ export interface SetupOptions {
   readonly projectRoot: string;
   readonly policyRoot: string;
   readonly presentation: SetupPresentation;
+  /** Identity of the executing generator, not the target repository or a schema pin. */
+  readonly commit?: string;
   /** The consequential external seam; production uses the native manager adapter. */
   readonly dependencies?: (target: TargetManager) => ApplicationDependencies;
 }
@@ -52,7 +54,7 @@ export function setup(options: SetupOptions) {
     for (const declaration of declarations) {
       (answers[declaration.bundle] ??= {})[declaration.input.id] = yield* ui.input(declaration);
     }
-    const resolved = yield* resolveInputs(policy, answers);
+    const resolved = yield* resolveInputs(policy, answers, options.commit);
     let manager = yield* resolveTargetManager(options.projectRoot);
     if (manager.kind === "question") manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));
     if (manager.kind !== "resolved") return yield* Effect.fail(new OperationError({ detail: "Choose a supported target package manager and retry." }));

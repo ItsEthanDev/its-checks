@@ -8,6 +8,7 @@ import type { RootDeclaration } from "./bundle-types.ts";
 export const selectionFilename = ".its-checks.json";
 const id = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const namespace = /^(?:base|(?:integrations|automation)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/;
+export const commitPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const Id = Schema.String.check(Schema.makeFilter((value) => id.test(value) || "Expected a lowercase hyphenated ID"));
 const Namespace = Schema.String.check(Schema.makeFilter((value) => namespace.test(value) || "Expected a namespaced bundle key"));
 export const Answer = Schema.Union([Schema.String, Schema.Number.check(Schema.isFinite()), Schema.Boolean]);
@@ -15,29 +16,35 @@ export const Answers = Schema.Record(Namespace, Schema.Record(Id, Answer));
 export type Answer = typeof Answer.Type;
 export type Answers = typeof Answers.Type;
 
+const choices = { integrations: Schema.Array(Id), automation: Schema.Array(Id), answers: Answers };
 const SelectionFile = Schema.Struct({
+  $schema: Schema.String,
+  source: Schema.String,
+  commit: Schema.optionalKey(Schema.String.check(Schema.makeFilter((value) => commitPattern.test(value) || "Expected a full immutable generating commit"))),
+  ...choices,
+});
+const LegacySelectionFile = Schema.Struct({
   $schema: Schema.String,
   schemaVersion: Schema.Literal(1),
   source: Schema.Struct({ repository: Schema.String, revision: Schema.String, selectionSchema: Schema.String }),
-  integrations: Schema.Array(Id),
-  automation: Schema.Array(Id),
-  answers: Answers,
+  ...choices,
 });
 export type SavedIntent = typeof SelectionFile.Type;
 
 const context = (source: string, field: string, detail: string) => new BundleError({ bundle: "selections", source, field, detail });
 const check = (source: string, field: string, valid: boolean, detail: string) => valid
   ? Effect.void : Effect.fail(context(source, field, detail));
+const httpsUrl = (value: string): boolean => {
+  try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash; }
+  catch { return false; }
+};
 
-/** GitHub-compatible revision-pinned raw URL; metadata availability is not probed. */
+/** Policy metadata supplies the editor's schema pin, not the executing code revision. */
 export function selectionSchemaUrl(source: RootDeclaration["source"]): Effect.Effect<string, BundleError> {
   return Effect.gen(function*() {
-    let repository: URL | undefined;
-    try { repository = new URL(source.repository); } catch { /* Typed failure below. */ }
-    yield* check("provenance", "source.repository", !!repository && repository.protocol === "https:" &&
-      !repository.username && !repository.password && !repository.search && !repository.hash,
-    "Expected an HTTPS repository URL without credentials, query, or fragment");
-    yield* check("provenance", "source.revision", /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(source.revision),
+    yield* check("provenance", "source.repository", httpsUrl(source.repository),
+      "Expected an HTTPS repository URL without credentials, query, or fragment");
+    yield* check("provenance", "source.revision", commitPattern.test(source.revision),
       "Expected a full immutable Git revision (40 or 64 lowercase hex digits)");
     yield* check("provenance", "source.selectionSchema", safePath(source.selectionSchema) && source.selectionSchema.endsWith(".json"),
       "Expected a safe repository-relative JSON Schema path");
@@ -45,20 +52,29 @@ export function selectionSchemaUrl(source: RootDeclaration["source"]): Effect.Ef
   });
 }
 
-/** Decode local intent without contacting its repository or schema. */
+/** Read both formats offline. A legacy schema pin is never relabeled as a generating commit. */
 export function decodeSavedIntent(content: string, source = selectionFilename): Effect.Effect<SavedIntent, BundleError> {
   return Effect.gen(function*() {
     const value = yield* json({ bundle: "selections", source }, content, false);
-    const saved = yield* Schema.decodeUnknownEffect(SelectionFile, { onExcessProperty: "error", errors: "all" })(value).pipe(
-      Effect.mapError((error) => context(source, "$", error.message)),
-    );
+    const options = { onExcessProperty: "error", errors: "all" } as const;
+    const error = (cause: { readonly message: string }) => context(source, "$", cause.message);
+    let saved: SavedIntent;
+    if (value && typeof value === "object" && "source" in value && typeof value.source === "object") {
+      const legacy = yield* Schema.decodeUnknownEffect(LegacySelectionFile, options)(value).pipe(Effect.mapError(error));
+      const expected = yield* selectionSchemaUrl(legacy.source).pipe(
+        Effect.mapError((cause) => context(source, cause.field, cause.detail)),
+      );
+      yield* check(source, "$schema", legacy.$schema === expected, "Legacy schema URL must match source repository, revision, and selectionSchema");
+      saved = { $schema: legacy.$schema, source: legacy.source.repository,
+        integrations: legacy.integrations, automation: legacy.automation, answers: legacy.answers };
+    } else {
+      saved = yield* Schema.decodeUnknownEffect(SelectionFile, options)(value).pipe(Effect.mapError(error));
+    }
+    yield* check(source, "source", httpsUrl(saved.source), "Expected an HTTPS source repository URL without credentials, query, or fragment");
+    yield* check(source, "$schema", httpsUrl(saved.$schema), "Expected an HTTPS JSON Schema URL without credentials, query, or fragment");
     for (const kind of ["integrations", "automation"] as const) {
       yield* check(source, kind, new Set(saved[kind]).size === saved[kind].length, "Duplicate selection ID");
     }
-    const expected = yield* selectionSchemaUrl(saved.source).pipe(
-      Effect.mapError((error) => context(source, error.field, error.detail)),
-    );
-    yield* check(source, "$schema", saved.$schema === expected, "Schema URL must match source repository, revision, and selectionSchema");
     return saved;
   });
 }
@@ -78,9 +94,12 @@ export function loadPreviousIntent(projectRoot: string): Effect.Effect<SavedInte
   });
 }
 
-/** Validate even typed callers and serialize intended state, not installation success. */
+/** Write only the current intent shape. Neither provenance nor selections prove installation success. */
 export function selectionContent(intent: SavedIntent): Effect.Effect<string, BundleError> {
   return Effect.gen(function*() {
+    yield* Schema.decodeUnknownEffect(SelectionFile, { onExcessProperty: "error", errors: "all" })(intent).pipe(
+      Effect.mapError((cause) => context(selectionFilename, "$", cause.message)),
+    );
     const content = yield* Effect.try({
       try: () => JSON.stringify(intent, null, 2) + "\n",
       catch: (cause) => context(selectionFilename, "$", String(cause)),

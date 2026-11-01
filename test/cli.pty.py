@@ -96,7 +96,7 @@ class CliChecks(unittest.TestCase):
         self.project = self.root / "target"
         self.project.mkdir()
         self.write(self.policy / "bundle.json", {"schemaVersion": 1, "source": {
-            "repository": "https://github.com/example/fork", "revision": "a" * 40, "selectionSchema": "schemas/selections.schema.json"}})
+            "repository": "https://github.com/example/fork", "revision": "a" * 40, "selectionSchema": "schemas/intent.schema.json"}})
         self.write(self.policy / "typescript/base/bundle.json", {"name": "Base", "inputs": [
             {"id": "count", "prompt": "Number of fixtures?", "type": "number", "default": 0,
              "destination": {"file": ".oxlintrc.json", "field": ["fixtureCount"]}},
@@ -174,6 +174,9 @@ class CliChecks(unittest.TestCase):
         saved = json.loads((self.project / ".its-checks.json").read_text())
         self.assertEqual(saved["integrations"], ["example"])
         self.assertEqual(saved["automation"], ["ci"])
+        self.assertEqual(saved["source"], "https://github.com/example/fork")
+        self.assertNotIn("schemaVersion", saved)
+        self.assertNotIn("commit", saved, "copied source/archive fixtures have no known Git revision")
         self.assertEqual(saved["answers"]["base"], {"count": 2, "enabled": False, "label": "fixture"})
         before = self.state()
         second = self.terminal()
@@ -248,25 +251,50 @@ class CliChecks(unittest.TestCase):
         self.assertIn("Cancelled before application. No project writes or installation.", text)
         self.assertEqual(self.state(), before)
 
+    def base_answers(self, terminal):
+        terminal.expect("Choose integrations")
+        terminal.send("\r")
+        terminal.expect("Choose automation")
+        terminal.send("\r")
+        for question in ["Number of fixtures?", "Enable fixture?", "Fixture label?"]:
+            terminal.expect(question)
+            terminal.send("\r")
+
+    def commit_fixture(self, directory):
+        for args in [["init", "--quiet"], ["add", "."], ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"]]:
+            subprocess.run(["git", *args], cwd=directory, check=True, capture_output=True)
+        return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=directory, text=True).strip()
+
+    def test_clean_generator_commit_is_recorded_and_matching_rerun_stays_noop(self):
+        commit = self.commit_fixture(self.policy.parent)
+        first = self.terminal()
+        self.base_answers(first)
+        first.finish(0)
+        self.assertEqual(json.loads((self.project / ".its-checks.json").read_text())["commit"], commit)
+        before = self.state()
+        second = self.terminal()
+        self.base_answers(second)
+        self.assertIn("Already up to date. No writes or installation.", second.finish(0))
+        self.assertEqual(self.state(), before)
+
+    def test_target_git_commit_is_not_generator_identity(self):
+        self.commit_fixture(self.project)
+        first = self.terminal()
+        self.base_answers(first)
+        first.finish(0)
+        self.assertNotIn("commit", json.loads((self.project / ".its-checks.json").read_text()))
+
     def test_policy_edit_reaches_output_without_changing_entrypoint(self):
         entry_bytes = self.entry.read_bytes()
-        def answers(terminal):
-            terminal.expect("Choose integrations")
-            terminal.send("\r")
-            terminal.expect("Choose automation")
-            terminal.send("\r")
-            for question in ["Number of fixtures?", "Enable fixture?", "Fixture label?"]:
-                terminal.expect(question)
-                terminal.send("\r")
         first = self.terminal()
-        answers(first)
+        self.base_answers(first)
         first.finish(0)
         policy_file = self.policy / "typescript/base/files/.oxlintrc.json"
         policy = json.loads(policy_file.read_text())
         policy["fixturePolicyEdit"] = "changed without rebuilding"
         self.write(policy_file, policy)
         second = self.terminal()
-        answers(second)
+        self.base_answers(second)
         second.expect("Apply this plan, including replacements and removals?")
         second.send("y\r")
         text = second.finish(0)

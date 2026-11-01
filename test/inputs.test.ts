@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { parse } from "jsonc-parser";
 import { loadPolicy } from "../src/bundles.ts";
 import { enumerateInputs, resolveInputs } from "../src/inputs.ts";
-import { decodeSavedIntent, loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+import { decodeSavedIntent, loadPreviousIntent, selectionContent, selectionFilename, type SavedIntent } from "../src/selections.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
@@ -64,8 +64,12 @@ test("first use enumerates every selected bundle and resolves explicit native va
   assert.deepEqual(await snapshot(f.project), before);
   assert.equal(resolved.selectionFile.path, ".its-checks.json");
   assert.deepEqual(await run(decodeSavedIntent(resolved.selectionFile.content)), resolved.intent);
-  assert.equal(resolved.intent.$schema, `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/selections.schema.json`);
-  assert.deepEqual(resolved.intent.answers, answers);
+  assert.equal(resolved.intent.$schema, `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`);
+  assert.deepEqual(resolved.intent, {
+    $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`,
+    source: "https://github.com/example/fork",
+    integrations: ["tailwind"], automation: ["ci"], answers,
+  });
 });
 
 test("offline saved intent is returned for preselection/prefill, changed answers bind afresh, deselection drops stale answers", async (t) => {
@@ -117,7 +121,7 @@ test("malformed local intent is never treated as first use or trusted via a remo
   const intent = (await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}))).intent;
   const valid = JSON.stringify(intent);
   const malformed = [
-    "{broken", valid.replace('"schemaVersion":1', '"schemaVersion":2'),
+    "{broken", JSON.stringify({ ...intent, schemaVersion: 2 }),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":null}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":[]}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":1e999}}'),
@@ -126,8 +130,11 @@ test("malformed local intent is never treated as first use or trusted via a remo
     valid.replace('"answers":{}', '"answers":{},"ownership":[]'),
     valid.replace('"answers":{}', '"answers":{},"answers":{}'),
     valid.replace('"answers":{}', '"answers":{"__proto__":{}}'),
-    JSON.stringify({ ...intent, $schema: "https://unreachable.invalid/schema.json" }),
-    JSON.stringify({ ...intent, source: { ...intent.source, revision: "main" } }),
+    JSON.stringify({ ...intent, $schema: "file:///private/schema.json" }),
+    JSON.stringify({ ...intent, source: "https://user:password@example.com/repo" }),
+    JSON.stringify({ ...intent, commit: "main" }),
+    JSON.stringify({ ...intent, commit: "a".repeat(7) }),
+    JSON.stringify({ ...intent, commit: null }),
   ];
   for (const content of malformed) {
     await fs.writeFile(path.join(f.project, selectionFilename), content);
@@ -138,6 +145,45 @@ test("malformed local intent is never treated as first use or trusted via a remo
   await fs.rm(path.join(f.project, selectionFilename));
   await fs.symlink(path.join(f.project, "package.json"), path.join(f.project, selectionFilename));
   await assert.rejects(run(loadPreviousIntent(f.project)), /regular file/);
+});
+
+test("legacy intent stays readable offline, preserves answers, and never turns its schema pin into a generating commit", async (t) => {
+  const f = await inputPolicy(t);
+  const legacy = {
+    $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/selections.schema.json`,
+    schemaVersion: 1,
+    source: { repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/selections.schema.json" },
+    ...all, answers,
+  };
+  const content = JSON.stringify(legacy, null, 4) + "\n";
+  await fs.writeFile(path.join(f.project, selectionFilename), content);
+  const before = await snapshot(f.project);
+  const saved = await run(loadPreviousIntent(f.project));
+  assert.deepEqual(saved, { $schema: legacy.$schema, source: legacy.source.repository, ...all, answers });
+  assert.deepEqual(await snapshot(f.project), before, "reading legacy files must not migrate them implicitly");
+  const policy = await run(loadPolicy(f.policy, all));
+  assert.deepEqual((await run(enumerateInputs(policy, saved))).map((question) => question.initialValue),
+    ["project", 0, "src/not-created-yet.css", false]);
+  const current = await run(resolveInputs(policy, answers, "b".repeat(40)));
+  assert.deepEqual(current.intent, { $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`,
+    source: legacy.source.repository, commit: "b".repeat(40), ...all, answers });
+  assert.equal(Object.hasOwn(current.intent, "schemaVersion"), false);
+  assert.deepEqual(await run(decodeSavedIntent(current.selectionFile.content)), current.intent);
+  await assert.rejects(run(selectionContent(legacy as unknown as SavedIntent)), /source|schemaVersion/,
+    "the compatibility reader must not enable the writer to emit the legacy shape");
+  for (const invalid of [
+    { ...legacy, schemaVersion: 2 },
+    { ...legacy, source: { ...legacy.source, revision: "main" } },
+    { ...legacy, $schema: "https://unreachable.invalid/mismatched-schema.json" },
+    { ...legacy, ownership: [] },
+  ]) await assert.rejects(run(decodeSavedIntent(JSON.stringify(invalid))), /selections/);
+});
+
+test("current intent keeps the editor schema independent of the optional generating commit", async (t) => {
+  const f = await fixture(t);
+  const intent = (await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}, "c".repeat(64)))).intent;
+  const saved = { ...intent, $schema: "https://unreachable.invalid/editor-schema.json" };
+  assert.deepEqual(await run(decodeSavedIntent(JSON.stringify(saved))), saved, "no runtime fetch or inferred schema/commit equality");
 });
 
 test("invalid native input bindings fail before mutation, including overlapping and incorrectly typed field paths", async (t) => {
@@ -181,12 +227,13 @@ test("JSON binding treats input IDs as own map keys and preserves target-root pa
 test("the committed schema describes the generated single-file shape and links its repository", async (t) => {
   const f = await fixture(t);
   const generated = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
-  const schema = JSON.parse(await fs.readFile(new URL("../schemas/selections.schema.json", import.meta.url), "utf8"));
+  const schema = JSON.parse(await fs.readFile(new URL("../schemas/intent.schema.json", import.meta.url), "utf8"));
   assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
   assert.equal(schema.title, "its-checks saved project intent");
   assert.match(schema.description, /https:\/\/github.com\/ItsEthanDev\/its-checks/);
   assert.deepEqual(Object.keys(generated.intent).sort(), [...schema.required].sort());
-  assert.deepEqual(Object.keys(schema.properties).sort(), [...schema.required].sort());
+  assert.deepEqual(Object.keys(schema.properties).sort(), [...schema.required, "commit"].sort());
+  assert.equal(schema.required.includes("commit"), false);
   assert.equal(schema.additionalProperties, false);
   for (const property of Object.values(schema.properties) as { description: string }[]) assert.ok(property.description.length > 0);
   assert.deepEqual(generated.intent.answers, {});

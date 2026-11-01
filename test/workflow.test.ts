@@ -87,6 +87,36 @@ test("accepted deselection removes only identifiable current setup and records n
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).integrations, []);
 });
 
+test("legacy intent migration preserves prefills, decline safeguards, and deselection identity", async (t) => {
+  const f = await fixture(t); await inputPolicy(f);
+  await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy,
+    presentation: dialogue({ integrations: ["example"], automation: ["ci"], answers: { "integrations/example/stylesheet": "src/saved.css" } }).ui,
+    dependencies: () => ready }));
+  const file = path.join(f.project, ".its-checks.json");
+  const current = JSON.parse(await fs.readFile(file, "utf8"));
+  const legacy = { ...current, $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/selections.schema.json`, schemaVersion: 1,
+    source: { repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/selections.schema.json" } };
+  await fs.writeFile(file, JSON.stringify(legacy, null, 4) + "\n");
+  const before = await snapshot(f.project), declined = dialogue({ approve: false });
+  const result = await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy,
+    presentation: declined.ui, dependencies: () => ready }));
+  assert.equal(result.status, "declined");
+  assert.deepEqual(declined.shown.map((category) => category.previous), [["example"], ["ci"]]);
+  assert.equal(declined.questions[0]?.initial, "src/saved.css");
+  assert.equal(declined.confirmations, 1);
+  assert.deepEqual(await snapshot(f.project), before);
+  const accepted = dialogue({ integrations: [], automation: [] });
+  await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, commit: "c".repeat(40),
+    presentation: accepted.ui, dependencies: () => ready }));
+  const saved = JSON.parse(await fs.readFile(file, "utf8"));
+  assert.equal(saved.source, "https://github.com/example/fork");
+  assert.equal(saved.commit, "c".repeat(40));
+  assert.equal(saved.schemaVersion, undefined);
+  assert.deepEqual(saved.integrations, []); assert.deepEqual(saved.automation, []); assert.deepEqual(saved.answers, {});
+  assert.equal(JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies.example, undefined);
+  await assert.rejects(fs.stat(path.join(f.project, ".github/workflows/check.yml")), { code: "ENOENT" });
+});
+
 test("retired saved IDs are disclosed, not passed as invalid selections; accepted no-history cleanup remains manual", async (t) => {
   const f = await fixture(t); await inputPolicy(f);
   await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy,

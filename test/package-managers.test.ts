@@ -123,7 +123,8 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
     }, catch: (cause) => { throw cause; } });
   } };
   const adapter = createDependencyAdapter(resolution.target, operations);
-  const plan = async () => run(planProject(f.project, await run(resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {})), { scripts: resolution.target.scripts }));
+  let commit: string | undefined;
+  const plan = async () => run(planProject(f.project, await run(resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {}, commit)), { scripts: resolution.target.scripts }));
   let next = await plan();
   assert.equal(await run(adapter.assess(next)), "required");
   assert.equal(installs, 0, "assessment is read-only");
@@ -133,6 +134,14 @@ for (const manager of Object.keys(testedVersions) as PackageManager[]) test(`${m
   assert.equal(installs, 1);
   assert.equal((await get(f.project, "package.json")).scripts.install, "exit 99");
   assert.equal((await get(f.project, "package.json")).devDependencies.unrelated, "1.0.0");
+  for (const revision of ["a".repeat(40), "b".repeat(40)]) {
+    commit = revision;
+    const provenance = await plan();
+    assert.deepEqual(provenance.files.filter((file) => file.kind !== "noop").map((file) => file.path), [".its-checks.json"]);
+    assert.equal(await run(adapter.assess(provenance)), "not-required", "source identity is not dependency/lifecycle evidence");
+    assert.equal((await run(applyPlan(provenance, { approved: true, dependencies: adapter }))).dependencyWork, "not-required");
+    assert.equal(installs, 1);
+  }
   // Formatting/mtime, object order, unrelated values and non-lifecycle commands
   // are not evidence that dependency installation or lifecycle execution is due.
   for (const rewrite of [

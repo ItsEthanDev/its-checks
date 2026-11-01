@@ -2,6 +2,8 @@
 
 Audit date: 2026-10-31 UTC. Audited source: `aec07d3a28939bb76229d5c97ad7f11a734d3cb5`, matching GitHub `main` when checked. This hash identifies the audited snapshot, not a prescribed launch revision.
 
+Follow-up: A2 is resolved by the simplified saved-intent format and [`intent.schema.json`](../schemas/intent.schema.json). The schema/source duplication is removed; `commit` now describes reliable local execution identity or is omitted. The audit results below describe the original snapshot. A1 remains unchanged.
+
 ## Conclusion
 
 All 28 acceptance entries in [#1](https://github.com/ItsEthanDev/its-checks/issues/1) are accounted for within the documented Linux/POSIX, single-package support scope. No new functional failure was reproduced. All acceptance suites passed, including fresh real-manager, live-policy, packaged-CLI, and GitHub source-launch checks.
@@ -85,7 +87,7 @@ The older #1 decision-review comment already called for owner review of seven mo
 
 ### A2. Schema revision descriptions lag the selected provenance contract
 
-[`schemas/selections.schema.json`](../schemas/selections.schema.json) describes `$schema` as being at the “immutable generating revision” and `source.revision` as “identifying the generating policy.” However, [`policy/bundle.json`](../policy/bundle.json) deliberately pins a known schema-containing commit, independently of the executing code/policy revision. [`docs/policy.md`](policy.md#pin-repository-and-schema-identity) correctly states that distinction, and the earlier #1 provenance decision records it.
+[`schemas/selections.schema.json`](../schemas/selections.schema.json) describes `$schema` as being at the “immutable generating revision” and `source.revision` as “identifying the generating policy.” However, [`policy/bundle.json`](../policy/bundle.json) deliberately pins a known schema-containing commit, independently of the executing code/policy revision. [`docs/policy.md`](policy.md#source-identity-and-the-editor-schema) correctly states that distinction, and the earlier #1 provenance decision records it.
 
 The runtime contract is consistent and offline. The [generated schema URL](https://github.com/ItsEthanDev/its-checks/raw/85e709004b65df77a1fa13ac8f7c119784c82602/schemas/selections.schema.json) returned HTTP 200, resolved to the intended immutable raw GitHub schema, and matched the local schema byte for byte (SHA-256 `663153d91c571407707dfd58067a67682b5401bbaa5512b6767dd7d0ebe2665a`). The pin is not a broken link or a launch-version selector.
 
@@ -104,4 +106,4 @@ Clarify the schema descriptions so readers do not mistake the schema pin for the
 
 No application, policy, tests, launch commands, or dependency versions were changed. No issues were closed, no checkbox/status edits were made, and no pushes or deployments were performed during the audit. The report is the only repository change.
 
-Before closing #1: decide A1, resolve or explicitly defer A2, and give final product acceptance within the stated limits. The independent editing acceptance is already complete.
+Before closing #1: decide A1 and give final product acceptance within the stated limits. A2 was subsequently resolved by the simplified intent format. The independent editing acceptance is already complete.

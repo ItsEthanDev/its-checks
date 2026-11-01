@@ -162,13 +162,34 @@ Setup also proposes removal of competing `.oxfmtrc.jsonc`, `.oxlintrc.jsonc`, an
 
 Deselection uses prior intent and **current** definitions only. Files/dependencies still required by selected bundles survive. Renamed/disappeared paths, names, or retired bundles are not reconstructed and may need manual cleanup. No ownership inventory, command backup, or historical bundle version exists. Removing Husky does not undo lifecycle Git settings/dispatch files; follow [recovery guidance](usage.md#recover-from-failure).
 
-## Pin repository and schema identity
+## Source identity and the editor schema
 
-Root `policy/bundle.json` contains `schemaVersion: 1` and a `source` object with `repository`, `revision`, and `selectionSchema`. For a fork:
+Root `policy/bundle.json` declares the policy format (`schemaVersion: 1`) and its editable `source` metadata. This authoring metadata selects the repository and editor schema; it is not copied wholesale into the target's saved file. For a fork:
 
-1. Set `repository` to your HTTPS repository URL without credentials, query, or fragment. Update the descriptive repository link in [`schemas/selections.schema.json`](../schemas/selections.schema.json).
-2. Commit the schema at a safe repository-relative `.json` path, normally `schemas/selections.schema.json`.
-3. Set `revision` to that known schema-containing commit's full lowercase 40- or 64-digit hexadecimal hash, and `selectionSchema` to its path. This pins the **schema**, not the executing checkout's current revision.
-4. Ensure readers can reach `<repository>/raw/<revision>/<schema-path>` if you want remote editor schema assistance. Path segments are URI-encoded; the repository must support this GitHub-compatible endpoint convention. A local hash does not prove remote availability.
+1. Set `source.repository` to your HTTPS repository URL without credentials, query, or fragment. Update the descriptive repository link in [`schemas/intent.schema.json`](../schemas/intent.schema.json).
+2. Commit the schema at a safe repository-relative `.json` path, normally `schemas/intent.schema.json`.
+3. Set `source.revision` to that known schema-containing commit's full lowercase hash, and `source.selectionSchema` to its path. This selects the **editor schema**, independently of the executing code revision.
+4. Publish that commit and ensure `<repository>/raw/<revision>/<schema-path>` is reachable through a GitHub-compatible raw endpoint. Runtime decoding never fetches it. Ordinary code/policy edits do not require updating this schema pin.
 
-Generated `.its-checks.json` contains `$schema`, `schemaVersion`, `source`, `integrations`, `automation`, and `answers`. Its schema URL must match its own source metadata, which can differ from the current checkout on rerun. Runtime decoding remains offline and validates shape/consistency, not revision existence or publication. Intent is not installation evidence or a historical ownership manifest.
+### Saved project intent
+
+The generated `.its-checks.json` records the following fields (commit values below are placeholders):
+
+```json
+{
+  "$schema": "https://example.com/fork/raw/<schema-commit>/schemas/intent.schema.json",
+  "source": "https://example.com/fork",
+  "commit": "<actual-generating-commit-when-known>",
+  "integrations": ["tailwind"],
+  "automation": ["husky"],
+  "answers": { "integrations/tailwind": { "formatter-stylesheet": "src/styles.css" } }
+}
+```
+
+`$schema` is an editor aid. `source` is the configured repository. The optional `commit` is the executing generator's full revision, not the schema commit and not today's remote HEAD. It is omitted rather than written as `null`, a branch name, or a guess when identity is unavailable. Arrays and answers prefill subsequent dialogues. There is no saved format-version field or duplicated schema-source object.
+
+The CLI uses only local provenance: a clean Git checkout at the executed package root, or its own installed package's native npm/Bun lock metadata. It does not search the target repository, query GitHub, fetch revisions, or add a marker file. Dirty/untracked checkout edits, unpacked archives, malformed/missing/ambiguous native metadata, and unresolved short hashes omit `commit`. npm/npx records a full resolved Git revision. Bunx 1.4 default-branch cache entries expose only a short hash, so that case omits it; a full requested pin is recorded only when its repository and resolved prefix agree. Cache metadata is not an attestation against manually edited cache contents.
+
+Old saved files with `schemaVersion: 1` and a nested `source` remain readable, including their selections, answers, and deselection identity. Their schema pin is never promoted to a generating commit. Reading them does not rewrite them. The next approved application writes the current shape using the normal conflict and exact-byte safeguards. The legacy [`selections.schema.json`](../schemas/selections.schema.json) remains available for old references. This is backward read compatibility, not a promise that older cached CLI versions can read new files; after migration, use an updated CLI revision or checkout.
+
+Intent is saved before dependency installation and is not installation success, an ownership/history file, or a pin for future CLI launches. A changed generating commit alone does not require dependency installation or lifecycle execution.
