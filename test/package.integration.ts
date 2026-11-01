@@ -45,7 +45,7 @@ test("packed source CLI ships its runtime assets and works with production depen
   await fs.mkdir(consumer);
   await fs.writeFile(path.join(consumer, "package.json"), JSON.stringify({ private: true, dependencies: { "its-checks": "file:../its-checks.tgz" } }));
   // No package lifecycle scripts may run during the fixture installation. The CLI
-  // suite uses empty native npm state and no fixture dependency/lifecycle commands.
+  // suite runs offline npm installs with no fixture dependencies or lifecycle scripts.
   await exec("bun", ["install", "--production", "--ignore-scripts"], { cwd: consumer, timeout: 60_000 });
   for (const dev of ["typescript", "yarn"]) {
     await assert.rejects(fs.stat(path.join(consumer, "node_modules", dev)), { code: "ENOENT" });

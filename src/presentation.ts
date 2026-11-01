@@ -59,13 +59,13 @@ export function createClackPresentation() {
         ...files.map((file) => `${file.kind}: ${file.path}${file.conflict ? " [conflict]" : ""}\n  ${file.reasons.join("; ")}`),
         ...entries.map((entry) => `${entry.kind}: ${entry.section}.${entry.name}: ${JSON.stringify(entry.before)} → ${JSON.stringify(entry.after)}`),
         files.length ? "" : "Configuration already matches; no file writes.",
-        `Dependencies: ${dependencies === "required" ? "installation/reconciliation required after configuration" : "already match; no installation expected"}.`,
-        "Dependencies will be checked again after configuration. Normal installation may run project lifecycle scripts.",
+        `Dependencies: ${dependencies === "required" ? "run the selected package manager's install after configuration" : "installation skipped"}.`,
+        "Normal installation uses project settings and may run lifecycle scripts; setup does not audit the installed tree.",
       ].filter(Boolean).join("\n"), "Read-only change plan");
     },
     progress: (message) => { spinner.start(message); spinning = true; },
     complete: (report) => {
-      stop("Configuration and dependency checks finished.");
+      stop("Configuration and dependency installation finished.");
       const files = report.completed.filter((operation) => operation.kind === "write-file" || operation.kind === "remove-file");
       clack.outro(files.length === 0 && report.dependencyWork === "not-required" ? "Already up to date. No writes or installation."
         : `Completed: ${files.length} file changes; dependencies ${report.dependencyWork}.`);

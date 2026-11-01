@@ -125,11 +125,11 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
     const baseRerun = await plan();
     assert.ok(baseRerun.files.every((file) => file.kind === "noop"));
     assert.equal(baseRerun.files.some((file) => file.conflict), false);
-    assert.equal(await run(dependencies.assess(baseRerun)), "not-required", "formatting alone must not request installation in preview");
+    assert.equal(await run(dependencies.assess(baseRerun)), "required", "matching configuration still delegates installation");
     const report = await run(applyPlan(baseRerun, { approved: true, dependencies }));
-    assert.equal(report.dependencyWork, "not-required");
-    assert.ok(report.completed.every((operation) => operation.kind === "assess-dependencies"), "no file writes or install");
-    assert.equal(installs, 1);
+    assert.equal(report.dependencyWork, "completed");
+    assert.ok(report.completed.every((operation) => operation.kind === "assess-dependencies" || operation.kind === "install-dependencies"), "no configuration writes");
+    assert.equal(installs, cycle + 2);
     assert.equal(await fs.readFile(path.join(project, "package.json"), "utf8"), formatted);
     await good("npm", ["run", "format"]);
   }
@@ -139,7 +139,7 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
   const combined = await plan(all);
   const combinedAudit = await inspectInstall(combined, path.join(root, "audit-tailwind"), project);
   assert.equal((await run(applyPlan(combined, { approved: true, dependencies }))).dependencyWork, "completed");
-  assert.equal(installs, 2);
+  assert.equal(installs, 4);
   const installed = async (name: string) => JSON.parse(await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8")).version;
   assert.equal(await installed("tailwindcss"), "4.3.3");
   assert.equal(await installed("eslint-plugin-tailwindcss"), "4.4.0");
@@ -149,7 +149,7 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
   assert.equal(combinedManifest.dependencies?.eslint, undefined);
   assert.equal(combinedManifest.devDependencies.eslint, undefined);
   assert.equal((await exec("git", ["config", "core.hooksPath"], { cwd: project })).stdout.trim(), ".husky/_");
-  assert.equal(await fs.readFile(path.join(project, "lifecycle.log"), "utf8"), "installed\ninstalled\n");
+  assert.equal(await fs.readFile(path.join(project, "lifecycle.log"), "utf8"), "installed\n".repeat(4));
   const lint = await command("npm", ["run", "lint"]);
   assert.notEqual(lint.code, 0);
   assert.match(lint.output, /no-contradicting-classname/);
@@ -171,8 +171,8 @@ test("pinned reference baseline + Tailwind + automation through normal npm adapt
   await fs.unlink(path.join(project, "src/debug.ts"));
   const rerun = await plan(all);
   assert.ok(rerun.files.every((file) => file.kind === "noop"));
-  assert.equal((await run(applyPlan(rerun, { approved: true, dependencies }))).dependencyWork, "not-required");
-  assert.equal(installs, 2);
+  assert.equal((await run(applyPlan(rerun, { approved: true, dependencies }))).dependencyWork, "completed");
+  assert.equal(installs, 5);
   assert.equal((await fs.readFile(path.join(project, ".husky/pre-commit"), "utf8")).match(/# BEGIN its-checks/g)?.length, 1);
-  t.diagnostic(`Audited ${baselineAudit} baseline and ${combinedAudit} combined installed manifests; 2 normal npm adapter installs; real Oxfmt/Oxlint check/fix + Husky pass/fail; Actions authored/parsed only`);
+  t.diagnostic(`Audited ${baselineAudit} baseline and ${combinedAudit} combined installed manifests; 5 normal npm adapter installs; real Oxfmt/Oxlint check/fix + Husky pass/fail; Actions authored/parsed only`);
 });

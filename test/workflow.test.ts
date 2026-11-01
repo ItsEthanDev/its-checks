@@ -5,6 +5,7 @@ import { test } from "node:test";
 import { Effect } from "effect";
 import { ApplicationError, OperationError, type ApplicationDependencies, type ApplicationReport } from "../src/application.ts";
 import type { ChangePlan } from "../src/planning.ts";
+import { createDependencyAdapter } from "../src/package-managers.ts";
 import type { Answer } from "../src/selections.ts";
 import { Cancelled, setup, type SetupPresentation } from "../src/workflow.ts";
 import { fixture, snapshot } from "./fixtures.ts";
@@ -147,15 +148,15 @@ test("noninteractive execution fails before any discovery/target reads or questi
   assert.deepEqual(d.shown, []);
 });
 
-test("unsupported target environment fails read-only before configuration is overwritten", async (t) => {
+test("project package-manager settings do not block setup before approval", async (t) => {
   const f = await fixture(t);
-  await fs.writeFile(path.join(f.project, "package.json"), '{"packageManager":"pnpm@12.9.0"}');
+  await fs.writeFile(path.join(f.project, "package.json"), '{"packageManager":"pnpm@99.0.0"}');
   await fs.writeFile(path.join(f.project, ".oxlintrc.json"), '{"old":true}');
-  const before = await snapshot(f.project); const d = dialogue();
-  const result = await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, presentation: d.ui }).pipe(Effect.result));
-  assert.equal(result._tag, "Failure");
-  if (result._tag === "Failure") assert.match(String(result.failure), /manage-package-manager-versions=false/);
-  assert.equal(d.confirmations, 0); assert.deepEqual(await snapshot(f.project), before);
+  const before = await snapshot(f.project); const d = dialogue({ approve: false });
+  const result = await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, presentation: d.ui,
+    dependencies: (target) => createDependencyAdapter(target, { run: () => Effect.die("Must not invoke a manager before approval") }) }));
+  assert.equal(result.status, "declined");
+  assert.equal(d.confirmations, 1); assert.deepEqual(await snapshot(f.project), before);
 });
 
 test("installation failure retains applied intent, reports incomplete work, never emits completion", async (t) => {

@@ -111,8 +111,9 @@ class CliChecks(unittest.TestCase):
         self.write(self.policy / "typescript/integrations/example/files/.oxfmtrc.json", {"stylesheet": "placeholder"})
         self.write(self.policy / "typescript/automation/ci/bundle.json", {"name": "Example automation"})
         self.write(self.policy / "typescript/automation/ci/files/.github/workflows/check.yml", "# its-checks: managed\nname: Checks\non: push\n")
-        # Native empty npm state: no dependencies, installs, scripts, or process substitution.
-        self.write(self.project / "package.json", {"name": "fixture", "packageManager": "npm@11.19.0"})
+        # Empty offline npm fixture: normal installs have no dependencies or lifecycle scripts.
+        self.write(self.project / ".npmrc", "offline=true\naudit=false\nfund=false\n")
+        self.write(self.project / "package.json", {"name": "fixture"})
         self.write(self.project / "package-lock.json", {"lockfileVersion": 3, "packages": {"": {}}})
         self.write(self.project / "node_modules/.package-lock.json", {"lockfileVersion": 3, "packages": {}})
         self.terminals = []
@@ -134,6 +135,10 @@ class CliChecks(unittest.TestCase):
     def state(self):
         return {str(p.relative_to(self.project)): (p.read_bytes(), p.stat().st_mtime_ns)
                 for p in self.project.rglob("*") if p.is_file()}
+
+    def configuration_state(self):
+        return {name: state for name, state in self.state().items()
+                if not name.startswith("node_modules/") and name != "package-lock.json"}
 
     def answers(self, terminal, first=False):
         terminal.expect("Number of fixtures?")
@@ -178,7 +183,7 @@ class CliChecks(unittest.TestCase):
         self.assertNotIn("schemaVersion", saved)
         self.assertNotIn("commit", saved, "copied source/archive fixtures have no known Git revision")
         self.assertEqual(saved["answers"]["base"], {"count": 2, "enabled": False, "label": "fixture"})
-        before = self.state()
+        before = self.configuration_state()
         second = self.terminal()
         second.expect("Choose integrations")
         second.send("\r")  # accepts preselection without toggling
@@ -186,9 +191,10 @@ class CliChecks(unittest.TestCase):
         second.send("\r")
         self.answers(second)
         text = second.finish(0)
-        self.assertIn("Already up to date. No writes or installation.", text)
+        self.assertIn("Completed: 0 file changes; dependencies completed.", text)
         self.assertNotIn("Apply this plan", text)
-        self.assertEqual(self.state(), before)
+        self.assertEqual(self.configuration_state(), before)
+        before = self.state()
         third = self.terminal()
         third.expect("Choose integrations")
         third.send("\r")
@@ -203,7 +209,7 @@ class CliChecks(unittest.TestCase):
         self.assertEqual(self.state(), before)
         if os.environ.get("ITS_CHECKS_SHOW_TERMINAL"):
             print("\nCaptured Clack removal/decline rendering:\n" + text)
-        print("\nInspected real Clack rendering: Space/Enter selections, number validation, false/number/string/path prefills; creation plan; no-op outro; removal plan and single declined confirmation.")
+        print("\nInspected real Clack rendering: Space/Enter selections, number validation, false/number/string/path prefills; creation plan; matching configuration with normal install; removal plan and single declined confirmation.")
 
     def test_manager_ambiguity_and_input_cancellation_are_read_only(self):
         self.write(self.project / "yarn.lock", "# conflicting manager evidence\n")
@@ -271,11 +277,11 @@ class CliChecks(unittest.TestCase):
         self.base_answers(first)
         first.finish(0)
         self.assertEqual(json.loads((self.project / ".its-checks.json").read_text())["commit"], commit)
-        before = self.state()
+        before = self.configuration_state()
         second = self.terminal()
         self.base_answers(second)
-        self.assertIn("Already up to date. No writes or installation.", second.finish(0))
-        self.assertEqual(self.state(), before)
+        self.assertIn("Completed: 0 file changes; dependencies completed.", second.finish(0))
+        self.assertEqual(self.configuration_state(), before)
 
     def test_target_git_commit_is_not_generator_identity(self):
         self.commit_fixture(self.project)

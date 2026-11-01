@@ -6,14 +6,9 @@ Beta setup for standalone Oxfmt and Oxlint configuration in one TypeScript packa
 
 Bun 1.4.0, Node 24+, and Git on `PATH`. Tested on Linux x64 with POSIX shell. Install the target package manager separately:
 
-| Manager | Version | Required settings |
-| --- | --- | --- |
-| npm | 11.19.0 | Lockfile v3; `node_modules` |
-| pnpm | 12.9.0 | Isolated linker; `.npmrc`: `manage-package-manager-versions=false` |
-| Yarn Classic | 1.22.22 | `node_modules`, not PnP |
-| Bun | 1.4.0 | Text lockfile; `bunfig.toml`: `linker = "isolated"` under `[install]` |
+Install the target project's package manager (npm, pnpm, Yarn, or Bun) on `PATH`. Setup uses the project's existing package-manager configuration without requiring a particular version, linker, or lockfile format.
 
-Keep development dependencies and lifecycle scripts enabled.
+After applying configuration, setup runs the selected manager's normal `install`, including on reruns with no configuration changes. The package manager owns dependency resolution and installation; setup does not audit or repair its internal state.
 
 ## Run
 

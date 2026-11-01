@@ -6,14 +6,12 @@
       "name": "its-checks",
       "dependencies": {
         "@clack/prompts": "1.8.1",
-        "@yarnpkg/lockfile": "1.1.0",
         "effect": "4.1.1",
         "jsonc-parser": "3.3.1",
         "yaml": "2.9.1",
       },
       "devDependencies": {
         "@types/node": "24.19.2",
-        "@types/yarnpkg__lockfile": "1.1.9",
         "typescript": "6.0.2",
         "yarn": "1.22.22",
       },
@@ -25,10 +23,6 @@
     "@clack/prompts": ["@clack/prompts@1.8.1", "", { "dependencies": { "@clack/core": "1.5.1", "fast-string-width": "^3.0.2", "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ=="],
 
     "@types/node": ["@types/node@24.19.2", "", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-93d49wCWJkCyN87MxLpNN6KXPCwFw7bVUg79mGUV1OS40JGWwVCr8n61DXCSqz7CV6/VfPkb7xec7uP2M+QHWQ=="],
-
-    "@types/yarnpkg__lockfile": ["@types/yarnpkg__lockfile@1.1.9", "", {}, "sha512-GD4Fk15UoP5NLCNor51YdfL9MSdldKCqOC9EssrRw3HVfar9wUZ5y8Lfnp+qVD6hIinLr8ygklDYnmlnlQo12Q=="],
-
-    "@yarnpkg/lockfile": ["@yarnpkg/lockfile@1.1.0", "", {}, "sha512-GpSwvyXOcOOlV70vbnzjj4fW5xW/FdUF6nQEt1ENy7m4ZCczi1+/buVUPAqmGfqznsORNFzUMjctTIp8a9tuCQ=="],
 
     "effect": ["effect@4.1.1", "", {}, "sha512-XYu65BrcmNqu5i7PPvP4dqL+R5ma37zIsfuSPjcn78mog+6e5PkilNg7Xo+pBpjXJYlWEIpH4j91tMrfW05CMw=="],
 

@@ -64,11 +64,11 @@ export function setup(options: SetupOptions) {
       ...(previous === undefined ? {} : { previous }), currentBundles: current.bundles, scripts: manager.target.scripts,
     });
     const dependencies = (options.dependencies ?? createDependencyAdapter)(manager.target);
-    // Mandatory read-only environment/state check: unsupported setups must fail before config writes.
+    // Preview installation work without invoking the package manager.
     const preview = yield* dependencies.assess(plan);
     yield* Effect.sync(() => ui.plan(plan, preview));
     if (plan.requiresConfirmation && !(yield* ui.confirm())) return { status: "declined" as const };
-    yield* Effect.sync(() => ui.progress("Applying approved configuration, then checking dependencies…"));
+    yield* Effect.sync(() => ui.progress("Applying approved configuration, then installing dependencies…"));
     const report = yield* applyPlan(plan, { approved: true, dependencies });
     yield* Effect.sync(() => ui.complete(report));
     return report;

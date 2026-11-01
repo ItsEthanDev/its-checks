@@ -18,8 +18,8 @@ export interface ApplicationFileSystem {
   readonly writeFile: (absolutePath: string, state: Extract<FileState, { kind: "file" }>, create: boolean) => Effect.Effect<void, OperationError>;
   readonly removeFile: (absolutePath: string) => Effect.Effect<void, OperationError>;
 }
-/** assess is read-only and inspects actual dependency state, even for a matching configuration.
- * install must reconcile the approved manifest, not independently change its requirements. */
+/** assess is a read-only installation decision, not an audit of the installed tree.
+ * install delegates the approved manifest to the package manager without changing its requirements. */
 export interface ApplicationDependencies {
   readonly assess: (plan: ChangePlan) => Effect.Effect<"required" | "not-required", OperationError>;
   readonly install: (plan: ChangePlan) => Effect.Effect<void, OperationError>;
@@ -109,7 +109,7 @@ export function applyPlan(plan: ChangePlan, options: ApplicationOptions): Effect
         incomplete: failed && !incomplete.some((entry) => entry.kind === failed.kind && entry.path === failed.path)
           ? [failed, ...incomplete] : [...incomplete], dependencyWork,
         ...(failed ? { failed } : {}), ...(observed ? { observed } : {}),
-        retry: "Inspect the reported partial state, fix the failure, then build and approve a fresh plan. Already applied configuration remains; no rollback was performed. Dependency assessment must inspect actual installation state, not saved intent." } });
+        retry: "Inspect the reported partial state, fix the failure, then build and approve a fresh plan. Already applied configuration remains; no rollback was performed. Run the selected package manager's install again to retry dependency installation." } });
     if (!plan.complete) return yield* Effect.fail(failure("validation", "Incomplete plan; finish deferred planning before approval"));
     // A plan is trusted application data, but observations must cover every approved operation.
     for (const file of plan.files) {
