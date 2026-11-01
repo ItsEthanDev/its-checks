@@ -28,6 +28,8 @@ bun /absolute/path/to/its-checks/src/cli.ts
 
 After setup: `node --run fmt` to format; `node --run check` to check formatting and lint.
 
+Setup generates `.its-checks.json` in the target project to save your selections, answers, and source identity. Keep it for reruns: setup uses it to prefill choices and clean up deselected integrations and automation. It does not record installation success or pin future launches. Its format is defined in [`schemas/its-checks.schema.json`](schemas/its-checks.schema.json).
+
 ## Safety
 
 Commit or back up the target first. Review replacements and removals. Installation runs project lifecycle scripts; changes are not transactional and there is no automatic rollback. Fix failures and rerun. Do not edit the target concurrently with setup.
