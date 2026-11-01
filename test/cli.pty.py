@@ -82,16 +82,17 @@ class CliChecks(unittest.TestCase):
             # Copy only the isolated production installation, never checkout dependencies.
             shutil.copytree(package_root, checkout, symlinks=True)
             self.entry = checkout / "node_modules/.bin/its-checks"
-            self.command = [str(self.entry)]  # Exercise the installed bin and its Bun shebang.
+            self.command = [str(self.entry)]  # Exercise the installed bin and its Node shebang.
             self.policy = checkout / "node_modules/its-checks/policy"
             shutil.rmtree(self.policy)
         else:
             checkout.mkdir()
+            shutil.copytree(REPO / "bin", checkout / "bin")
             shutil.copytree(REPO / "src", checkout / "src")
             (checkout / "node_modules").symlink_to(REPO / "node_modules", target_is_directory=True)
             (checkout / "package.json").write_text('{"type":"module"}')
-            self.entry = checkout / "src/cli.ts"
-            self.command = ["bun", str(self.entry)]
+            self.entry = checkout / "bin/its-checks.js"
+            self.command = ["node", str(self.entry)]
             self.policy = checkout / "policy"
         self.project = self.root / "target"
         self.project.mkdir()
@@ -114,6 +115,8 @@ class CliChecks(unittest.TestCase):
         # Empty offline npm fixture: normal installs have no dependencies or lifecycle scripts.
         self.write(self.project / ".npmrc", "offline=true\naudit=false\nfund=false\n")
         self.write(self.project / "package.json", {"name": "fixture"})
+        # A target project's compiler settings must not configure this tool's loader.
+        self.write(self.project / "tsconfig.json", "{ deliberately invalid tsconfig }")
         self.write(self.project / "package-lock.json", {"lockfileVersion": 3, "packages": {"": {}}})
         self.write(self.project / "node_modules/.package-lock.json", {"lockfileVersion": 3, "packages": {}})
         self.terminals = []

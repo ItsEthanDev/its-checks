@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 import { fileURLToPath } from "node:url";
 import * as clack from "@clack/prompts";
 import { Effect } from "effect";

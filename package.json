@@ -3,10 +3,10 @@
   "version": "0.1.0-beta.1",
   "private": true,
   "type": "module",
-  "bin": { "its-checks": "src/cli.ts" },
-  "files": ["src", "policy", "schemas"],
+  "bin": { "its-checks": "bin/its-checks.js" },
+  "files": ["bin", "src", "policy", "schemas"],
   "packageManager": "bun@1.4.0",
-  "engines": { "bun": ">=1.4.0" },
+  "engines": { "node": ">=22" },
   "scripts": {
     "test": "bun test ./test/*.test.ts",
     "typecheck": "bun --bun tsc --noEmit",
@@ -19,6 +19,7 @@
     "@clack/prompts": "1.8.1",
     "effect": "4.1.1",
     "jsonc-parser": "3.3.1",
+    "tsx": "4.23.15",
     "yaml": "2.9.1"
   },
   "devDependencies": {

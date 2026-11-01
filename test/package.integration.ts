@@ -11,7 +11,7 @@ const repo = path.resolve(import.meta.dirname, "..");
 
 /** Packaging checks content, not editable policy opinions. Behavioral checks replace
  * shipped policy with fixed test-owned files in each isolated CLI fixture. */
-test("packed source CLI ships its runtime assets and works with production dependencies only", { timeout: 120_000 }, async (t) => {
+test("packed source CLI ships its runtime assets and runs without Bun with production dependencies only", { timeout: 120_000 }, async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-checks-package-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const archive = path.join(root, "its-checks.tgz");
@@ -19,8 +19,10 @@ test("packed source CLI ships its runtime assets and works with production depen
   await exec("tar", ["-xzf", archive, "-C", root]);
   const packed = path.join(root, "package");
   const manifest = JSON.parse(await fs.readFile(path.join(packed, "package.json"), "utf8"));
-  assert.deepEqual(manifest.bin, { "its-checks": "src/cli.ts" });
-  assert.match(await fs.readFile(path.join(packed, manifest.bin["its-checks"]), "utf8"), /^#!\/usr\/bin\/env bun\n/);
+  assert.deepEqual(manifest.bin, { "its-checks": "bin/its-checks.js" });
+  assert.match(await fs.readFile(path.join(packed, manifest.bin["its-checks"]), "utf8"), /^#!\/usr\/bin\/env node\n/);
+  assert.equal(manifest.engines.bun, undefined);
+  assert.equal(manifest.engines.node, ">=22");
   for (const hook of ["build", "prepare", "prepack", "preinstall", "install", "postinstall"]) {
     assert.equal(manifest.scripts?.[hook], undefined, `Git installation must not trigger ${hook}`);
   }
@@ -34,7 +36,7 @@ test("packed source CLI ships its runtime assets and works with production depen
     return result.sort();
   };
   const expected: string[] = ["package.json", "README.md"];
-  for (const directory of ["src", "policy", "schemas"]) for (const relative of await files(path.join(repo, directory))) {
+  for (const directory of ["bin", "src", "policy", "schemas"]) for (const relative of await files(path.join(repo, directory))) {
     const file = path.join(directory, relative);
     expected.push(file);
     assert.deepEqual(await fs.readFile(path.join(packed, file)), await fs.readFile(path.join(repo, file)), `${file} must ship unchanged`);
@@ -46,14 +48,36 @@ test("packed source CLI ships its runtime assets and works with production depen
   await fs.writeFile(path.join(consumer, "package.json"), JSON.stringify({ private: true, dependencies: { "its-checks": "file:../its-checks.tgz" } }));
   // No package lifecycle scripts may run during the fixture installation. The CLI
   // suite runs offline npm installs with no fixture dependencies or lifecycle scripts.
-  await exec("bun", ["install", "--production", "--ignore-scripts"], { cwd: consumer, timeout: 60_000 });
+  // Only the consumer's prerequisites are available, including during installation.
+  const bin = path.join(root, "bin");
+  await fs.mkdir(bin);
+  for (const command of ["node", "npm", "git", "python3", "sh"]) {
+    const { stdout } = await exec("sh", ["-c", `command -v ${command}`]);
+    await fs.symlink(stdout.trim(), path.join(bin, command));
+  }
+  const env = { ...process.env, PATH: bin };
+  await assert.rejects(exec("bun", ["--version"], { env }), { code: "ENOENT" });
+  await exec("npm", ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: consumer, env, timeout: 60_000 });
   for (const dev of ["typescript", "yarn"]) {
     await assert.rejects(fs.stat(path.join(consumer, "node_modules", dev)), { code: "ENOENT" });
   }
   const installed = await fs.realpath(path.join(consumer, "node_modules/its-checks"));
   assert.ok(installed.startsWith(consumer + path.sep), "installed CLI must not resolve into the checkout");
   const result = await exec("python3", [path.join(repo, "test/cli.pty.py")], {
-    cwd: consumer, env: { ...process.env, ITS_CHECKS_PACKAGE_ROOT: consumer }, timeout: 60_000,
+    cwd: consumer, env: { ...env, ITS_CHECKS_PACKAGE_ROOT: consumer }, timeout: 60_000,
   });
   t.diagnostic(result.stdout.trim() + "\n" + result.stderr.trim());
+
+  // Exercise npx's Git consumption path using a local fork, without publishing.
+  for (const args of [
+    ["init", "--quiet"], ["add", "."],
+    ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--quiet", "-m", "fixture"],
+  ]) await exec("git", args, { cwd: packed, env });
+  const { stdout: commit } = await exec("git", ["rev-parse", "HEAD"], { cwd: packed, env });
+  const gitConsumer = path.join(root, "git-consumer");
+  await fs.mkdir(gitConsumer);
+  await assert.rejects(exec("npm", ["exec", "--yes", "--ignore-scripts",
+    `--package=git+file://${packed}#${commit.trim()}`, "--", "its-checks"], {
+    cwd: gitConsumer, env: { ...env, npm_config_cache: path.join(root, "npm-cache") }, timeout: 60_000,
+  }), { code: 1, stderr: /its-checks requires an interactive terminal/ });
 });
