@@ -1,12 +1,17 @@
 {
   "name": "its-checks",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "private": true,
+  "bin": {
+    "its-checks": "bin/its-checks.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "policy",
+    "schemas"
+  ],
   "type": "module",
-  "bin": { "its-checks": "bin/its-checks.js" },
-  "files": ["bin", "src", "policy", "schemas"],
-  "packageManager": "bun@1.4.0",
-  "engines": { "node": ">=22" },
   "scripts": {
     "test": "bun test ./test/*.test.ts",
     "typecheck": "bun --bun tsc --noEmit",
@@ -26,5 +31,9 @@
     "@types/node": "24.19.2",
     "typescript": "6.0.2",
     "yarn": "1.22.22"
-  }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "bun@1.4.0"
 }
