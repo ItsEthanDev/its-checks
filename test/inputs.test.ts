@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { parse } from "jsonc-parser";
 import { loadPolicy } from "../src/bundles.ts";
 import { enumerateInputs, resolveInputs } from "../src/inputs.ts";
-import { decodeSavedIntent, loadPreviousIntent, selectionContent, selectionFilename, type SavedIntent } from "../src/selections.ts";
+import { decodeSavedIntent, loadPreviousIntent, selectionFilename } from "../src/selections.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
@@ -122,6 +122,8 @@ test("malformed local intent is never treated as first use or trusted via a remo
   const valid = JSON.stringify(intent);
   const malformed = [
     "{broken", JSON.stringify({ ...intent, schemaVersion: 2 }),
+    JSON.stringify({ ...intent, schemaVersion: 1, source: { repository: intent.source,
+      revision: "a".repeat(40), selectionSchema: "schemas/intent.schema.json" } }),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":null}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":[]}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":1e999}}'),
@@ -147,36 +149,20 @@ test("malformed local intent is never treated as first use or trusted via a remo
   await assert.rejects(run(loadPreviousIntent(f.project)), /regular file/);
 });
 
-test("legacy intent stays readable offline, preserves answers, and never turns its schema pin into a generating commit", async (t) => {
+test("saved intent preserves the generating commit and input prefills without rewriting on read", async (t) => {
   const f = await inputPolicy(t);
-  const legacy = {
-    $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/selections.schema.json`,
-    schemaVersion: 1,
-    source: { repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/selections.schema.json" },
-    ...all, answers,
-  };
-  const content = JSON.stringify(legacy, null, 4) + "\n";
-  await fs.writeFile(path.join(f.project, selectionFilename), content);
-  const before = await snapshot(f.project);
-  const saved = await run(loadPreviousIntent(f.project));
-  assert.deepEqual(saved, { $schema: legacy.$schema, source: legacy.source.repository, ...all, answers });
-  assert.deepEqual(await snapshot(f.project), before, "reading legacy files must not migrate them implicitly");
   const policy = await run(loadPolicy(f.policy, all));
-  assert.deepEqual((await run(enumerateInputs(policy, saved))).map((question) => question.initialValue),
-    ["project", 0, "src/not-created-yet.css", false]);
   const current = await run(resolveInputs(policy, answers, "b".repeat(40)));
   assert.deepEqual(current.intent, { $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/intent.schema.json`,
-    source: legacy.source.repository, commit: "b".repeat(40), ...all, answers });
-  assert.equal(Object.hasOwn(current.intent, "schemaVersion"), false);
+    source: "https://github.com/example/fork", commit: "b".repeat(40), ...all, answers });
   assert.deepEqual(await run(decodeSavedIntent(current.selectionFile.content)), current.intent);
-  await assert.rejects(run(selectionContent(legacy as unknown as SavedIntent)), /source|schemaVersion/,
-    "the compatibility reader must not enable the writer to emit the legacy shape");
-  for (const invalid of [
-    { ...legacy, schemaVersion: 2 },
-    { ...legacy, source: { ...legacy.source, revision: "main" } },
-    { ...legacy, $schema: "https://unreachable.invalid/mismatched-schema.json" },
-    { ...legacy, ownership: [] },
-  ]) await assert.rejects(run(decodeSavedIntent(JSON.stringify(invalid))), /selections/);
+  await fs.writeFile(path.join(f.project, selectionFilename), current.selectionFile.content);
+  const before = await snapshot(f.project);
+  const saved = await run(loadPreviousIntent(f.project));
+  assert.deepEqual(saved, current.intent);
+  assert.deepEqual((await run(enumerateInputs(policy, saved))).map((question) => question.initialValue),
+    ["project", 0, "src/not-created-yet.css", false]);
+  assert.deepEqual(await snapshot(f.project), before);
 });
 
 test("current intent keeps the editor schema independent of the optional generating commit", async (t) => {

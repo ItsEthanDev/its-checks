@@ -303,14 +303,21 @@ class CliChecks(unittest.TestCase):
         self.assertEqual(self.entry.read_bytes(), entry_bytes)
 
     def test_invalid_saved_intent_fails_without_mutation(self):
-        self.write(self.project / ".its-checks.json", "{broken")
-        before = self.state()
-        terminal = self.terminal()
-        text = terminal.finish(1)
-        self.assertIn("Setup failed.", text)
-        self.assertIn(".its-checks.json", text)
-        self.assertNotIn("Completed:", text)
-        self.assertEqual(self.state(), before)
+        unsupported = {"$schema": f"https://github.com/example/fork/raw/{'a' * 40}/schemas/intent.schema.json",
+                       "schemaVersion": 1, "source": {"repository": "https://github.com/example/fork",
+                       "revision": "a" * 40, "selectionSchema": "schemas/intent.schema.json"},
+                       "integrations": [], "automation": [], "answers": {}}
+        for content in ["{broken", unsupported]:
+            with self.subTest(content=content):
+                self.write(self.project / ".its-checks.json", content)
+                before = self.state()
+                terminal = self.terminal()
+                text = terminal.finish(1)
+                self.assertIn("Setup failed.", text)
+                self.assertIn(".its-checks.json", text)
+                self.assertNotIn("Choose integrations", text)
+                self.assertNotIn("Completed:", text)
+                self.assertEqual(self.state(), before)
 
     def test_noninteractive_rejected_before_missing_policy_or_project_reads(self):
         shutil.rmtree(self.policy)

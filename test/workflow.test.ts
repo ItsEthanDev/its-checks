@@ -87,23 +87,20 @@ test("accepted deselection removes only identifiable current setup and records n
   assert.deepEqual(JSON.parse(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).integrations, []);
 });
 
-test("legacy intent migration preserves prefills, decline safeguards, and deselection identity", async (t) => {
+test("source identity changes preserve prefills, decline safeguards, and deselection identity", async (t) => {
   const f = await fixture(t); await inputPolicy(f);
-  await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy,
+  await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, commit: "b".repeat(40),
     presentation: dialogue({ integrations: ["example"], automation: ["ci"], answers: { "integrations/example/stylesheet": "src/saved.css" } }).ui,
     dependencies: () => ready }));
   const file = path.join(f.project, ".its-checks.json");
-  const current = JSON.parse(await fs.readFile(file, "utf8"));
-  const legacy = { ...current, $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/selections.schema.json`, schemaVersion: 1,
-    source: { repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/selections.schema.json" } };
-  await fs.writeFile(file, JSON.stringify(legacy, null, 4) + "\n");
   const before = await snapshot(f.project), declined = dialogue({ approve: false });
-  const result = await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy,
+  const result = await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, commit: "c".repeat(40),
     presentation: declined.ui, dependencies: () => ready }));
   assert.equal(result.status, "declined");
   assert.deepEqual(declined.shown.map((category) => category.previous), [["example"], ["ci"]]);
   assert.equal(declined.questions[0]?.initial, "src/saved.css");
   assert.equal(declined.confirmations, 1);
+  assert.deepEqual(declined.plan?.files.filter((entry) => entry.kind !== "noop").map((entry) => entry.path), [".its-checks.json"]);
   assert.deepEqual(await snapshot(f.project), before);
   const accepted = dialogue({ integrations: [], automation: [] });
   await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, commit: "c".repeat(40),

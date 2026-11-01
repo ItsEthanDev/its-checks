@@ -46,7 +46,7 @@ Husky runs the entire package's `check` without fixing or staging files. GitHub 
 
 Rerun setup to change choices or apply policy from the executed package. For checkout edits, rerun the same source command; for GitHub updates, account for the [launcher's cache](distribution.md#default-branch-and-caching). Each run shows all choices and input questions. `.its-checks.json` prefills still-available selections and saved answers; answers take precedence over declaration defaults, including `false`, `0`, and empty strings.
 
-The file records **intended setup**, not successful installation. It contains the source repository, an optional reliably known generating commit, selections, and input answers, with `$schema` for editors. The commit does not pin future launches. [Legacy files remain readable](policy.md#saved-project-intent); format migration occurs only through an approved plan.
+The file records **intended setup**, not successful installation. It contains the source repository, an optional reliably known generating commit, selections, and input answers, with `$schema` for editors. The commit does not pin future launches. See the [saved project intent format](policy.md#saved-project-intent). Unsupported shapes stop setup without modifying the project.
 
 Matching configuration does not suppress dependency assessment. A fully matching package has no writes or installation. Whitespace and object-key order in `package.json`, including Oxfmt's native package sorting, do not require installation. Matching manifest values retain their formatted bytes. Schema decoding is offline: setup does not fetch the saved schema or repository.
 

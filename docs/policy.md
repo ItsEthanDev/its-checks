@@ -87,6 +87,10 @@ Package names/commands above illustrate the syntax; supply real dependencies and
 
 Unknown fields and duplicate JSON keys fail. One bundle cannot put a dependency in both sections. Across selected bundles, requirements for a package must agree **literally**, even if ranges overlap. If any bundle puts an agreed requirement in `dependencies`, that section wins; otherwise it goes in `devDependencies`. The other of those two sections loses that package. Optional/peer sections and unrelated manifest values remain. Replacing existing requirements requires confirmation.
 
+### Dependency security
+
+Audit the installed target tooling graph separately from the installer's lockfile. Known risk: the Tailwind tooling chain can include `minimatch < 11.0.1`, affected by [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249), a denial-of-service advisory. Reachability through the configured tools has not been established. Passing compatibility checks does not resolve this risk; recheck tool compatibility before forcing dependency overrides.
+
 ## Declare inputs
 
 Input `id` uses the bundle-ID syntax and is unique within the bundle. `prompt` is nonblank. `type` is `string`, `number`, `boolean`, or `path`; defaults are optional and must match. Strings can be empty, numbers must be finite, and booleans use Yes/No questions. Defaults and saved answers are editable prefills, not silently accepted values. Native placeholders do not create defaults or questions.
@@ -190,6 +194,6 @@ The generated `.its-checks.json` records the following fields (commit values bel
 
 The CLI uses only local provenance: a clean Git checkout at the executed package root, or its own installed package's native npm/Bun lock metadata. It does not search the target repository, query GitHub, fetch revisions, or add a marker file. Dirty/untracked checkout edits, unpacked archives, malformed/missing/ambiguous native metadata, and unresolved short hashes omit `commit`. npm/npx records a full resolved Git revision. Bunx 1.4 default-branch cache entries expose only a short hash, so that case omits it; a full requested pin is recorded only when its repository and resolved prefix agree. Cache metadata is not an attestation against manually edited cache contents.
 
-Old saved files with `schemaVersion: 1` and a nested `source` remain readable, including their selections, answers, and deselection identity. Their schema pin is never promoted to a generating commit. Reading them does not rewrite them. The next approved application writes the current shape using the normal conflict and exact-byte safeguards. The legacy [`selections.schema.json`](../schemas/selections.schema.json) remains available for old references. This is backward read compatibility, not a promise that older cached CLI versions can read new files; after migration, use an updated CLI revision or checkout.
+Only this saved-file format is supported. Unsupported shapes or invalid values stop setup before any target changes; reading a saved file never rewrites it.
 
 Intent is saved before dependency installation and is not installation success, an ownership/history file, or a pin for future CLI launches. A changed generating commit alone does not require dependency installation or lifecycle execution.
