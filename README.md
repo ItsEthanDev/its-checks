@@ -1,39 +1,48 @@
 # its-checks
 
-Apply editable, standalone Oxfmt and Oxlint policy to one TypeScript package. Tailwind CSS v4, Convex lint rules, Husky pre-commit checks, and GitHub Actions are optional.
+Beta setup for standalone Oxfmt and Oxlint configuration in one TypeScript package. Optional integrations and automation live in [`policy/`](policy/).
 
-## Quickstart
+## Requirements
 
-Install **Bun 1.4.0** for the installer runtime, plus an exact [supported target package manager](docs/package-managers.md) on `PATH`. The supplied target policy uses Node **24+** commands; npm, pnpm, and Yarn also require Node. The npm/npx launcher additionally needs npm and Git. Bun does not replace those target requirements.
+Bun 1.4.0, Node 24+, and Git on `PATH`. Tested on Linux x64 with POSIX shell. Install the target package manager separately:
 
-From the target package directory, run:
+| Manager | Version | Required settings |
+| --- | --- | --- |
+| npm | 11.19.0 | Lockfile v3; `node_modules` |
+| pnpm | 12.9.0 | Isolated linker; `.npmrc`: `manage-package-manager-versions=false` |
+| Yarn Classic | 1.22.22 | `node_modules`, not PnP |
+| Bun | 1.4.0 | Text lockfile; `bunfig.toml`: `linker = "isolated"` under `[install]` |
+
+Keep development dependencies and lifecycle scripts enabled.
+
+## Run
+
+From the target directory containing `package.json`, in a terminal:
 
 ```sh
 npx --yes 'ItsEthanDev/its-checks'
 ```
 
-This requests the repository's default branch. It runs TypeScript directly with Bun: no prebuilt executable, build hook, global `its-checks` installation, or registry publication is needed. The launcher installs the tool's runtime dependencies in its cache, separately from your target's dependencies.
+Use Space to select options and Enter to continue. Default-branch launches can reuse cached code; append `#<full-commit-sha>` to the repository reference to choose an immutable revision. Replace the repository reference to use a fork.
 
-**Default-branch launches can reuse cached code and policy.** For a reproducible revision, use the [optional commit-pinned form](docs/distribution.md#choose-a-specific-commit). Pinning is your operational choice; documentation does not prescribe a particular commit.
-
-Run directly in a terminal from the directory containing the target `package.json`. Use Space to select options and Enter to continue. Review the plan before approving replacements or removals. Setup runs normal target dependency installation, including lifecycle scripts; failures can leave partial changes.
-
-After setup, run `node --run fmt` to format or `node --run check` to check formatting and lint. Formatting-only manifest edits, including native package-key sorting, do not request reinstallation.
-
-## Run from a checkout
-
-For local development or policy editing:
+For a local checkout, run `bun install --frozen-lockfile --ignore-scripts` there, then run this from the target directory:
 
 ```sh
-cd /path/to/its-checks
-bun install --frozen-lockfile --ignore-scripts
-cd /path/to/target-package
 bun /absolute/path/to/its-checks/src/cli.ts
 ```
 
-No build step is needed. Policy comes from the executed package or checkout, never the target directory.
+After setup: `node --run fmt` to format; `node --run check` to check formatting and lint.
 
-- [Usage](docs/usage.md): setup, daily commands, reruns, conflicts, and recovery.
-- [Launch and distribution](docs/distribution.md): forks, optional commit pinning, caching, and verification limits.
-- [Policy reference](docs/policy.md): edit opinions, add bundles, declare inputs, and manage cleanup.
-- [Package managers](docs/package-managers.md): exact versions, required settings, and retry limits.
+## Safety
+
+Commit or back up the target first. Review replacements and removals. Installation runs project lifecycle scripts; changes are not transactional and there is no automatic rollback. Fix failures and rerun. Do not edit the target concurrently with setup.
+
+`.its-checks.json` saves choices and source identity, not installation success or a pin for future launches. Keep it for reruns and cleanup. Its format is defined in [`schemas/its-checks.schema.json`](schemas/its-checks.schema.json).
+
+Known Tailwind tooling risk: [minimatch denial of service](https://github.com/advisories/GHSA-g3hv-75wg-m249). Exploit reachability through the configured tools is unverified; audit the target tooling separately from the installer.
+
+## Develop
+
+Edit the executed checkout's `policy/` declarations and native files, then rerun setup; no build is needed. Generated target configuration can be replaced on rerun. Implementation is in [`src/`](src/); examples are in `policy/` and tests.
+
+Run checks with `bun run`: `test`, `typecheck`, `test:managers`, `test:policy`, `test:cli`, and `test:package`.
