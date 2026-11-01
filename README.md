@@ -4,7 +4,7 @@ Interactive CLI that sets up formatting and linting in TypeScript projects, with
 
 ## Requirements
 
-Node.js 22 or newer (including npm) and Git on `PATH`. Bun is not required to run setup unless the target project uses it.
+Node.js 22 or newer (including npm) and Git on `PATH`.
 
 Install the target project's package manager (npm, pnpm, Yarn, or Bun) on `PATH`. Setup uses the project's existing package-manager configuration.
 
