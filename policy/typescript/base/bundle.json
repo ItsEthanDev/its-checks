@@ -1,6 +1,6 @@
 {
   "name": "TypeScript",
-  "description": "Oxfmt formatting and Oxlint correctness checks",
+  "description": "Opinionated formatting and type-aware linting",
   "scripts": {
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check .",
