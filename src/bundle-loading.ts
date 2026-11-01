@@ -183,7 +183,6 @@ export function discoverPolicy(policyRoot: string): Effect.Effect<PolicyCatalog,
     try { url = new URL(declaration.source.repository); } catch { /* Report through typed failure below. */ }
     yield* validate(ctx, "source.repository", !!url && url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash,
       "Expected an HTTPS repository URL without credentials, query, or fragment");
-    yield* validate(ctx, "source.revision", /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(declaration.source.revision), "Expected a full immutable Git revision (40 or 64 lowercase hex digits)");
     yield* checkPath(ctx, "source.selectionSchema", declaration.source.selectionSchema);
     yield* validate(ctx, "source.selectionSchema", declaration.source.selectionSchema.endsWith(".json"), "Expected a repository-relative JSON Schema path");
     const baseline = yield* bundle(root, "base", "base");

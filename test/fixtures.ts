@@ -21,7 +21,6 @@ export async function fixture(t: TestContext) {
     schemaVersion: 1,
     source: {
       repository: "https://github.com/example/fork",
-      revision: "a".repeat(40),
       selectionSchema: "schemas/its-checks.schema.json",
     },
   });

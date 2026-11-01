@@ -64,9 +64,9 @@ test("first use enumerates every selected bundle and resolves explicit native va
   assert.deepEqual(await snapshot(f.project), before);
   assert.equal(resolved.selectionFile.path, ".its-checks.json");
   assert.deepEqual(await run(decodeSavedIntent(resolved.selectionFile.content)), resolved.intent);
-  assert.equal(resolved.intent.$schema, `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/its-checks.schema.json`);
+  assert.equal(resolved.intent.$schema, "https://github.com/example/fork/raw/main/schemas/its-checks.schema.json");
   assert.deepEqual(resolved.intent, {
-    $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/its-checks.schema.json`,
+    $schema: "https://github.com/example/fork/raw/main/schemas/its-checks.schema.json",
     source: "https://github.com/example/fork",
     integrations: ["tailwind"], automation: ["ci"], answers,
   });
@@ -76,7 +76,7 @@ test("offline saved intent is returned for preselection/prefill, changed answers
   const f = await inputPolicy(t);
   const policy = await run(loadPolicy(f.policy, all));
   const first = await run(resolveInputs(policy, answers));
-  // The file is written by the test, not by either public seam. The fixture revision is not published.
+  // The file is written by the test, not by either public seam; loading remains offline.
   await fs.writeFile(path.join(f.project, selectionFilename), first.selectionFile.content);
   const previous = await run(loadPreviousIntent(f.project));
   assert.deepEqual(previous?.integrations, ["tailwind"]);
@@ -123,7 +123,7 @@ test("malformed local intent is never treated as first use or trusted via a remo
   const malformed = [
     "{broken", JSON.stringify({ ...intent, schemaVersion: 2 }),
     JSON.stringify({ ...intent, schemaVersion: 1, source: { repository: intent.source,
-      revision: "a".repeat(40), selectionSchema: "schemas/its-checks.schema.json" } }),
+      selectionSchema: "schemas/its-checks.schema.json" } }),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":null}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":[]}}'),
     valid.replace('"answers":{}', '"answers":{"base":{"bad":1e999}}'),
@@ -153,7 +153,7 @@ test("saved intent preserves the generating commit and input prefills without re
   const f = await inputPolicy(t);
   const policy = await run(loadPolicy(f.policy, all));
   const current = await run(resolveInputs(policy, answers, "b".repeat(40)));
-  assert.deepEqual(current.intent, { $schema: `https://github.com/example/fork/raw/${"a".repeat(40)}/schemas/its-checks.schema.json`,
+  assert.deepEqual(current.intent, { $schema: "https://github.com/example/fork/raw/main/schemas/its-checks.schema.json",
     source: "https://github.com/example/fork", commit: "b".repeat(40), ...all, answers });
   assert.deepEqual(await run(decodeSavedIntent(current.selectionFile.content)), current.intent);
   await fs.writeFile(path.join(f.project, selectionFilename), current.selectionFile.content);

@@ -34,16 +34,14 @@ const httpsUrl = (value: string): boolean => {
   catch { return false; }
 };
 
-/** Policy metadata supplies the editor's schema pin, not the executing code revision. */
+/** The editor uses the source repository's main-branch schema, independent of the executing commit. */
 export function selectionSchemaUrl(source: RootDeclaration["source"]): Effect.Effect<string, BundleError> {
   return Effect.gen(function*() {
     yield* check("provenance", "source.repository", httpsUrl(source.repository),
       "Expected an HTTPS repository URL without credentials, query, or fragment");
-    yield* check("provenance", "source.revision", commitPattern.test(source.revision),
-      "Expected a full immutable Git revision (40 or 64 lowercase hex digits)");
     yield* check("provenance", "source.selectionSchema", safePath(source.selectionSchema) && source.selectionSchema.endsWith(".json"),
       "Expected a safe repository-relative JSON Schema path");
-    return `${source.repository.replace(/\/$/, "")}/raw/${source.revision}/${source.selectionSchema.split("/").map(encodeURIComponent).join("/")}`;
+    return `${source.repository.replace(/\/$/, "")}/raw/main/${source.selectionSchema.split("/").map(encodeURIComponent).join("/")}`;
   });
 }
 

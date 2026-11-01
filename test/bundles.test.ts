@@ -223,12 +223,11 @@ test("bundle installers are rejected, native hook code is never executed", async
 for (const [field, value, expected] of [
   ["repository", "file:///private", /source.repository/],
   ["repository", "https://user:password@example.com/repo", /source.repository/],
-  ["revision", "main", /source.revision/],
   ["selectionSchema", "../schema.json", /source.selectionSchema/],
 ] as const) {
   test(`validates root provenance ${field}: ${value}`, async (t) => {
     const f = await fixture(t);
-    await f.write("bundle.json", { schemaVersion: 1, source: { repository: "https://example.com/repo", revision: "a".repeat(40), selectionSchema: "schema.json", [field]: value } });
+    await f.write("bundle.json", { schemaVersion: 1, source: { repository: "https://example.com/repo", selectionSchema: "schema.json", [field]: value } });
     const error = await failure(loadPolicy(f.policy, none));
     assert.equal(error.bundle, "policy");
     assert.equal(error.source, path.join(f.policy, "bundle.json"));

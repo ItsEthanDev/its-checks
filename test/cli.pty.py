@@ -97,7 +97,7 @@ class CliChecks(unittest.TestCase):
         self.project = self.root / "target"
         self.project.mkdir()
         self.write(self.policy / "bundle.json", {"schemaVersion": 1, "source": {
-            "repository": "https://github.com/example/fork", "revision": "a" * 40, "selectionSchema": "schemas/its-checks.schema.json"}})
+            "repository": "https://github.com/example/fork", "selectionSchema": "schemas/its-checks.schema.json"}})
         self.write(self.policy / "typescript/base/bundle.json", {"name": "Base", "inputs": [
             {"id": "count", "prompt": "Number of fixtures?", "type": "number", "default": 0,
              "destination": {"file": ".oxlintrc.json", "field": ["fixtureCount"]}},
@@ -312,9 +312,9 @@ class CliChecks(unittest.TestCase):
         self.assertEqual(self.entry.read_bytes(), entry_bytes)
 
     def test_invalid_saved_intent_fails_without_mutation(self):
-        unsupported = {"$schema": f"https://github.com/example/fork/raw/{'a' * 40}/schemas/its-checks.schema.json",
+        unsupported = {"$schema": "https://github.com/example/fork/raw/main/schemas/its-checks.schema.json",
                        "schemaVersion": 1, "source": {"repository": "https://github.com/example/fork",
-                       "revision": "a" * 40, "selectionSchema": "schemas/its-checks.schema.json"},
+                       "selectionSchema": "schemas/its-checks.schema.json"},
                        "integrations": [], "automation": [], "answers": {}}
         for content in ["{broken", unsupported]:
             with self.subTest(content=content):

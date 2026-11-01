@@ -40,7 +40,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) test(`
   if (manager === "npm") await put(path.join(project, ".npmrc"), "offline=true\naudit=false\nfund=false\n");
   if (manager === "yarn") await put(path.join(project, ".yarnrc"), "disable-self-update-check true\noffline true\n");
   await put(path.join(policy, "bundle.json"), { schemaVersion: 1, source: {
-    repository: "https://github.com/example/fork", revision: "a".repeat(40), selectionSchema: "schemas/its-checks.schema.json" } });
+    repository: "https://github.com/example/fork", selectionSchema: "schemas/its-checks.schema.json" } });
   const declaration = (archive: string | null) => ({ name: "Base", scripts: { check: helper },
     ...(archive ? { devDependencies: { "managed-dep": `file:../${archive}.tgz` } } : { migration: { removeDevDependencies: ["managed-dep"] } }) });
   await put(path.join(policy, "typescript/base/bundle.json"), declaration("one"));

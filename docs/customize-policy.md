@@ -4,7 +4,7 @@
 
 On GitHub, open [ItsEthanDev/its-checks](https://github.com/ItsEthanDev/its-checks) and click **Fork** to create your own copy.
 
-In your fork's `policy/bundle.json`, change `source.repository` to your fork's URL, such as `https://github.com/YOUR-USERNAME/its-checks`.
+In your fork's `policy/bundle.json`, change `source.repository` to your fork's URL, such as `https://github.com/YOUR-USERNAME/its-checks`. Generated selection files link to `source.selectionSchema` on that repository's `main` branch for editor validation.
 
 ## 2. Edit your preferences
 

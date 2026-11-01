@@ -2,7 +2,6 @@
   "schemaVersion": 1,
   "source": {
     "repository": "https://github.com/example/its-checks-policy",
-    "revision": "1111111111111111111111111111111111111111",
     "selectionSchema": "schemas/its-checks.schema.json"
   }
 }

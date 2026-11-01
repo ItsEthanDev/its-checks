@@ -8,7 +8,6 @@ export const RootDeclaration = Schema.Struct({
   schemaVersion: Schema.Literal(1),
   source: Schema.Struct({
     repository: Text,
-    revision: Text,
     selectionSchema: Text,
   }),
 });
