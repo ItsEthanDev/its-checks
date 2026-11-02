@@ -5,14 +5,42 @@
     "suspicious": "error"
   },
   "extends": ["./node_modules/@effect/tsgo/oxlint-presets/strict.json"],
-  "ignorePatterns": ["**/node_modules/**", "dist/**", "coverage/**", ".husky/_/**", "./agents/**"],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "dist/**",
+    "coverage/**",
+    ".husky/_/**",
+    "./agents/**",
+    "**/*.generated.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+    "**/*.gen.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
+  ],
   "options": {
     "reportUnusedDisableDirectives": "error",
     "typeAware": true
   },
+  "overrides": [
+    {
+      "files": [
+        "**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+        "**/__tests__/**",
+        "**/test/**",
+        "**/tests/**"
+      ],
+      "rules": {
+        "max-lines-per-function": "off"
+      }
+    }
+  ],
   "plugins": ["typescript", "unicorn", "oxc", "import", "effecttsgo"],
   "rules": {
     "array-callback-return": "error",
+    "complexity": [
+      "error",
+      {
+        "max": 10,
+        "variant": "modified"
+      }
+    ],
     "curly": "error",
     "default-case-last": "error",
     "default-param-last": "error",
@@ -32,6 +60,26 @@
     "eqeqeq": "error",
     "import/no-cycle": "error",
     "import/no-mutable-exports": "error",
+    "max-depth": ["error", 3],
+    "max-lines": [
+      "error",
+      {
+        "max": 400,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-lines-per-function": [
+      "error",
+      {
+        "IIFEs": true,
+        "max": 80,
+        "skipBlankLines": true,
+        "skipComments": true
+      }
+    ],
+    "max-nested-callbacks": ["error", 3],
+    "max-params": ["error", 4],
     "no-case-declarations": "error",
     "no-constructor-return": "error",
     "no-else-return": "error",
