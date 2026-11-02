@@ -15,7 +15,10 @@ export const RootDeclaration = Schema.Struct({
 export const BundleDeclaration = Schema.Struct({
   name: Text,
   description: Schema.optionalKey(Text),
-  scripts: Schema.optionalKey(Strings),
+  scripts: Schema.optionalKey(Schema.Record(Schema.String, Schema.Union([
+    Text,
+    Schema.Struct({ command: Text, replaces: Text }),
+  ]))),
   dependencies: Schema.optionalKey(Strings),
   devDependencies: Schema.optionalKey(Strings),
   inputs: Schema.optionalKey(Schema.Array(Schema.Struct({

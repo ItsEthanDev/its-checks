@@ -42,7 +42,7 @@ export function composeConfigurations(policy: LoadedPolicy): Effect.Effect<Reado
           if (lint && ["rules", "categories", "env", "globals", "settings", "options"].includes(field)) {
             if (!isObject(value)) return yield* fail(field, "Expected an object; entries compose by key as whole values");
             output[field] = { ...(output[field] as JsonObject | undefined), ...value };
-          } else if (field === "overrides" || (lint && ["plugins", "jsPlugins", "extends"].includes(field))) {
+          } else if (field === "overrides" || field === "ignorePatterns" || (lint && ["plugins", "jsPlugins", "extends"].includes(field))) {
             if (!Array.isArray(value)) return yield* fail(field, "Expected an array");
             const combined = [...(output[field] as readonly JsonValue[] | undefined ?? []), ...value];
             output[field] = field === "overrides" ? combined : combined.filter((entry, index) =>

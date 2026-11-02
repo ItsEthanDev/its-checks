@@ -113,6 +113,11 @@ test("only selected native content is loaded; all discovered display declaration
 
 const invalidDeclarations: [string, object, RegExp][] = [
   ["wrong script value", { scripts: { check: false } }, /scripts.*check/s],
+  ["replacement without target", { scripts: { lint: { command: "tool ." } } }, /scripts.*lint/s],
+  ["replacement with blank target", { scripts: { lint: { command: "tool .", replaces: " " } } }, /scripts.*lint/s],
+  ["replacement with invalid command", { scripts: { lint: { command: false, replaces: "base" } } }, /scripts.*lint/s],
+  ["replacement with unknown field", { scripts: { lint: { command: "tool .", replaces: "base", extra: true } } }, /scripts.*lint/s],
+  ["replacement with NUL", { scripts: { lint: { command: "tool\u0000", replaces: "base" } } }, /Script must not contain NUL/],
   ["reserved helpers", { scripts: { "its-checks:check": "lint" } }, /scripts\.its-checks:check/],
   ["unknown installer field", { installer: "install.js" }, /installer/],
   ["blank names", { name: " " }, /name/],

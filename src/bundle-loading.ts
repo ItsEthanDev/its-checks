@@ -110,7 +110,7 @@ function checkDeclaration(ctx: Context, declaration: BundleDeclaration) {
     for (const [name, command] of Object.entries(declaration.scripts ?? {})) {
       yield* validate(ctx, `scripts.${name}`, !name.startsWith("its-checks:") && /^[a-zA-Z0-9][a-zA-Z0-9:_-]*$/.test(name),
         "Expected a script name outside the reserved its-checks: namespace");
-      yield* validate(ctx, `scripts.${name}`, !command.includes("\0"), "Script must not contain NUL");
+      yield* validate(ctx, `scripts.${name}`, !(typeof command === "string" ? command : command.command).includes("\0"), "Script must not contain NUL");
     }
     for (const section of ["dependencies", "devDependencies"] as const) {
       for (const name of Object.keys(declaration[section] ?? {})) {
