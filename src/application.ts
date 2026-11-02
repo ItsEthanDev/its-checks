@@ -54,36 +54,41 @@ const io = <A>(operation: () => Promise<A>) => Effect.tryPromise({ try: operatio
 
 /** No backups, directory deletion, lifecycle execution, or rollback.
  * Selection writes use a transient sibling so failed writes do not truncate retry identity. */
-export const nodeApplicationFileSystem: ApplicationFileSystem = {
-  createDirectory: (destination) => io(async () => { await fs.mkdir(destination); }),
-  removeFile: (destination) => io(() => fs.unlink(destination)),
-  writeFile: (destination, state, create) => path.basename(destination) === selectionFilename ? io(async () => {
-    const temporary = `${destination}.${randomUUID()}.tmp`;
-    const handle = await fs.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
-    try {
+export function createNodeApplicationFileSystem(
+  fileSystem: Pick<typeof fs, "mkdir" | "unlink" | "open" | "link" | "rename"> = fs,
+): ApplicationFileSystem {
+  return {
+    createDirectory: (destination) => io(async () => { await fileSystem.mkdir(destination); }),
+    removeFile: (destination) => io(() => fileSystem.unlink(destination)),
+    writeFile: (destination, state, create) => path.basename(destination) === selectionFilename ? io(async () => {
+      const temporary = `${destination}.${randomUUID()}.tmp`;
+      const handle = await fileSystem.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600);
       try {
+        try {
+          await handle.writeFile(Buffer.from(state.base64, "base64"));
+          await handle.chmod(state.mode);
+        } finally { await handle.close(); }
+        // Never expose partial JSON. Exclusive publication also protects an initially absent selection file.
+        if (create) await fileSystem.link(temporary, destination);
+        else await fileSystem.rename(temporary, destination);
+      } finally {
+        await fileSystem.unlink(temporary).catch((cause: NodeJS.ErrnoException) => { if (cause.code !== "ENOENT") throw cause; });
+      }
+    }) : Effect.acquireUseRelease(
+      io(() => fileSystem.open(destination, constants.O_WRONLY | constants.O_NOFOLLOW |
+        (create ? constants.O_CREAT | constants.O_EXCL : 0), state.mode)),
+      (handle) => io(async () => {
+        // Truncation, writing, chmod, or close may fail after changing the file. Report observation, not rollback.
+        if (!(await handle.stat()).isFile()) throw new Error("Expected a regular file");
+        await handle.truncate(0);
         await handle.writeFile(Buffer.from(state.base64, "base64"));
         await handle.chmod(state.mode);
-      } finally { await handle.close(); }
-      // Never expose partial JSON. Exclusive publication also protects an initially absent selection file.
-      if (create) await fs.link(temporary, destination);
-      else await fs.rename(temporary, destination);
-    } finally {
-      await fs.unlink(temporary).catch((cause: NodeJS.ErrnoException) => { if (cause.code !== "ENOENT") throw cause; });
-    }
-  }) : Effect.acquireUseRelease(
-    io(() => fs.open(destination, constants.O_WRONLY | constants.O_NOFOLLOW |
-      (create ? constants.O_CREAT | constants.O_EXCL : 0), state.mode)),
-    (handle) => io(async () => {
-      // Truncation, writing, chmod, or close may fail after changing the file. Report observation, not rollback.
-      if (!(await handle.stat()).isFile()) throw new Error("Expected a regular file");
-      await handle.truncate(0);
-      await handle.writeFile(Buffer.from(state.base64, "base64"));
-      await handle.chmod(state.mode);
-    }),
-    (handle) => io(() => handle.close()),
-  ),
-};
+      }),
+      (handle) => io(() => handle.close()),
+    ),
+  };
+}
+export const nodeApplicationFileSystem = createNodeApplicationFileSystem();
 const same = (a: FileState, b: FileState) => a.kind === b.kind &&
   (a.kind === "absent" || (b.kind === "file" && a.base64 === b.base64 && a.mode === b.mode));
 const operation = (file: FileChange): ApplicationOperation => ({

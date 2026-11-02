@@ -8,7 +8,7 @@ import { resolveInputs } from "../src/inputs.ts";
 import { planProject, type ChangePlan, type PlanOptions } from "../src/planning.ts";
 import { createScriptPlanner } from "../src/scripts.ts";
 import { loadPreviousIntent, selectionFilename } from "../src/selections.ts";
-import { applyPlan, ApplicationError, OperationError, nodeApplicationFileSystem, type ApplicationDependencies } from "../src/application.ts";
+import { applyPlan, ApplicationError, OperationError, createNodeApplicationFileSystem, nodeApplicationFileSystem, type ApplicationDependencies } from "../src/application.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
@@ -201,7 +201,7 @@ test("filesystem failure reports completed files, observed partial bytes/mode, s
   assert.equal(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"), "{}\n");
 });
 
-test("native selection writes preserve decodable retry identity when staging fails partway", async (t) => {
+for (const failureAt of ["write", "publication"] as const) test(`failed selection ${failureAt} preserves retry identity and leaves no temporary files`, async (t) => {
   const f = await setup(t);
   await f.add("integrations/extra", { name: "Extra" });
   const selected = { integrations: ["extra"], automation: [] };
@@ -211,16 +211,22 @@ test("native selection writes preserve decodable retry identity when staging fai
   const plan = await f.plan(empty, { previous, currentBundles: (await run(loadPolicy(f.policy, selected))).bundles });
   assert.deepEqual(plan.files.filter((file) => file.kind !== "noop").map((file) => file.path), [selectionFilename]);
   const before = await snapshot(f.project);
-  const handle = await fs.open(path.join(f.project, selectionFilename), "r");
-  const prototype = Object.getPrototypeOf(handle) as typeof handle;
-  const write = prototype.writeFile;
-  await handle.close();
-  const injected = t.mock.method(prototype, "writeFile", async function(this: typeof handle) {
-    await write.call(this, "partial JSON");
-    throw Error("disk full during staged selection write");
+  const fileSystem = createNodeApplicationFileSystem({
+    ...fs,
+    open: async (...args) => {
+      const handle = await fs.open(...args);
+      if (failureAt === "write") {
+        const write = handle.writeFile.bind(handle);
+        handle.writeFile = async () => {
+          await write("partial JSON");
+          throw Error("disk full during selection write");
+        };
+      }
+      return handle;
+    },
+    rename: failureAt === "publication" ? async () => { throw Error("selection publication failed"); } : fs.rename,
   });
-  const error = await failure(applyPlan(plan, { approved: true, dependencies: noInstall }));
-  injected.mock.restore();
+  const error = await failure(applyPlan(plan, { approved: true, dependencies: noInstall, fileSystem }));
   assert.equal(error.phase, "filesystem");
   assert.equal(error.report.failed?.path, selectionFilename);
   assert.deepEqual(error.report.completed, []);

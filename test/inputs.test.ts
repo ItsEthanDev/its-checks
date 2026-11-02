@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { Effect } from "effect";
 import { parse } from "jsonc-parser";
+import { Ajv2020 } from "ajv/dist/2020.js";
+import { fullFormats } from "ajv-formats/dist/formats.js";
 import { loadPolicy } from "../src/bundles.ts";
 import { enumerateInputs, resolveInputs } from "../src/inputs.ts";
 import { decodeSavedIntent, loadPreviousIntent, selectionFilename } from "../src/selections.ts";
@@ -210,17 +212,39 @@ test("JSON binding treats input IDs as own map keys and preserves target-root pa
   assert.deepEqual(resolved.intent.answers, { base: { constructor: "src/new.css" } });
 });
 
-test("the committed schema describes the generated single-file shape and links its repository", async (t) => {
+test("the editor schema accepts generated intent with optional provenance and rejects malformed intent", async (t) => {
   const f = await fixture(t);
   const generated = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
   const schema = JSON.parse(await fs.readFile(new URL("../schemas/its-checks.schema.json", import.meta.url), "utf8"));
-  assert.equal(schema.$schema, "https://json-schema.org/draft/2020-12/schema");
-  assert.equal(schema.title, "its-checks saved project intent");
-  assert.match(schema.description, /https:\/\/github.com\/ItsEthanDev\/its-checks/);
-  assert.deepEqual(Object.keys(generated.intent).sort(), [...schema.required].sort());
-  assert.deepEqual(Object.keys(schema.properties).sort(), [...schema.required, "commit"].sort());
-  assert.equal(schema.required.includes("commit"), false);
-  assert.equal(schema.additionalProperties, false);
-  for (const property of Object.values(schema.properties) as { description: string }[]) assert.ok(property.description.length > 0);
-  assert.deepEqual(generated.intent.answers, {});
+  const ajv = new Ajv2020({ formats: fullFormats });
+  const validate = ajv.compile(schema);
+  const valid = {
+    ...generated.intent,
+    integrations: ["example"], automation: ["ci"],
+    answers: { base: { label: "project", count: 0, enabled: false }, "integrations/example": { stylesheet: "src/app.css" } },
+  };
+  for (const intent of [generated.intent, valid, { ...valid, commit: "b".repeat(40) }, { ...valid, commit: "c".repeat(64) }]) {
+    assert.equal(validate(intent), true, ajv.errorsText(validate.errors));
+  }
+  for (const field of ["$schema", "source", "integrations", "automation", "answers"] as const) {
+    const missing: Record<string, unknown> = { ...valid };
+    delete missing[field];
+    assert.equal(validate(missing), false, `missing ${field} must be rejected`);
+  }
+  const malformed: [string, object][] = [
+    ["unknown property", { ...valid, unexpected: true }],
+    ["non-HTTPS schema", { ...valid, $schema: "http://example.com/schema.json" }],
+    ["invalid repository URI", { ...valid, source: "https://example.com/invalid path" }],
+    ["abbreviated commit", { ...valid, commit: "b".repeat(7) }],
+    ["non-string commit", { ...valid, commit: 123 }],
+    ["non-array selections", { ...valid, automation: "ci" }],
+    ["duplicate selections", { ...valid, integrations: ["example", "example"] }],
+    ["invalid selection ID", { ...valid, automation: ["Bad/ID"] }],
+    ["invalid answer namespace", { ...valid, answers: { example: { label: "project" } } }],
+    ["invalid input ID", { ...valid, answers: { base: { "Bad/ID": true } } }],
+    ["non-scalar answer", { ...valid, answers: { base: { label: [] } } }],
+  ];
+  for (const [requirement, intent] of malformed) {
+    assert.equal(validate(intent), false, requirement);
+  }
 });

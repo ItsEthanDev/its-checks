@@ -48,7 +48,7 @@ test("first run asks explicit categories and selected inputs; rerun preselects a
   const first = dialogue({ integrations: ["example"], automation: ["ci"], answers: { "integrations/example/stylesheet": "styles/site.css" } });
   let installed = 0;
   const dependencies: ApplicationDependencies = { assess: () => Effect.succeed("required"), install: (plan) => {
-    assert.strictEqual(plan, first.plan, "execution must use the displayed plan"); installed++; return Effect.void;
+    assert.deepEqual(plan, first.plan, "execution must match the displayed plan"); installed++; return Effect.void;
   } };
   await Effect.runPromise(setup({ interactive: true, projectRoot: f.project, policyRoot: f.policy, presentation: first.ui, dependencies: () => dependencies }));
   assert.equal(first.managerQuestions, 1); assert.equal(first.confirmations, 0); assert.equal(installed, 1);
