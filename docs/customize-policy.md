@@ -22,7 +22,7 @@ A script string adds a command after earlier bundles' commands. To replace one b
 {
   "scripts": {
     "lint": {
-      "command": "effect-tsgo oxlint --deny-warnings .",
+      "command": "alternate-linter .",
       "replaces": "base"
     }
   }

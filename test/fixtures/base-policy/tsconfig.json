@@ -1,9 +1,0 @@
-{
-  "compilerOptions": {
-    "strict": true,
-    "target": "ESNext",
-    "module": "NodeNext",
-    "noEmit": true
-  },
-  "include": ["valid/**/*.ts", "violations/**/*.ts"]
-}

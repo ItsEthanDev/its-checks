@@ -26,9 +26,7 @@ For a local checkout, run `npm install --omit=dev --ignore-scripts` there, then 
 node /absolute/path/to/its-checks/bin/its-checks.js
 ```
 
-After setup: `node --run fmt` to format; `node --run check` to check formatting and lint.
-
-For the Effect integration's runner, policy exceptions, and Neovim setup, see [Effect](docs/effect.md).
+Review the generated package scripts for the commands supplied by your selected policy.
 
 Setup generates `.its-checks.json` in the target project to save your selections, answers, and source identity. Keep it for reruns: setup uses it to prefill choices and clean up deselected integrations and automation.
 
@@ -42,4 +40,4 @@ Bun is this repository's development package manager. Install dependencies with 
 
 Edit the executed checkout's `policy/` declarations and native files, then rerun setup; no build is needed. Generated target configuration can be replaced on rerun. Implementation is in [`src/`](src/); the Node launcher uses `tsx` to run it directly.
 
-Run checks with `bun run`: `test`, `typecheck`, `test:managers`, `test:policy`, `test:cli`, and `test:package`.
+Follow the [project standards](STANDARDS.md) and [testing guidance](docs/testing.md).
