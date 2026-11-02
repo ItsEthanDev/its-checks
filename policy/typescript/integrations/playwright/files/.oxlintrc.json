@@ -1,0 +1,35 @@
+{
+  "jsPlugins": ["eslint-plugin-playwright"],
+  "overrides": [
+    {
+      "files": ["tests/**"],
+      "rules": {
+        "playwright/missing-playwright-await": ["error", { "includePageLocatorMethods": true }],
+        "playwright/no-conditional-expect": "error",
+        "playwright/no-duplicate-hooks": "error",
+        "playwright/no-element-handle": "error",
+        "playwright/no-eval": "error",
+        "playwright/no-focused-test": "error",
+        "playwright/no-force-option": "error",
+        "playwright/no-identical-title": "error",
+        "playwright/no-networkidle": "error",
+        "playwright/no-page-pause": "error",
+        "playwright/no-standalone-expect": "error",
+        "playwright/no-unsafe-references": "error",
+        "playwright/no-unused-locators": "error",
+        "playwright/no-useless-await": "error",
+        "playwright/no-useless-not": "error",
+        "playwright/no-wait-for-navigation": "error",
+        "playwright/no-wait-for-selector": "error",
+        "playwright/no-wait-for-timeout": "error",
+        "playwright/prefer-web-first-assertions": "error",
+        "playwright/valid-describe-callback": "error",
+        "playwright/valid-expect": "error",
+        "playwright/valid-expect-in-promise": "error",
+        "playwright/valid-test-tags": "error",
+        "playwright/valid-title": "error"
+      }
+    }
+  ],
+  "ignorePatterns": ["**/test-results/**", "**/playwright-report/**", "**/blob-report/**"]
+}
