@@ -1,6 +1,6 @@
 {
-  "name": "TanStack Router / Start",
-  "description": "Inference-safe route options and generated-artifact exclusions",
+  "name": "TanStack Router",
+  "description": "Inference-safe route options and generated route-tree exclusions",
   "devDependencies": {
     "@tanstack/eslint-plugin-router": "1.162.0"
   }

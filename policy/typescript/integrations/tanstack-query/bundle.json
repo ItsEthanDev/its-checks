@@ -1,0 +1,7 @@
+{
+  "name": "TanStack Query",
+  "description": "Cache dependencies, stable query clients, tracked results, and inference-safe query options",
+  "devDependencies": {
+    "@tanstack/eslint-plugin-query": "5.105.3"
+  }
+}
