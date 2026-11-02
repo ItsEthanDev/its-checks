@@ -11,7 +11,7 @@ const repo = path.resolve(import.meta.dirname, "..");
 
 /** Packaging checks content, not editable policy opinions. Behavioral checks replace
  * shipped policy with fixed test-owned files in each isolated CLI fixture. */
-test(
+await test(
   "packed source CLI ships its runtime assets and runs without Bun with production dependencies only",
   { timeout: 120_000 },
   async (t) => {
@@ -42,14 +42,17 @@ test(
       const result: string[] = [];
       for (const entry of await fs.readdir(path.join(directory, prefix), { withFileTypes: true })) {
         const relative = path.join(prefix, entry.name);
-        if (entry.isDirectory()) {result.push(...(await files(directory, relative)));}
-        else {result.push(relative);}
+        if (entry.isDirectory()) {
+          result.push(...(await files(directory, relative)));
+        } else {
+          result.push(relative);
+        }
       }
-      return result.sort();
+      return result.toSorted();
     };
     const expected: string[] = ["package.json", "README.md"];
-    for (const directory of ["bin", "src", "policy", "schemas"])
-      {for (const relative of await files(path.join(repo, directory))) {
+    for (const directory of ["bin", "src", "policy", "schemas"]) {
+      for (const relative of await files(path.join(repo, directory))) {
         const file = path.join(directory, relative);
         expected.push(file);
         assert.deepEqual(
@@ -57,10 +60,11 @@ test(
           await fs.readFile(path.join(repo, file)),
           `${file} must ship unchanged`,
         );
-      }}
+      }
+    }
     assert.deepEqual(
       await files(packed),
-      expected.sort(),
+      expected.toSorted(),
       "only runtime source/assets and package metadata ship, including policy dotfiles",
     );
 
@@ -99,7 +103,7 @@ test(
       env: { ...env, ITS_CHECKS_PACKAGE_ROOT: consumer },
       timeout: 60_000,
     });
-    t.diagnostic(`${result.stdout.trim()  }\n${  result.stderr.trim()}`);
+    t.diagnostic(`${result.stdout.trim()}\n${result.stderr.trim()}`);
 
     // Exercise npx's Git consumption path using a local fork, without publishing.
     for (const args of [
@@ -115,8 +119,9 @@ test(
         "-m",
         "fixture",
       ],
-    ])
-      {await exec("git", args, { cwd: packed, env });}
+    ]) {
+      await exec("git", args, { cwd: packed, env });
+    }
     const { stdout: commit } = await exec("git", ["rev-parse", "HEAD"], { cwd: packed, env });
     const gitConsumer = path.join(root, "git-consumer");
     await fs.mkdir(gitConsumer);

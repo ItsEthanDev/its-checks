@@ -49,7 +49,13 @@ const check = (source: string, field: string, valid: boolean, detail: string) =>
 const httpsUrl = (value: string): boolean => {
   try {
     const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password && !url.search && !url.hash;
+    return (
+      url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === ""
+    );
   } catch {
     return false;
   }
@@ -118,18 +124,22 @@ export function loadPreviousIntent(
   return Effect.gen(function* () {
     const source = path.resolve(projectRoot, selectionFilename);
     const exists = yield* Effect.tryPromise({
-      try: () => fs.lstat(source),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catch((cause) =>
-        (cause as NodeJS.ErrnoException).code === "ENOENT"
-          ? Effect.succeed(undefined)
-          : Effect.fail(
-              context(source, "$", cause instanceof Error ? cause.message : String(cause)),
-            ),
-      ),
-    );
-    if (!exists) {return undefined;}
+      try: async () => {
+        try {
+          return await fs.lstat(source);
+        } catch (cause) {
+          if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+            return undefined;
+          }
+          throw cause;
+        }
+      },
+      catch: (cause) =>
+        context(source, "$", cause instanceof Error ? cause.message : String(cause)),
+    });
+    if (exists === undefined) {
+      return undefined;
+    }
     return yield* decodeSavedIntent(yield* readText({ bundle: "selections", source }), source);
   });
 }
@@ -137,10 +147,10 @@ export function loadPreviousIntent(
 /** Write only the current intent shape. Neither provenance nor selections prove installation success. */
 export function selectionContent(intent: SavedIntent): Effect.Effect<string, BundleError> {
   return Effect.gen(function* () {
-    const content = yield* Effect.try({
-      try: () => `${JSON.stringify(intent, null, 2)  }\n`,
-      catch: (cause) => context(selectionFilename, "$", String(cause)),
-    });
+    const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(SelectionFile, { space: 2 }))(
+      intent,
+    ).pipe(Effect.mapError((cause) => context(selectionFilename, "$", cause.message)));
+    const content = `${encoded}\n`;
     yield* decodeSavedIntent(content);
     return content;
   });

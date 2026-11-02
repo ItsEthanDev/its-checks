@@ -15,8 +15,8 @@ import { fixture } from "./fixtures.ts";
 
 const run = Effect.runPromise;
 
-for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
-  {test(`${manager}: project version, lockfile, linker and lifecycle settings belong to the manager`, async (t) => {
+for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
+  await test(`${manager}: project version, lockfile, linker and lifecycle settings belong to the manager`, async (t) => {
     const f = await fixture(t);
     await fs.writeFile(
       path.join(f.project, "package.json"),
@@ -41,7 +41,9 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
       await fs.writeFile(path.join(f.project, name), bytes);
     }
     const resolution = await run(resolveTargetManager(f.project));
-    if (resolution.kind !== "resolved") throw Error("Expected manager");
+    if (resolution.kind !== "resolved") {
+      throw Error("Expected manager");
+    }
     let calls = 0;
     const adapter = createDependencyAdapter(resolution.target, {
       run: (command, args, cwd) => {
@@ -66,6 +68,8 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
       "completed",
     );
     assert.equal(calls, 1);
-    for (const [name, bytes] of Object.entries(files))
+    for (const [name, bytes] of Object.entries(files)) {
       assert.deepEqual(await fs.readFile(path.join(f.project, name)), Buffer.from(bytes));
-  });}
+    }
+  });
+}

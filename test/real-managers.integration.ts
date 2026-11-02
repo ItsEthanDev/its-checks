@@ -25,8 +25,8 @@ const lifecycle = `node -e 'const f=require("node:fs"); if(!f.existsSync(".oxlin
 const original = `node -e 'require("node:fs").appendFileSync("commands.log","original\\n")'`;
 const helper = `node -e 'require("node:fs").appendFileSync("commands.log","helper\\n")'`;
 
-for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
-  {test(
+for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
+  await test(
     `${manager}: real install/update/remove/rerun/failure/retry/lifecycle/wrappers`,
     { timeout: 120_000 },
     async (t) => {
@@ -38,7 +38,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(
           file,
-          typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n",
+          typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`,
         );
       };
       for (const [name, version, archive] of [
@@ -66,10 +66,12 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         custom: { preserved: true },
       });
       // Keep integration fixtures offline; these are test isolation settings, not product requirements.
-      if (manager === "npm")
+      if (manager === "npm") {
         await put(path.join(project, ".npmrc"), "offline=true\naudit=false\nfund=false\n");
-      if (manager === "yarn")
+      }
+      if (manager === "yarn") {
         await put(path.join(project, ".yarnrc"), "disable-self-update-check true\noffline true\n");
+      }
       await put(path.join(policy, "bundle.json"), {
         schemaVersion: 1,
         source: {
@@ -89,7 +91,9 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         rules: { "no-debugger": "error" },
       });
       const resolution = await run(resolveTargetManager(project, manager));
-      if (resolution.kind !== "resolved") throw Error("Expected manager");
+      if (resolution.kind !== "resolved") {
+        throw Error("Expected manager");
+      }
       let installs = 0;
       const adapter = createDependencyAdapter(resolution.target, {
         run: (cmd, args, cwd) => {
@@ -132,8 +136,8 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         const manifest = JSON.parse(await fs.readFile(file, "utf8"));
         const bytes =
           layout === "whitespace"
-            ? JSON.stringify(manifest, null, 4) + "\n\n"
-            : JSON.stringify(Object.fromEntries(Object.entries(manifest).reverse())) + "\n";
+            ? `${JSON.stringify(manifest, null, 4)}\n\n`
+            : `${JSON.stringify(Object.fromEntries(Object.entries(manifest).toReversed()))}\n`;
         await fs.writeFile(file, bytes);
         const matching = await plan();
         assert.ok(matching.files.every((entry) => entry.kind === "noop"));
@@ -158,7 +162,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
       const beforeFailure = JSON.parse(await fs.readFile(manifestFile, "utf8"));
       // pnpm may skip root hooks on unchanged installs. Use an unresolvable local input
       // to test its failure path without overriding native caching or lifecycle policy.
-      if (manager === "pnpm")
+      if (manager === "pnpm") {
         await put(manifestFile, {
           ...beforeFailure,
           devDependencies: {
@@ -166,6 +170,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
             "missing-dep": "file:../missing.tgz",
           },
         });
+      }
       await put(path.join(policy, "typescript/base/files/.oxlintrc.json"), {
         rules: { "no-debugger": "warn" },
       });
@@ -191,7 +196,9 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         "warn",
       );
       await fs.unlink(path.join(project, "fail-lifecycle"));
-      if (manager === "pnpm") await put(manifestFile, beforeFailure);
+      if (manager === "pnpm") {
+        await put(manifestFile, beforeFailure);
+      }
       assert.equal((await apply()).dependencyWork, "completed");
       await put(path.join(policy, "typescript/base/bundle.json"), declaration(null));
       await apply();
@@ -212,18 +219,22 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         await apply();
         const current = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"))
           .scripts.prepare;
-        if (wrapper) assert.equal(current, wrapper);
+        if (wrapper) {
+          assert.equal(current, wrapper);
+        }
         wrapper = current;
       }
-      if (manager !== "pnpm")
+      if (manager !== "pnpm") {
         assert.equal(
           await fs.readFile(path.join(project, "prepare.log"), "utf8"),
           "first\nsecond\n",
         );
+      }
       const final = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
       assert.deepEqual(final.custom, { preserved: true });
       assert.equal(final.scripts.postinstall, lifecycle);
       assert.equal(final.devDependencies["unrelated-dep"], "file:../keep.tgz");
       assert.equal(installs, 9);
     },
-  );}
+  );
+}

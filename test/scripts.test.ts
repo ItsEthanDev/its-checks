@@ -42,21 +42,22 @@ async function setup(t: Parameters<typeof fixture>[0]) {
     );
   // Test-only materialization of planned bytes, not a production application adapter.
   const materialize = async (p: ChangePlan) => {
-    for (const file of p.files)
-      {if (file.after.kind === "file") {
+    for (const file of p.files) {
+      if (file.after.kind === "file") {
         await fs.mkdir(path.dirname(path.join(f.project, file.path)), { recursive: true });
         await fs.writeFile(
           path.join(f.project, file.path),
           Buffer.from(file.after.base64, "base64"),
         );
-      }}
+      }
+    }
   };
   const bin = path.join(f.root, "fake-managers");
   await fs.mkdir(bin);
   // Fake package runners ONLY: real /bin/sh execution, no installs or PM lifecycle behavior.
   // In particular, the shared fixture's "install": "exit 99" is never invoked.
-  for (const manager of ["npm", "pnpm", "yarn", "bun"])
-    {await fs.writeFile(
+  for (const manager of ["npm", "pnpm", "yarn", "bun"]) {
+    await fs.writeFile(
       path.join(bin, manager),
       `#!${process.execPath}
 const fs = require('node:fs');
@@ -69,7 +70,8 @@ const result = spawnSync('/bin/sh', ['-c', command], { stdio: 'inherit' });
 process.exit(result.status ?? 90);
 `,
       { mode: 0o755 },
-    );}
+    );
+  }
   const execute = (p: ChangePlan, name: string) =>
     spawnSync("/bin/sh", ["-c", manifest(p).scripts[name]!], {
       cwd: f.project,
@@ -80,7 +82,7 @@ process.exit(result.status ?? 90);
   return { ...f, plan, resolve, writeScripts, materialize, execute };
 }
 
-test("check and prepare compose in bundle order, deduplicate exact strings and retain unrelated scripts", async (t) => {
+await test("check and prepare compose in bundle order, deduplicate exact strings and retain unrelated scripts", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -120,7 +122,7 @@ test("check and prepare compose in bundle order, deduplicate exact strings and r
   assert.equal(rerun.requiresConfirmation, false);
 });
 
-test("only exact duplicates collapse; equivalent but different strings still execute", async (t) => {
+await test("only exact duplicates collapse; equivalent but different strings still execute", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf x" } });
   await f.add("integrations/a", { name: "A", scripts: { check: "printf x " } });
@@ -132,7 +134,7 @@ test("only exact duplicates collapse; equivalent but different strings still exe
   assert.equal(result.stdout, "xx");
 });
 
-test("a replacement keeps its target's position and restores it on deselection", async (t) => {
+await test("a replacement keeps its target's position and restores it on deselection", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -163,7 +165,7 @@ test("a replacement keeps its target's position and restores it on deselection",
   assert.equal(after.stdout, "original\nbase\nextra\n");
 });
 
-test("replacement targets retain their identity until after command deduplication", async (t) => {
+await test("replacement targets retain their identity until after command deduplication", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf 'shared\\n'" } });
   await f.add("integrations/a", { name: "A", scripts: { check: "printf 'shared\\n'" } });
@@ -178,7 +180,7 @@ test("replacement targets retain their identity until after command deduplicatio
   assert.equal(result.stdout, "replacement\nshared\n");
 });
 
-test("missing targets and conflicting replacements fail read-only with source context", async (t) => {
+await test("missing targets and conflicting replacements fail read-only with source context", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf base" } });
   await f.add("integrations/a", {
@@ -210,15 +212,16 @@ test("missing targets and conflicting replacements fail read-only with source co
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("identical replacements coalesce and can target an integration contribution", async (t) => {
+await test("identical replacements coalesce and can target an integration contribution", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf 'base\\n'" } });
   await f.add("integrations/a", { name: "A", scripts: { check: "printf 'extra\\n'" } });
-  for (const id of ["b", "c"])
-    {await f.add(`integrations/${id}`, {
+  for (const id of ["b", "c"]) {
+    await f.add(`integrations/${id}`, {
       name: id,
       scripts: { check: { command: "printf 'replacement\\n'", replaces: "integrations/a" } },
-    });}
+    });
+  }
   const p = await f.plan({ integrations: ["c", "a", "b"], automation: [] });
   await f.materialize(p);
   const result = f.execute(p, "check");
@@ -226,7 +229,7 @@ test("identical replacements coalesce and can target an integration contribution
   assert.equal(result.stdout, "base\nreplacement\n");
 });
 
-test("an absent scripts section stays absent when there is nothing to manage", async (t) => {
+await test("an absent scripts section stays absent when there is nothing to manage", async (t) => {
   const f = await setup(t);
   await fs.writeFile(path.join(f.project, "package.json"), '{ "name": "fixture" }\n');
   const p = await f.plan();
@@ -234,7 +237,7 @@ test("an absent scripts section stays absent when there is nothing to manage", a
   assert.equal(p.files.find((file) => file.path === "package.json")!.kind, "noop");
 });
 
-test("opaque compound originals and contributions keep POSIX shell semantics", async (t) => {
+await test("opaque compound originals and contributions keep POSIX shell semantics", async (t) => {
   const originals = [
     "printf 'one\\n' && printf 'two\\n'",
     "false || printf 'fallback\\n'",
@@ -267,12 +270,12 @@ test("opaque compound originals and contributions keep POSIX shell semantics", a
     await f.materialize(p);
     const result = f.execute(p, "check");
     assert.equal(result.status, 0, `${original}: ${result.stderr}`);
-    assert.equal(result.stdout, `${expected[index]! + expected[index]!  }managed-end\n`);
+    assert.equal(result.stdout, `${expected[index]! + expected[index]!}managed-end\n`);
     assert.equal(manifest(p).scripts.untouched, "echo untouched");
   }
 });
 
-test("failure in an original or contribution prevents later expressions, without flattening ||", async (t) => {
+await test("failure in an original or contribution prevents later expressions, without flattening ||", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -293,7 +296,7 @@ test("failure in an original or contribution prevents later expressions, without
   assert.equal(result.stdout, "original\n");
 });
 
-test("deselection rebuilds shared scripts, restores original bytes and removes originally absent wrappers", async (t) => {
+await test("deselection rebuilds shared scripts, restores original bytes and removes originally absent wrappers", async (t) => {
   const f = await setup(t);
   const original = "printf 'original\\n' # retained exactly\n";
   await f.writeScripts({ check: original, other: "echo other" });
@@ -324,7 +327,7 @@ test("deselection rebuilds shared scripts, restores original bytes and removes o
   assert.equal(result.stdout, "original\n");
 });
 
-test("edited helpers are normal replacement conflicts, not inferred command history", async (t) => {
+await test("edited helpers are normal replacement conflicts, not inferred command history", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "echo prescribed" } });
   const first = await f.plan();
@@ -343,7 +346,7 @@ test("edited helpers are normal replacement conflicts, not inferred command hist
   );
 });
 
-test("edited public references and unowned reserved helpers fail actionably without mutation", async (t) => {
+await test("edited public references and unowned reserved helpers fail actionably without mutation", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "echo managed" } });
   for (const scripts of [
@@ -364,7 +367,7 @@ test("edited public references and unowned reserved helpers fail actionably with
   await assert.rejects(f.plan(), /reserved its-checks: namespace/);
 });
 
-test("all target manager runners execute and exact wrappers migrate safely between managers", async (t) => {
+await test("all target manager runners execute and exact wrappers migrate safely between managers", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",

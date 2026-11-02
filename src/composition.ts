@@ -6,29 +6,50 @@ import { PlanError } from "./plan-errors.ts";
 export type JsonObject = { readonly [key: string]: JsonValue };
 export const isObject = (value: unknown): value is JsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+export const isArray = (value: JsonValue | undefined): value is readonly JsonValue[] =>
+  Array.isArray(value);
 export const canonical = (value: JsonValue): string => JSON.stringify(ordered(value));
 function ordered(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) {return value.map(ordered);}
-  if (isObject(value))
-    {return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, ordered(value[key]!)]),
-    );}
+  if (isArray(value)) {
+    return value.map(ordered);
+  }
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .toSorted(([a], [b]) => {
+          if (a === b) {
+            return 0;
+          }
+          return a < b ? -1 : 1;
+        })
+        .map(([key, entry]) => [key, ordered(entry)]),
+    );
+  }
   return value;
 }
 export const jsonContent = (value: JsonValue): string =>
-  `${JSON.stringify(ordered(value), null, 2)  }\n`;
+  `${JSON.stringify(ordered(value), null, 2)}\n`;
 const rank = { base: 0, integration: 1, automation: 2 };
 export const orderedBundles = (bundles: readonly LoadedBundle[]): readonly LoadedBundle[] =>
-  [...bundles].sort(
-    (a, b) => rank[a.kind] - rank[b.kind] || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
+  bundles.toSorted((a, b) => {
+    const difference = rank[a.kind] - rank[b.kind];
+    if (difference !== 0) {
+      return difference;
+    }
+    if (a.id === b.id) {
+      return 0;
+    }
+    return a.id < b.id ? -1 : 1;
+  });
 export const configDestination = (
   relative: string,
 ): ".oxfmtrc.json" | ".oxlintrc.json" | undefined => {
-  if (relative === ".oxfmtrc.json" || relative === ".oxfmtrc.jsonc") {return ".oxfmtrc.json";}
-  if (relative === ".oxlintrc.json" || relative === ".oxlintrc.jsonc") {return ".oxlintrc.json";}
+  if (relative === ".oxfmtrc.json" || relative === ".oxfmtrc.jsonc") {
+    return ".oxfmtrc.json";
+  }
+  if (relative === ".oxlintrc.json" || relative === ".oxlintrc.jsonc") {
+    return ".oxlintrc.json";
+  }
   return undefined;
 };
 
@@ -45,42 +66,49 @@ export function composeConfigurations(
       const seen = new Set<string>();
       for (const file of bundle.files) {
         const destination = configDestination(file.path);
-        if (!destination) {continue;}
+        if (destination === undefined) {
+          continue;
+        }
         const fail = (field: string, detail: string) =>
           Effect.fail(new PlanError({ source: file.source, field, detail }));
-        if (seen.has(destination))
-          {return yield* fail(
+        if (seen.has(destination)) {
+          return yield* fail(
             "$",
             `One bundle cannot supply both JSON and JSONC for ${destination}`,
-          );}
+          );
+        }
         seen.add(destination);
-        if (!("value" in file) || !isObject(file.value))
-          {return yield* fail("$", "Expected a native JSON/JSONC object");}
+        if (!("value" in file) || !isObject(file.value)) {
+          return yield* fail("$", "Expected a native JSON/JSONC object");
+        }
         const output = outputs[destination];
         const lint = destination === ".oxlintrc.json";
         for (const [field, value] of Object.entries(file.value)) {
-          if (!lint && field === "extends")
-            {return yield* fail(field, "Oxfmt extends is not an installer-supported field");}
+          if (!lint && field === "extends") {
+            return yield* fail(field, "Oxfmt extends is not an installer-supported field");
+          }
           if (
             lint &&
             ["rules", "categories", "env", "globals", "settings", "options"].includes(field)
           ) {
-            if (!isObject(value))
-              {return yield* fail(
+            if (!isObject(value)) {
+              return yield* fail(
                 field,
                 "Expected an object; entries compose by key as whole values",
-              );}
-            output[field] = { ...(output[field] as JsonObject | undefined), ...value };
+              );
+            }
+            const previous = output[field];
+            output[field] = { ...(isObject(previous) ? previous : {}), ...value };
           } else if (
             field === "overrides" ||
             field === "ignorePatterns" ||
             (lint && ["plugins", "jsPlugins", "extends"].includes(field))
           ) {
-            if (!Array.isArray(value)) {return yield* fail(field, "Expected an array");}
-            const combined = [
-              ...((output[field] as readonly JsonValue[] | undefined) ?? []),
-              ...value,
-            ];
+            if (!isArray(value)) {
+              return yield* fail(field, "Expected an array");
+            }
+            const previous = output[field];
+            const combined = [...(isArray(previous) ? previous : []), ...value];
             output[field] =
               field === "overrides"
                 ? combined

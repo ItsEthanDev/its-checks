@@ -18,7 +18,7 @@ async function failure(effect: Effect.Effect<unknown, BundleError>) {
   return result.failure;
 }
 
-test("loads baseline plus selected external JSONC, shell and YAML in stable bundle/file order", async (t) => {
+await test("loads baseline plus selected external JSONC, shell and YAML in stable bundle/file order", async (t) => {
   const f = await fixture(t);
   await f.add("integrations/zebra");
   await f.add("integrations/alpha", {
@@ -61,15 +61,16 @@ test("loads baseline plus selected external JSONC, shell and YAML in stable bund
   assert.equal(native.path, ".oxfmtrc.jsonc");
   assert.equal(native.content, jsonc);
   assert.equal(native.format, "jsonc");
-  if (native.format === "jsonc")
-    {assert.deepEqual(native.value, { sortTailwindcss: { stylesheet: "src/app.css" } });}
+  if (native.format === "jsonc") {
+    assert.deepEqual(native.value, { sortTailwindcss: { stylesheet: "src/app.css" } });
+  }
   assert.equal(loaded.bundles[3]!.files[0]!.content, yaml);
   assert.equal(loaded.bundles[4]!.files[0]!.content, shell);
   assert.equal(loaded.bundles[4]!.files[0]!.executable, true);
   assert.deepEqual(await snapshot(f.root), before, "loading cannot mutate policy or project");
 });
 
-test("new directories appear without a registry; display names are not identities", async (t) => {
+await test("new directories appear without a registry; display names are not identities", async (t) => {
   const f = await fixture(t);
   await f.add("integrations/zebra", { name: "Same display" });
   await f.add("integrations/alpha", { name: "Same display" });
@@ -91,7 +92,7 @@ test("new directories appear without a registry; display names are not identitie
   );
 });
 
-test("baseline and automation declare typed inputs and native files sort independently of creation order", async (t) => {
+await test("baseline and automation declare typed inputs and native files sort independently of creation order", async (t) => {
   const f = await fixture(t);
   await f.add("base", {
     name: "Base",
@@ -154,7 +155,7 @@ test("baseline and automation declare typed inputs and native files sort indepen
   assert.deepEqual(options.value, { enabled: false, counts: [1], Enabled: true });
 });
 
-test("ordinary policy edits change loaded content without implementation changes", async (t) => {
+await test("ordinary policy edits change loaded content without implementation changes", async (t) => {
   const f = await fixture(t);
   await f.write("typescript/base/files/.oxlintrc.json", { rules: { "no-debugger": "warn" } });
   const loaded = await Effect.runPromise(loadPolicy(f.policy, none));
@@ -163,7 +164,7 @@ test("ordinary policy edits change loaded content without implementation changes
   assert.deepEqual(file.value, { rules: { "no-debugger": "warn" } });
 });
 
-test("only selected native content is loaded; all discovered display declarations are validated", async (t) => {
+await test("only selected native content is loaded; all discovered display declarations are validated", async (t) => {
   const f = await fixture(t);
   await f.add("integrations/optional");
   await f.write("typescript/integrations/optional/files/.oxlintrc.json", "not JSON");
@@ -306,7 +307,7 @@ const invalidDeclarations: [string, object, RegExp][] = [
 ];
 
 for (const [name, declaration, expected] of invalidDeclarations) {
-  test(`rejects ${name} with source context and no writes or dependency operations`, async (t) => {
+  await test(`rejects ${name} with source context and no writes or dependency operations`, async (t) => {
     const f = await fixture(t);
     await f.add("base", { name: "Base", ...declaration });
     const before = await snapshot(f.root);
@@ -344,7 +345,7 @@ for (const [name, native, content, expected] of [
   ["Windows reserved name", "CON.json", "{}", /safe target-relative/],
   ["Git directory", ".git/config.json", "{}", /safe target-relative/],
 ] as const) {
-  test(`rejects ${name} native policy before mutation`, async (t) => {
+  await test(`rejects ${name} native policy before mutation`, async (t) => {
     const f = await fixture(t);
     await f.write(`typescript/base/files/${native}`, content);
     const before = await snapshot(f.root);
@@ -355,13 +356,13 @@ for (const [name, native, content, expected] of [
   });
 }
 
-test("rejects duplicate declaration keys rather than losing their first value", async (t) => {
+await test("rejects duplicate declaration keys rather than losing their first value", async (t) => {
   const f = await fixture(t);
   await f.write("typescript/base/bundle.json", '{"name":"one","name":"two"}');
   assert.match((await failure(loadPolicy(f.policy, none))).message, /Duplicate object key "name"/);
 });
 
-test("rejects duplicate input IDs and bindings", async (t) => {
+await test("rejects duplicate input IDs and bindings", async (t) => {
   const f = await fixture(t);
   const input = {
     id: "level",
@@ -378,7 +379,7 @@ test("rejects duplicate input IDs and bindings", async (t) => {
   );
 });
 
-test("rejects duplicate selections, unknown selections and noncanonical directory IDs", async (t) => {
+await test("rejects duplicate selections, unknown selections and noncanonical directory IDs", async (t) => {
   const f = await fixture(t);
   await f.add("integrations/alpha");
   assert.match(
@@ -394,7 +395,7 @@ test("rejects duplicate selections, unknown selections and noncanonical director
   assert.match((await failure(discoverPolicy(f.policy))).message, /Duplicate identity/);
 });
 
-test("rejects case-alias native files and symbolic-link files/directories", async (t) => {
+await test("rejects case-alias native files and symbolic-link files/directories", async (t) => {
   const f = await fixture(t);
   await f.write("typescript/base/files/A.json", {});
   await f.write("typescript/base/files/a.json", {});
@@ -410,7 +411,7 @@ test("rejects case-alias native files and symbolic-link files/directories", asyn
   assert.match((await failure(loadPolicy(f.policy, none))).message, /symbolic links/);
 });
 
-test("bundle installers are rejected, native hook code is never executed", async (t) => {
+await test("bundle installers are rejected, native hook code is never executed", async (t) => {
   const f = await fixture(t);
   const sentinel = path.join(f.project, "ran");
   await f.write("typescript/base/files/.husky/pre-commit", `#!/bin/sh\ntouch '${sentinel}'\n`);
@@ -426,7 +427,7 @@ for (const [field, value, expected] of [
   ["repository", "https://user:password@example.com/repo", /source.repository/],
   ["selectionSchema", "../schema.json", /source.selectionSchema/],
 ] as const) {
-  test(`validates root provenance ${field}: ${value}`, async (t) => {
+  await test(`validates root provenance ${field}: ${value}`, async (t) => {
     const f = await fixture(t);
     await f.write("bundle.json", {
       schemaVersion: 1,
@@ -443,7 +444,7 @@ for (const [field, value, expected] of [
   });
 }
 
-test("missing declarations and invalid UTF-8 are contextual typed failures", async (t) => {
+await test("missing declarations and invalid UTF-8 are contextual typed failures", async (t) => {
   const f = await fixture(t);
   await fs.writeFile(
     path.join(f.policy, "typescript/base/files/.oxlintrc.json"),

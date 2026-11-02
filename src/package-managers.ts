@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { OperationError, type ApplicationDependencies } from "./application.ts";
 import type { ChangePlan } from "./planning.ts";
@@ -37,7 +37,9 @@ async function text(root: string, name: string): Promise<string | undefined> {
   try {
     return await fs.readFile(path.join(root, name), "utf8");
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") {return undefined;}
+    if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+      return undefined;
+    }
     throw cause;
   }
 }
@@ -47,39 +49,63 @@ export function resolveTargetManager(
   answer?: PackageManager,
 ): Effect.Effect<ManagerResolution, OperationError> {
   return io(async () => {
-    root = path.resolve(root);
-    const manifest = JSON.parse((await text(root, "package.json"))!);
+    const packageRoot = path.resolve(root);
+    const manifest = Schema.decodeSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          packageManager: Schema.optionalKey(Schema.Unknown),
+        }),
+      ),
+    )(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
     const evidence: string[] = [];
     const candidates = new Set<PackageManager>();
     let invalid = false;
     if (manifest.packageManager !== undefined) {
-      evidence.push(`packageManager: ${String(manifest.packageManager)}`);
-      const match =
-        typeof manifest.packageManager === "string" &&
-        /^(npm|pnpm|yarn|bun)@.+$/.exec(manifest.packageManager);
-      if (match) {candidates.add(match[1] as PackageManager);}
-      else {invalid = true;}
+      const declaration = manifest.packageManager;
+      evidence.push(
+        `packageManager: ${typeof declaration === "string" ? declaration : JSON.stringify(declaration)}`,
+      );
+      const match = (["npm", "pnpm", "yarn", "bun"] as const).find(
+        (candidate) =>
+          typeof declaration === "string" &&
+          declaration.startsWith(`${candidate}@`) &&
+          declaration.length > candidate.length + 1 &&
+          !/[\r\n]/.test(declaration),
+      );
+      if (match !== undefined) {
+        candidates.add(match);
+      } else {
+        invalid = true;
+      }
     }
-    for (const [manager, names] of Object.entries(lockNames))
-      {for (const name of names) {
-        if ((await text(root, name)) !== undefined) {
-          candidates.add(manager as PackageManager);
+    for (const candidate of ["npm", "pnpm", "yarn", "bun"] as const) {
+      for (const name of lockNames[candidate]) {
+        if ((await text(packageRoot, name)) !== undefined) {
+          candidates.add(candidate);
           evidence.push(name);
         }
-      }}
+      }
+    }
     const manager = answer ?? (!invalid && candidates.size === 1 ? [...candidates][0] : undefined);
-    if (!manager)
-      {return {
+    if (manager === undefined) {
+      let reason = "No package-manager declaration or lockfile; choose the target manager.";
+      if (invalid) {
+        reason = "Unsupported or malformed packageManager declaration; choose the target manager.";
+      } else if (candidates.size > 0) {
+        reason =
+          "Conflicting package-manager evidence; choose the target manager (other lockfiles are preserved).";
+      }
+      return {
         kind: "question",
-        reason: invalid
-          ? "Unsupported or malformed packageManager declaration; choose the target manager."
-          : candidates.size
-            ? "Conflicting package-manager evidence; choose the target manager (other lockfiles are preserved)."
-            : "No package-manager declaration or lockfile; choose the target manager.",
+        reason,
         evidence,
         choices: ["npm", "pnpm", "yarn", "bun"],
-      };}
-    return { kind: "resolved", target: { root, manager, scripts: createScriptPlanner(manager) } };
+      };
+    }
+    return {
+      kind: "resolved",
+      target: { root: packageRoot, manager, scripts: createScriptPlanner(manager) },
+    };
   });
 }
 
@@ -108,29 +134,32 @@ export const nodeManagerOperations: ManagerOperations = {
           });
           let stdout = "",
             stderr = "";
-          child.stdout.on("data", (data) => {
-            stdout += data;
+          child.stdout.on("data", (data: Buffer) => {
+            stdout += data.toString();
           });
-          child.stderr.on("data", (data) => {
-            stderr += data;
+          child.stderr.on("data", (data: Buffer) => {
+            stderr += data.toString();
           });
           child.on("error", reject);
           child.on("close", (code, signal) =>
             resolve({
               code: code ?? 1,
               stdout,
-              stderr: stderr + (signal ? `\nTerminated by ${signal}` : ""),
+              stderr: stderr + (signal !== null ? `\nTerminated by ${signal}` : ""),
             }),
           );
         }),
     ),
 };
 function approvedManifest(plan: ChangePlan, target: TargetManager): string {
-  if (path.resolve(plan.snapshot.root) !== target.root)
-    {throw new Error("Target manager belongs to another package root");}
+  if (path.resolve(plan.snapshot.root) !== target.root) {
+    throw new Error("Target manager belongs to another package root");
+  }
   const state =
     plan.files.find((f) => f.path === "package.json")?.after ?? plan.snapshot.files["package.json"];
-  if (!state || state.kind !== "file") {throw new Error("Approved package.json is missing");}
+  if (state === undefined || state.kind !== "file") {
+    throw new Error("Approved package.json is missing");
+  }
   return Buffer.from(state.base64, "base64").toString("utf8");
 }
 
@@ -147,22 +176,21 @@ export function createDependencyAdapter(
       Effect.gen(function* () {
         const expected = yield* io(async () => {
           const bytes = approvedManifest(plan, target);
-          if ((await text(root, "package.json")) !== bytes)
-            {throw new Error(
+          if ((await text(root, "package.json")) !== bytes) {
+            throw new Error(
               "package.json differs from the exact approved target manifest; replan before installation",
-            );}
+            );
+          }
           return bytes;
         });
-        const result = yield* operations
-          .run(manager, ["install"], root)
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new OperationError({
-                  detail: `${manager} install failed: ${cause.message}. Fix the failure and rerun ${manager} install in ${root}. Applied changes remain; no rollback.`,
-                }),
-            ),
-          );
+        const result = yield* operations.run(manager, ["install"], root).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OperationError({
+                detail: `${manager} install failed: ${cause.message}. Fix the failure and rerun ${manager} install in ${root}. Applied changes remain; no rollback.`,
+              }),
+          ),
+        );
         const changed = yield* io(async () => (await text(root, "package.json")) !== expected);
         const problems = [
           ...(result.code !== 0
@@ -170,12 +198,12 @@ export function createDependencyAdapter(
             : []),
           ...(changed ? ["package.json no longer matches approved bytes; inspect and replan"] : []),
         ];
-        if (problems.length)
-          {return yield* Effect.fail(
-            new OperationError({
-              detail: `${problems.join("\n")}\nFix the failure and rerun ${manager} install in ${root}. Configuration, lockfile changes and lifecycle effects remain; no rollback.`,
-            }),
-          );}
+        if (problems.length > 0) {
+          return yield* new OperationError({
+            detail: `${problems.join("\n")}\nFix the failure and rerun ${manager} install in ${root}. Configuration, lockfile changes and lifecycle effects remain; no rollback.`,
+          });
+        }
+        return undefined;
       }),
   };
 }

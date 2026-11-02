@@ -1,5 +1,5 @@
 import * as clack from "@clack/prompts";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { ApplicationError, OperationError } from "./application.ts";
 import { safePath } from "./bundle-loading.ts";
@@ -13,7 +13,9 @@ const ask = <A>(prompt: () => Promise<A | typeof clack.CANCEL_SYMBOL>): Question
       try: prompt,
       catch: (cause) => new OperationError({ detail: String(cause) }),
     });
-    if (clack.isCancel(answer)) {return yield* Effect.fail(new Cancelled());}
+    if (clack.isCancel(answer)) {
+      return yield* new Cancelled();
+    }
     return answer;
   });
 function parseInput(declaration: DeclaredInput, value: string): Answer {
@@ -21,18 +23,30 @@ function parseInput(declaration: DeclaredInput, value: string): Answer {
 }
 function validate(declaration: DeclaredInput, value: string | undefined) {
   const text = value ?? "";
-  if (declaration.input.type === "number" && (!text.trim() || !Number.isFinite(Number(text))))
-    {return "Enter a finite number.";}
-  if (declaration.input.type === "path" && !safePath(text))
-    {return "Enter a safe path relative to the target package (for example src/app.css).";}
+  if (
+    declaration.input.type === "number" &&
+    (text.trim().length === 0 || !Number.isFinite(Number(text)))
+  ) {
+    return "Enter a finite number.";
+  }
+  if (declaration.input.type === "path" && !safePath(text)) {
+    return "Enter a safe path relative to the target package (for example src/app.css).";
+  }
+  return undefined;
 }
-export function createClackPresentation() {
+export function createClackPresentation(): {
+  readonly presentation: SetupPresentation;
+  readonly failure: (error: unknown) => void;
+} {
   const spinner = clack.spinner();
   let spinning = false;
   const stop = (message: string, failed = false) => {
     if (spinning) {
-      if (failed) {spinner.error(message);}
-      else {spinner.stop(message);}
+      if (failed) {
+        spinner.error(message);
+      } else {
+        spinner.stop(message);
+      }
       spinning = false;
     }
   };
@@ -44,30 +58,32 @@ export function createClackPresentation() {
         clack.multiselect({
           message: `Choose ${category} (Space toggles, Enter confirms)`,
           required: false,
-          options: options.length
-            ? options.map((bundle) => ({
-                value: bundle.id,
-                label: bundle.declaration.name,
-                ...(bundle.declaration.description === undefined
-                  ? {}
-                  : { hint: bundle.declaration.description }),
-              }))
-            : [{ value: empty, label: "None available" }],
+          options:
+            options.length > 0
+              ? options.map((bundle) => ({
+                  value: bundle.id,
+                  label: bundle.declaration.name,
+                  ...(bundle.declaration.description === undefined
+                    ? {}
+                    : { hint: bundle.declaration.description }),
+                }))
+              : [{ value: empty, label: "None available" }],
           initialValues: [...previous],
         }),
       ).pipe(Effect.map((ids) => ids.filter((id) => id !== empty)));
     },
     input: (declaration) => {
       const message = `${declaration.input.prompt} (${declaration.bundle}/${declaration.input.id})`;
-      if (declaration.input.type === "boolean")
-        {return ask(() =>
+      if (declaration.input.type === "boolean") {
+        return ask(() =>
           clack.confirm({
             message,
-            ...(declaration.initialValue === undefined
+            ...(typeof declaration.initialValue !== "boolean"
               ? {}
-              : { initialValue: declaration.initialValue as boolean }),
+              : { initialValue: declaration.initialValue }),
           }),
-        );}
+        );
+      }
       return ask(() =>
         clack.text({
           message,
@@ -87,10 +103,10 @@ export function createClackPresentation() {
         }),
       );
     },
-    confirm: () =>
+    confirm: (message) =>
       ask(() =>
         clack.confirm({
-          message: "Apply this plan, including replacements and removals?",
+          message,
           initialValue: false,
         }),
       ),
@@ -108,7 +124,7 @@ export function createClackPresentation() {
             (entry) =>
               `${entry.kind}: ${entry.section}.${entry.name}: ${JSON.stringify(entry.before)} → ${JSON.stringify(entry.after)}`,
           ),
-          files.length ? "" : "Configuration already matches; no file writes.",
+          files.length > 0 ? "" : "Configuration already matches; no file writes.",
           `Dependencies: ${dependencies === "required" ? "run the selected package manager's install after configuration" : "installation skipped"}.`,
           "Normal installation uses project settings and may run lifecycle scripts; setup does not audit the installed tree.",
         ]
@@ -135,25 +151,27 @@ export function createClackPresentation() {
   };
   return {
     presentation,
-    failure: (error: unknown) => {
+    failure: (error: unknown): void => {
       stop("Setup did not complete.", true);
-      if (error instanceof Cancelled) {
+      if (Schema.is(Cancelled)(error)) {
         clack.cancel("Cancelled before application. No project writes or installation.");
         return;
       }
       clack.log.error(error instanceof Error ? error.message : String(error));
-      if (error instanceof ApplicationError) {
+      if (Schema.is(ApplicationError)(error)) {
         clack.note(
           [
-            `Completed: ${error.report.completed.map((op) => `${op.kind} ${op.path}`).join(", ") || "none"}`,
-            `Incomplete: ${error.report.incomplete.map((op) => `${op.kind} ${op.path}`).join(", ") || "none"}`,
+            `Completed: ${error.report.completed.length === 0 ? "none" : error.report.completed.map((op) => `${op.kind} ${op.path}`).join(", ")}`,
+            `Incomplete: ${error.report.incomplete.length === 0 ? "none" : error.report.incomplete.map((op) => `${op.kind} ${op.path}`).join(", ")}`,
             `Dependencies: ${error.report.dependencyWork}.`,
             error.report.retry ?? "Inspect the project before retrying.",
             "Already applied changes remain; no rollback was performed.",
           ].join("\n"),
           "Partial completion / failure",
         );
-      } else {clack.log.info("Stopped before application. No project writes or installation.");}
+      } else {
+        clack.log.info("Stopped before application. No project writes or installation.");
+      }
       clack.outro("Setup failed.");
     },
   };

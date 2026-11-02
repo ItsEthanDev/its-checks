@@ -23,7 +23,7 @@ const put = async (file: string, value: object | string) => {
   await fs.writeFile(file, typeof value === "string" ? value : JSON.stringify(value));
 };
 
-test("generating commit belongs to a clean executing checkout, never an enclosing target repository", async (t) => {
+await test("generating commit belongs to a clean executing checkout, never an enclosing target repository", async (t) => {
   const root = await temporary(t);
   await put(path.join(root, "package.json"), { name: "its-checks" });
   const git = async (...args: string[]) => (await exec("git", args, { cwd: root })).stdout.trim();
@@ -64,7 +64,7 @@ test("generating commit belongs to a clean executing checkout, never an enclosin
   );
 });
 
-test("npm provenance uses the installed package's resolved Git commit, not its requested branch or another package", async (t) => {
+await test("npm provenance uses the installed package's resolved Git commit, not its requested branch or another package", async (t) => {
   const root = await temporary(t),
     installed = path.join(root, "node_modules/its-checks");
   await put(path.join(installed, "package.json"), { name: "its-checks" });
@@ -85,7 +85,7 @@ test("npm provenance uses the installed package's resolved Git commit, not its r
   assert.deepEqual(await snapshot(root), before, "provenance lookup is read-only");
   for (const ref of [
     "file:../its-checks.tgz",
-    `https://registry.invalid/its-checks.tgz#${  "b".repeat(40)}`,
+    `https://registry.invalid/its-checks.tgz#${"b".repeat(40)}`,
     "git+https://github.com/example/fork.git#main",
   ]) {
     await put(path.join(root, "package-lock.json"), lock(ref));
@@ -99,7 +99,7 @@ test("npm provenance uses the installed package's resolved Git commit, not its r
   );
 });
 
-test("Bunx abbreviated resolutions are omitted unless a full requested pin matches that resolution", async (t) => {
+await test("Bunx abbreviated resolutions are omitted unless a full requested pin matches that resolution", async (t) => {
   const root = await temporary(t),
     installed = path.join(root, "node_modules/its-checks");
   await put(path.join(installed, "package.json"), { name: "its-checks" });
@@ -118,9 +118,10 @@ test("Bunx abbreviated resolutions are omitted unless a full requested pin match
   const writeLock = (value: object) =>
     put(
       path.join(root, "bun.lock"),
-      `// Native Bun JSONC includes trailing commas\n${ 
-        JSON.stringify(value, null, 2).replace(/\n}$/, ",\n}") 
-        }\n`,
+      `// Native Bun JSONC includes trailing commas\n${JSON.stringify(value, null, 2).replace(
+        /\n}$/,
+        ",\n}",
+      )}\n`,
     );
   await writeLock(lock("github:example/fork"));
   assert.equal(await run(executingCommit(installed)), undefined);

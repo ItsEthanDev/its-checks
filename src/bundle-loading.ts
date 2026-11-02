@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -19,9 +20,15 @@ import {
   type PolicyCatalog,
   type PolicySelections,
 } from "./bundle-types.ts";
+import { canonical, isArray, isObject } from "./composition.ts";
 
 type Context = { readonly bundle: string; readonly source: string };
-const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+const compare = (a: string, b: string) => {
+  if (a === b) {
+    return 0;
+  }
+  return a < b ? -1 : 1;
+};
 const identifier = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const packageName = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
 const fail = (ctx: Context, field: string, detail: string) =>
@@ -38,6 +45,7 @@ const validate = (ctx: Context, field: string, valid: boolean, detail: string) =
 export function safePath(value: string): boolean {
   return (
     value.length > 0 &&
+    // oxlint-disable-next-line no-control-regex -- Portable paths must reject control characters.
     !/[\\:<>"|?*\x00-\x1f\x7f]/.test(value) &&
     value
       .split("/")
@@ -62,7 +70,7 @@ const checkPath = (ctx: Context, field: string, value: string) =>
   );
 
 /** @internal Strict local UTF-8 read; never follows the final symbolic link. */
-export function readText(ctx: Context) {
+export function readText(ctx: Context): Effect.Effect<string, BundleError> {
   return Effect.gen(function* () {
     const stat = yield* io(ctx, () => fs.lstat(ctx.source));
     yield* validate(
@@ -83,7 +91,11 @@ export function readText(ctx: Context) {
 }
 
 /** @internal Strict JSON/JSONC parsing shared with saved intent. */
-export function json(ctx: Context, content: string, comments: boolean) {
+export function json(
+  ctx: Context,
+  content: string,
+  comments: boolean,
+): Effect.Effect<JsonValue, BundleError> {
   return Effect.try({
     try: () => {
       const errors: ParseError[] = [];
@@ -102,16 +114,21 @@ export function json(ctx: Context, content: string, comments: boolean) {
             objects.push(new Set());
           },
           onObjectProperty: (name, offset) => {
-            const keys = objects.at(-1)!;
-            if (keys.has(name))
-              {invalid = `Duplicate object key ${JSON.stringify(name)} at offset ${offset}`;}
+            const keys = objects.at(-1);
+            assert(keys !== undefined);
+            if (keys.has(name)) {
+              invalid = `Duplicate object key ${JSON.stringify(name)} at offset ${offset}`;
+            }
             // jsonc-parser assigns to ordinary objects; this key would alter their prototypes.
-            if (name === "__proto__") {invalid = `Unsupported prototype key at offset ${offset}`;}
+            if (name === "__proto__") {
+              invalid = `Unsupported prototype key at offset ${offset}`;
+            }
             keys.add(name);
           },
           onLiteralValue: (value, offset) => {
-            if (typeof value === "number" && !Number.isFinite(value))
-              {invalid = `Nonfinite JSON number at offset ${offset}`;}
+            if (typeof value === "number" && !Number.isFinite(value)) {
+              invalid = `Nonfinite JSON number at offset ${offset}`;
+            }
           },
           onObjectEnd: () => {
             objects.pop();
@@ -119,16 +136,25 @@ export function json(ctx: Context, content: string, comments: boolean) {
         },
         options,
       );
-      if (invalid) {throw new Error(invalid);}
+      if (invalid !== undefined) {
+        throw new Error(invalid);
+      }
       const value: unknown = parse(content, errors, options);
-      if (errors.length)
-        {throw new Error(
+      if (errors.length > 0) {
+        throw new Error(
           errors.map((e) => `${printParseErrorCode(e.error)} at offset ${e.offset}`).join("; "),
-        );}
-      return value as JsonValue;
+        );
+      }
+      return value;
     },
     catch: (cause) => fail(ctx, "$", cause instanceof Error ? cause.message : String(cause)),
-  });
+  }).pipe(
+    Effect.flatMap((value) =>
+      Schema.decodeUnknownEffect(Schema.Json)(value).pipe(
+        Effect.mapError((cause) => fail(ctx, "$", cause.message)),
+      ),
+    ),
+  );
 }
 
 function decode<S extends Schema.Constraint & { readonly DecodingServices: never }>(
@@ -144,23 +170,28 @@ function decode<S extends Schema.Constraint & { readonly DecodingServices: never
 function directory(ctx: Context, optional = false) {
   return Effect.gen(function* () {
     const stat = yield* Effect.tryPromise({
-      try: () => fs.lstat(ctx.source),
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catch((cause) =>
-        optional && (cause as NodeJS.ErrnoException).code === "ENOENT"
-          ? Effect.succeed(undefined)
-          : Effect.fail(fail(ctx, "$", cause instanceof Error ? cause.message : String(cause))),
-      ),
-    );
-    if (!stat) {return [];}
+      try: async () => {
+        try {
+          return await fs.lstat(ctx.source);
+        } catch (cause) {
+          if (optional && cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+            return undefined;
+          }
+          throw cause;
+        }
+      },
+      catch: (cause) => fail(ctx, "$", cause instanceof Error ? cause.message : String(cause)),
+    });
+    if (stat === undefined) {
+      return [];
+    }
     yield* validate(
       ctx,
       "$",
       stat.isDirectory(),
       "Expected a directory; symbolic links are not supported",
     );
-    return (yield* io(ctx, () => fs.readdir(ctx.source))).sort(compare);
+    return (yield* io(ctx, () => fs.readdir(ctx.source))).toSorted(compare);
   });
 }
 
@@ -190,7 +221,7 @@ function checkDeclaration(ctx: Context, declaration: BundleDeclaration) {
       );
     }
     for (const section of ["dependencies", "devDependencies"] as const) {
-      for (const name of Object.keys(declaration[section] ?? {})) {
+      for (const [name, requirement] of Object.entries(declaration[section] ?? {})) {
         yield* validate(
           ctx,
           `${section}.${name}`,
@@ -200,7 +231,8 @@ function checkDeclaration(ctx: Context, declaration: BundleDeclaration) {
         yield* validate(
           ctx,
           `${section}.${name}`,
-          !/[\x00-\x1f\x7f]/.test(declaration[section]![name]!),
+          // oxlint-disable-next-line no-control-regex -- Reject control characters in package requirements.
+          !/[\x00-\x1f\x7f]/.test(requirement),
           "Dependency requirement must not contain control characters",
         );
       }
@@ -214,7 +246,7 @@ function checkDeclaration(ctx: Context, declaration: BundleDeclaration) {
       );
     }
     const migration = declaration.migration;
-    if (migration) {
+    if (migration !== undefined) {
       for (const section of [
         "removeFiles",
         "removeDependencies",
@@ -289,8 +321,9 @@ function checkDeclaration(ctx: Context, declaration: BundleDeclaration) {
           typeof input.default === (input.type === "path" ? "string" : input.type),
           "Default must match the declared input type",
         );
-        if (input.type === "path" && typeof input.default === "string")
-          {yield* checkPath(ctx, `${field}.default`, input.default);}
+        if (input.type === "path" && typeof input.default === "string") {
+          yield* checkPath(ctx, `${field}.default`, input.default);
+        }
       }
     }
   });
@@ -331,21 +364,16 @@ export function discoverPolicy(policyRoot: string): Effect.Effect<PolicyCatalog,
       RootDeclaration,
       yield* json(ctx, yield* readText(ctx), false),
     );
-    let url: URL | undefined;
-    try {
-      url = new URL(declaration.source.repository);
-    } catch {
-      /* Report through typed failure below. */
-    }
+    const url = URL.parse(declaration.source.repository);
     yield* validate(
       ctx,
       "source.repository",
-      !!url &&
+      url !== null &&
         url.protocol === "https:" &&
-        !url.username &&
-        !url.password &&
-        !url.search &&
-        !url.hash,
+        url.username === "" &&
+        url.password === "" &&
+        url.search === "" &&
+        url.hash === "",
       "Expected an HTTPS repository URL without credentials, query, or fragment",
     );
     yield* checkPath(ctx, "source.selectionSchema", declaration.source.selectionSchema);
@@ -396,7 +424,7 @@ function nativeFiles(info: BundleInfo) {
         const source = path.join(root, relative);
         const ctx = { bundle: info.key, source };
         for (const name of yield* directory(ctx, relative === "")) {
-          const target = relative ? `${relative}/${name}` : name;
+          const target = relative.length > 0 ? `${relative}/${name}` : name;
           const child = { ...ctx, source: path.join(root, target) };
           yield* checkPath(child, "$", target);
           yield* validate(
@@ -438,8 +466,12 @@ function nativeFiles(info: BundleInfo) {
               try: () => {
                 const documents = parseAllDocuments(content, { uniqueKeys: true });
                 const errors = documents.flatMap((doc) => doc.errors);
-                if (errors.length) {throw new Error(errors.map((error) => error.message).join("; "));}
-                if (documents.length !== 1) {throw new Error("Expected one YAML document");}
+                if (errors.length > 0) {
+                  throw new Error(errors.map((error) => error.message).join("; "));
+                }
+                if (documents.length !== 1) {
+                  throw new Error("Expected one YAML document");
+                }
               },
               catch: (cause) => fail(child, "$", String(cause)),
             });
@@ -465,20 +497,23 @@ function nativeFiles(info: BundleInfo) {
     );
     for (const [index, input] of (info.declaration.inputs ?? []).entries()) {
       const ctx = { bundle: info.key, source: info.source };
-      const file = files.find((file) => file.path === input.destination.file);
+      const file = files.find((candidate) => candidate.path === input.destination.file);
       yield* validate(
         ctx,
         `inputs[${index}].destination.file`,
-        !!file && (file.format === "json" || file.format === "jsonc"),
+        file !== undefined && (file.format === "json" || file.format === "jsonc"),
         "Input destination must name this bundle's native JSON/JSONC file",
       );
-      if (file && (file.format === "json" || file.format === "jsonc")) {
+      if (file !== undefined && (file.format === "json" || file.format === "jsonc")) {
         let value: JsonValue | undefined = file.value;
         for (const key of input.destination.field) {
-          value =
-            value !== null && typeof value === "object" && Object.hasOwn(value, key)
-              ? (value as Record<string | number, JsonValue>)[key]
-              : undefined;
+          if (isArray(value) && typeof key === "number" && Object.hasOwn(value, key)) {
+            value = value[key];
+          } else if (isObject(value) && typeof key === "string" && Object.hasOwn(value, key)) {
+            value = value[key];
+          } else {
+            value = undefined;
+          }
         }
         yield* validate(
           ctx,
@@ -503,17 +538,18 @@ export function loadPolicy(
     for (const kind of ["integrations", "automation"] as const) {
       const ctx = { bundle: "policy", source: catalog.root };
       yield* unique(ctx, `selections.${kind}`, selections[kind]);
-      for (const id of [...selections[kind]].sort(compare)) {
-        const info = catalog[kind].find((bundle) => bundle.id === id);
-        if (!info)
-          {return yield* Effect.fail(
-            fail(ctx, `selections.${kind}`, `Unknown bundle ID ${JSON.stringify(id)}`),
-          );}
+      for (const id of [...selections[kind]].toSorted(compare)) {
+        const info = catalog[kind].find((candidate) => candidate.id === id);
+        if (info === undefined) {
+          return yield* fail(ctx, `selections.${kind}`, `Unknown bundle ID ${canonical(id)}`);
+        }
         selected.push(info);
       }
     }
     const bundles = [];
-    for (const info of selected) {bundles.push(yield* nativeFiles(info));}
+    for (const info of selected) {
+      bundles.push(yield* nativeFiles(info));
+    }
     return { root: catalog.root, declaration: catalog.declaration, bundles };
   });
 }

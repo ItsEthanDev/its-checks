@@ -1,6 +1,8 @@
+import assert from "node:assert/strict";
+
 import { Effect } from "effect";
 
-import { orderedBundles } from "./composition.ts";
+import { isObject, orderedBundles } from "./composition.ts";
 import { PlanError } from "./plan-errors.ts";
 import type { PlanOptions, ScriptContext } from "./planning.ts";
 
@@ -17,7 +19,9 @@ const group = (command: string) => `(\n${command}\n\n)`;
 function recognize(command: string, helper: string): { original?: string } | undefined {
   for (const manager of managers) {
     const invocation = runner(manager, helper);
-    if (command === invocation) {return {};}
+    if (command === invocation) {
+      return {};
+    }
     const end = `\n\n) && ${invocation}`;
     if (command.startsWith("(\n") && command.endsWith(end)) {
       return { original: command.slice(2, -end.length) };
@@ -30,10 +34,15 @@ function recognize(command: string, helper: string): { original?: string } | und
 export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOptions["scripts"]> {
   return (context: ScriptContext) =>
     Effect.gen(function* () {
-      const scripts: Record<string, string> = Object.assign(
-        Object.create(null),
-        context.manifest.scripts,
-      );
+      const scripts: Record<string, string> = {};
+      Object.setPrototypeOf(scripts, null);
+      const existing = context.manifest.scripts;
+      if (isObject(existing)) {
+        for (const [name, command] of Object.entries(existing)) {
+          assert(typeof command === "string");
+          scripts[name] = command;
+        }
+      }
       const selected = orderedBundles(context.selected);
       // Keep each ordinary contribution's identity and position until replacements resolve.
       const contributions = new Map<string, Map<string, Contribution>>();
@@ -44,7 +53,9 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
       );
       for (const bundle of selected) {
         for (const [name, command] of Object.entries(bundle.declaration.scripts ?? {})) {
-          if (typeof command !== "string") {continue;}
+          if (typeof command !== "string") {
+            continue;
+          }
           const owners = contributions.get(name) ?? new Map<string, Contribution>();
           owners.set(bundle.key, { command });
           contributions.set(name, owners);
@@ -52,15 +63,18 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
       }
       for (const bundle of selected) {
         for (const [name, replacement] of Object.entries(bundle.declaration.scripts ?? {})) {
-          if (typeof replacement === "string") {continue;}
+          if (typeof replacement === "string") {
+            continue;
+          }
           const target = contributions.get(name)?.get(replacement.replaces);
           const fail = (detail: string) =>
             Effect.fail(new PlanError({ source: bundle.source, field: `scripts.${name}`, detail }));
-          if (!target)
-            {return yield* fail(
+          if (target === undefined) {
+            return yield* fail(
               `Replacement target ${replacement.replaces} does not supply an ordinary command for this script in the selected bundles.`,
-            );}
-          if (target.replacementSource && target.command !== replacement.command) {
+            );
+          }
+          if (target.replacementSource !== undefined && target.command !== replacement.command) {
             return yield* fail(
               `Conflicting replacement for ${replacement.replaces}; another replacement is declared in ${target.replacementSource}.`,
             );
@@ -69,37 +83,43 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
           target.replacementSource ??= bundle.source;
         }
       }
-      for (const name of [...known].sort()) {
+      for (const name of [...known].toSorted()) {
         const helper = `${prefix}${name}`;
-        const command = Object.hasOwn(scripts, name) ? scripts[name]! : undefined;
+        const command = Object.hasOwn(scripts, name) ? scripts[name] : undefined;
         const wrapper = command === undefined ? undefined : recognize(command, helper);
         const conflict = (detail: string) =>
           Effect.fail(new PlanError({ source: "package.json", field: `scripts.${name}`, detail }));
-        if (!wrapper && command?.includes(helper)) {
+        if (wrapper === undefined && command?.includes(helper) === true) {
           return yield* conflict(
             `Edited public command references ${helper} but is not an exact generated wrapper. Restore the generated wrapper, or manually remove the helper reference and rename/remove scripts.${helper}, then retry. No shell rewrite was attempted.`,
           );
         }
-        if (!wrapper && Object.hasOwn(scripts, helper)) {
+        if (wrapper === undefined && Object.hasOwn(scripts, helper)) {
           return yield* conflict(
             `Reserved namespace collision at scripts.${helper}: no exact generated public wrapper identifies ownership. Rename/remove that entry (preserving any command you need), then retry.`,
           );
         }
         const owners = contributions.get(name);
-        if (owners) {
-          const commands = [...new Set([...owners.values()].map(({ command }) => command))];
-          const original = wrapper ? wrapper.original : command;
-          if (original?.includes("\0"))
-            {return yield* conflict("POSIX shell commands cannot contain NUL");}
+        if (owners !== undefined) {
+          const commands = [
+            ...new Set([...owners.values()].map((contribution) => contribution.command)),
+          ];
+          const original = wrapper !== undefined ? wrapper.original : command;
+          if (original?.includes("\0") === true) {
+            return yield* conflict("POSIX shell commands cannot contain NUL");
+          }
           scripts[helper] = commands.map(group).join(" && ");
           scripts[name] =
             original === undefined
               ? runner(manager, helper)
               : `${group(original)} && ${runner(manager, helper)}`;
-        } else if (wrapper) {
+        } else if (wrapper !== undefined) {
           delete scripts[helper];
-          if (wrapper.original === undefined) {delete scripts[name];}
-          else {scripts[name] = wrapper.original;}
+          if (wrapper.original === undefined) {
+            delete scripts[name];
+          } else {
+            scripts[name] = wrapper.original;
+          }
         }
       }
       return scripts;

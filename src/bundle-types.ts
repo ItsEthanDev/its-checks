@@ -4,7 +4,7 @@ const Text = Schema.String.check(
   Schema.makeFilter((value) => value.trim().length > 0 || "Must not be blank"),
 );
 const Strings = Schema.Record(Schema.String, Text);
-const InputValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
+const InputValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
 
 export const RootDeclaration = Schema.Struct({
   schemaVersion: Schema.Literal(1),

@@ -61,7 +61,7 @@ for (const original of [
   "",
   "\uFEFFecho unicode ✓\n",
 ]) {
-  test(`enable, rerun, native edit and disable preserve hook bytes: ${JSON.stringify(original)}`, async (t) => {
+  await test(`enable, rerun, native edit and disable preserve hook bytes: ${JSON.stringify(original)}`, async (t) => {
     const f = await setup(t);
     await f.put(hook, original);
     await f.put(".github/workflows/unrelated.yml", "name: Unrelated\non: push\n");
@@ -84,11 +84,11 @@ for (const original of [
     const changedYaml = yaml.replace("Native", "Edited native");
     await f.write(`typescript/automation/local/files/${dedicated}`, changedShell);
     await f.write(`typescript/automation/ci/files/${workflow}`, changedYaml);
-    await f.put(dedicated, `${shell  }# project edit\n`);
+    await f.put(dedicated, `${shell}# project edit\n`);
     const edited = await f.plan(enabled, options);
     assert.equal(edited.files.find((file) => file.path === dedicated)!.conflict, true);
     await run(applyPlan(edited, { approved: false, dependencies: deps }));
-    assert.equal(await f.read(dedicated), `${shell  }# project edit\n`);
+    assert.equal(await f.read(dedicated), `${shell}# project edit\n`);
     await run(applyPlan(edited, { approved: true, dependencies: deps }));
     assert.equal(await f.read(dedicated), changedShell);
     assert.equal(await f.read(workflow), changedYaml);
@@ -98,18 +98,18 @@ for (const original of [
     await f.apply(enabled);
     assert.equal(await f.read(hook), installed);
     // Preserve appended unrelated bytes too, including the END line's separator.
-    await f.put(hook, `${installed  }\necho after`);
+    await f.put(hook, `${installed}\necho after`);
     const disable = await f.plan(none, options);
     assert.equal(disable.requiresConfirmation, true);
     await run(applyPlan(disable, { approved: true, dependencies: deps }));
-    assert.equal(await f.read(hook), `${original  }\necho after`);
+    assert.equal(await f.read(hook), `${original}\necho after`);
     await assert.rejects(f.read(dedicated), { code: "ENOENT" });
     await assert.rejects(f.read(workflow), { code: "ENOENT" });
     assert.equal(await f.read(".github/workflows/unrelated.yml"), "name: Unrelated\non: push\n");
   });
 }
 
-test("current-known cleanup requires prior intent and retains shared selected requirements", async (t) => {
+await test("current-known cleanup requires prior intent and retains shared selected requirements", async (t) => {
   const f = await setup(t);
   await f.add("automation/other");
   await f.write(`typescript/automation/other/files/${dedicated}`, shell);
@@ -134,7 +134,7 @@ test("current-known cleanup requires prior intent and retains shared selected re
 });
 
 for (const destination of [workflow, dedicated]) {
-  test(`unrelated dedicated content is a hard conflict for enable, cleanup and migration: ${destination}`, async (t) => {
+  await test(`unrelated dedicated content is a hard conflict for enable, cleanup and migration: ${destination}`, async (t) => {
     const f = await setup(t);
     const resolved = await f.resolve();
     await f.put(destination, "# user-owned\nname: keep\n");
@@ -157,7 +157,7 @@ for (const content of [
   "# BEGIN its-checks\nx\n# END its-checks\n# BEGIN its-checks\nx\n# END its-checks",
   " # BEGIN its-checks\nx\n# END its-checks\n",
 ]) {
-  test(`malformed hook blocks fail before mutation: ${JSON.stringify(content)}`, async (t) => {
+  await test(`malformed hook blocks fail before mutation: ${JSON.stringify(content)}`, async (t) => {
     const f = await setup(t);
     const resolved = await f.resolve();
     await f.put(hook, content);
@@ -171,23 +171,23 @@ for (const content of [
   });
 }
 
-test("identifiable edited invocation is replaced with confirmation; migration removes only the block", async (t) => {
+await test("identifiable edited invocation is replaced with confirmation; migration removes only the block", async (t) => {
   const f = await setup(t);
   const outside = "#!/bin/sh\necho before\n";
-  await f.put(hook, `${outside  }\n# BEGIN its-checks\necho edited\n# END its-checks\necho after`);
+  await f.put(hook, `${outside}\n# BEGIN its-checks\necho edited\n# END its-checks\necho after`);
   await f.apply();
   assert.equal(
     await f.read(hook),
-    `${outside  }\n# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks\necho after`,
+    `${outside}\n# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks\necho after`,
   );
   await f.add("base", { name: "Base", migration: { removeFiles: [hook, dedicated, workflow] } });
   await assert.rejects(f.plan(), /Cannot remove selected automation/);
   await f.apply(none);
-  assert.equal(await f.read(hook), `${outside  }\necho after`);
+  assert.equal(await f.read(hook), `${outside}\necho after`);
   await assert.rejects(f.read(dedicated), { code: "ENOENT" });
 });
 
-test("policy ownership and shared-hook conventions are validated without guessing", async (t) => {
+await test("policy ownership and shared-hook conventions are validated without guessing", async (t) => {
   const f = await setup(t);
   await f.write(`typescript/automation/ci/files/${workflow}`, "name: Missing marker\non: push\n");
   await assert.rejects(f.plan(), /Dedicated automation requires/);
@@ -196,7 +196,7 @@ test("policy ownership and shared-hook conventions are validated without guessin
   await assert.rejects(f.plan(), /Author the hook commands/);
 });
 
-test("fresh hooks are executable, matching managed files need no history, and disabled empty hooks remain", async (t) => {
+await test("fresh hooks are executable, matching managed files need no history, and disabled empty hooks remain", async (t) => {
   const f = await setup(t);
   const resolved = await f.resolve();
   await f.apply();
@@ -210,7 +210,7 @@ test("fresh hooks are executable, matching managed files need no history, and di
   assert.equal(await f.read(hook), "");
 });
 
-test("different selected native contributions conflict with both sources before mutation", async (t) => {
+await test("different selected native contributions conflict with both sources before mutation", async (t) => {
   const f = await setup(t);
   await f.add("automation/other");
   await f.write(
@@ -225,7 +225,7 @@ test("different selected native contributions conflict with both sources before 
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("a complete automation snapshot rejects stale hook changes before applying any files", async (t) => {
+await test("a complete automation snapshot rejects stale hook changes before applying any files", async (t) => {
   const f = await setup(t);
   const planned = await f.plan();
   await f.put(hook, "echo appeared after planning\n");

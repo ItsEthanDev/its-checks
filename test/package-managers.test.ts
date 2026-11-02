@@ -23,7 +23,7 @@ const put = async (root: string, file: string, value: string | object) => {
   );
 };
 
-test("manager evidence asks on absent, malformed, conflicting declarations/locks; explicit answer feeds script planning", async (t) => {
+await test("manager evidence asks on absent, malformed, conflicting declarations/locks; explicit answer feeds script planning", async (t) => {
   const f = await fixture(t);
   assert.equal((await run(resolveTargetManager(f.project))).kind, "question");
   for (const manager of managers) {
@@ -49,16 +49,21 @@ test("manager evidence asks on absent, malformed, conflicting declarations/locks
   await put(f.project, "yarn.lock", "");
   let resolution = await run(resolveTargetManager(f.project));
   assert.equal(resolution.kind, "question");
-  if (resolution.kind === "question")
-    {assert.deepEqual(resolution.evidence, ["packageManager: npm@99.0.0", "yarn.lock"]);}
+  if (resolution.kind === "question") {
+    assert.deepEqual(resolution.evidence, ["packageManager: npm@99.0.0", "yarn.lock"]);
+  }
   resolution = await run(resolveTargetManager(f.project, "pnpm"));
-  if (resolution.kind !== "resolved") {throw Error("Expected explicit answer");}
+  if (resolution.kind !== "resolved") {
+    throw Error("Expected explicit answer");
+  }
   const resolved = await run(
     resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {}),
   );
   const plan = await run(planProject(f.project, resolved, { scripts: resolution.target.scripts }));
   const state = plan.files.find((file) => file.path === "package.json")!.after;
-  if (state.kind !== "file") {throw Error("Expected manifest");}
+  if (state.kind !== "file") {
+    throw Error("Expected manifest");
+  }
   assert.equal(
     JSON.parse(Buffer.from(state.base64, "base64").toString()).scripts.check,
     "pnpm run its-checks:check",
@@ -72,8 +77,8 @@ test("manager evidence asks on absent, malformed, conflicting declarations/locks
   );
 });
 
-for (const manager of managers)
-  {test(`${manager}: normal install preserves approved intent, reruns, reports failures and retries without repairing native state`, async (t) => {
+for (const manager of managers) {
+  await test(`${manager}: normal install preserves approved intent, reruns, reports failures and retries without repairing native state`, async (t) => {
     const f = await fixture(t);
     await put(f.project, "package.json", {
       name: "app",
@@ -84,7 +89,9 @@ for (const manager of managers)
     });
     await f.add("base", { name: "Base", devDependencies: { managed: "1.0.0" } });
     const resolution = await run(resolveTargetManager(f.project));
-    if (resolution.kind !== "resolved") throw Error("Expected manager");
+    if (resolution.kind !== "resolved") {
+      throw Error("Expected manager");
+    }
     const plan = async () =>
       await run(
         planProject(
@@ -103,10 +110,13 @@ for (const manager of managers)
     const adapter = createDependencyAdapter(resolution.target, {
       run: (cmd, args, cwd) => {
         calls.push([cmd, args, cwd]);
-        if (failure === "spawn")
+        if (failure === "spawn") {
           return Effect.fail(new OperationError({ detail: "executable not found" }));
+        }
         return Effect.promise(async () => {
-          if (failure === "mutate") await put(f.project, "package.json", { changed: true });
+          if (failure === "mutate") {
+            await put(f.project, "package.json", { changed: true });
+          }
           return {
             code: failure === "exit" ? 42 : 0,
             stdout: "installer output",
@@ -218,4 +228,5 @@ for (const manager of managers)
       ),
       /another package root/,
     );
-  });}
+  });
+}

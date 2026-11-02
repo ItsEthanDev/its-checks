@@ -64,7 +64,7 @@ const answers = {
   "automation/ci": { enabled: false },
 };
 
-test("first use enumerates every selected bundle and resolves explicit native values without mutation", async (t) => {
+await test("first use enumerates every selected bundle and resolves explicit native values without mutation", async (t) => {
   const f = await inputPolicy(t);
   const before = await snapshot(f.project);
   assert.equal(await run(loadPreviousIntent(f.project)), undefined);
@@ -114,7 +114,7 @@ test("first use enumerates every selected bundle and resolves explicit native va
   });
 });
 
-test("offline saved intent is returned for preselection/prefill, changed answers bind afresh, deselection drops stale answers", async (t) => {
+await test("offline saved intent is returned for preselection/prefill, changed answers bind afresh, deselection drops stale answers", async (t) => {
   const f = await inputPolicy(t);
   const policy = await run(loadPolicy(f.policy, all));
   const first = await run(resolveInputs(policy, answers));
@@ -158,7 +158,7 @@ test("offline saved intent is returned for preselection/prefill, changed answers
   await assert.rejects(run(resolveInputs(baseline, answers)), /not declared by a selected bundle/);
 });
 
-test("invalid answers fail with bundle/input context before touching the project", async (t) => {
+await test("invalid answers fail with bundle/input context before touching the project", async (t) => {
   const f = await inputPolicy(t);
   const policy = await run(loadPolicy(f.policy, all));
   const before = await snapshot(f.project);
@@ -179,8 +179,9 @@ test("invalid answers fail with bundle/input context before touching the project
     ],
     [{ ...answers, base: { ...answers.base, extra: "x" } }, /not declared/],
     [{ ...answers, "bad namespace": {} }, /namespaced|excess|unexpected/i],
-  ] as const)
-    {await assert.rejects(run(resolveInputs(policy, bad)), pattern);}
+  ] as const) {
+    await assert.rejects(run(resolveInputs(policy, bad)), pattern);
+  }
   const previous = (await run(resolveInputs(policy, answers))).intent;
   await assert.rejects(
     run(
@@ -194,7 +195,7 @@ test("invalid answers fail with bundle/input context before touching the project
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("malformed local intent is never treated as first use or trusted via a remote schema", async (t) => {
+await test("malformed local intent is never treated as first use or trusted via a remote schema", async (t) => {
   const f = await fixture(t);
   const intent = (await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}))).intent;
   const valid = JSON.stringify(intent);
@@ -231,7 +232,7 @@ test("malformed local intent is never treated as first use or trusted via a remo
   await assert.rejects(run(loadPreviousIntent(f.project)), /regular file/);
 });
 
-test("saved intent preserves the generating commit and input prefills without rewriting on read", async (t) => {
+await test("saved intent preserves the generating commit and input prefills without rewriting on read", async (t) => {
   const f = await inputPolicy(t);
   const policy = await run(loadPolicy(f.policy, all));
   const current = await run(resolveInputs(policy, answers, "b".repeat(40)));
@@ -254,7 +255,7 @@ test("saved intent preserves the generating commit and input prefills without re
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("current intent keeps the editor schema independent of the optional generating commit", async (t) => {
+await test("current intent keeps the editor schema independent of the optional generating commit", async (t) => {
   const f = await fixture(t);
   const intent = (
     await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}, "c".repeat(64)))
@@ -267,7 +268,7 @@ test("current intent keeps the editor schema independent of the optional generat
   );
 });
 
-test("invalid native input bindings fail before mutation, including overlapping and incorrectly typed field paths", async (t) => {
+await test("invalid native input bindings fail before mutation, including overlapping and incorrectly typed field paths", async (t) => {
   const f = await fixture(t);
   const before = await snapshot(f.project);
   for (const declaration of [
@@ -308,7 +309,7 @@ test("invalid native input bindings fail before mutation, including overlapping 
   }
 });
 
-test("JSON binding treats input IDs as own map keys and preserves target-root path strings", async (t) => {
+await test("JSON binding treats input IDs as own map keys and preserves target-root path strings", async (t) => {
   const f = await fixture(t);
   await f.add("base", {
     name: "Base",
@@ -332,7 +333,7 @@ test("JSON binding treats input IDs as own map keys and preserves target-root pa
   assert.deepEqual(resolved.intent.answers, { base: { constructor: "src/new.css" } });
 });
 
-test("the editor schema accepts generated intent with optional provenance and rejects malformed intent", async (t) => {
+await test("the editor schema accepts generated intent with optional provenance and rejects malformed intent", async (t) => {
   const f = await fixture(t);
   const generated = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
   const schema = JSON.parse(

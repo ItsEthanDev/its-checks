@@ -71,7 +71,7 @@ async function mtimes(project: string) {
   );
 }
 
-test("declined and unapproved plans perform zero writes and no external operations", async (t) => {
+await test("declined and unapproved plans perform zero writes and no external operations", async (t) => {
   const f = await setup(t);
   await f.put(".oxlintrc.json", "local edits");
   const plan = await f.plan();
@@ -93,7 +93,7 @@ test("declined and unapproved plans perform zero writes and no external operatio
   assert.deepEqual(await mtimes(f.project), times);
 });
 
-test("incomplete and stale plans fail before writes, including stale modes and absent candidates", async (t) => {
+await test("incomplete and stale plans fail before writes, including stale modes and absent candidates", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();
   const before = await snapshot(f.project);
@@ -118,7 +118,7 @@ test("incomplete and stale plans fail before writes, including stale modes and a
   assert.deepEqual(await snapshot(f.project), changed);
 });
 
-test("applies approved replacements/migration exactly, preserves unrelated manifest and file content", async (t) => {
+await test("applies approved replacements/migration exactly, preserves unrelated manifest and file content", async (t) => {
   const f = await setup(t);
   await f.put("package.json", {
     name: "app",
@@ -140,9 +140,9 @@ test("applies approved replacements/migration exactly, preserves unrelated manif
   assert.equal(report.status, "completed");
   assert.deepEqual(report.incomplete, []);
   for (const file of plan.files) {
-    if (file.after.kind === "absent")
-      {await assert.rejects(fs.lstat(path.join(f.project, file.path)), { code: "ENOENT" });}
-    else {
+    if (file.after.kind === "absent") {
+      await assert.rejects(fs.lstat(path.join(f.project, file.path)), { code: "ENOENT" });
+    } else {
       assert.equal(
         (await fs.readFile(path.join(f.project, file.path))).toString("base64"),
         file.after.base64,
@@ -159,7 +159,7 @@ test("applies approved replacements/migration exactly, preserves unrelated manif
   assert.equal((await fs.stat(path.join(f.project, "tools/nested/check.sh"))).mode & 0o777, 0o755);
 });
 
-test("matching rerun has zero filesystem mutations and unchanged mtimes", async (t) => {
+await test("matching rerun has zero filesystem mutations and unchanged mtimes", async (t) => {
   const f = await setup(t);
   await run(applyPlan(await f.plan(), { approved: true, dependencies: noInstall }));
   const plan = await f.plan();
@@ -180,7 +180,7 @@ test("matching rerun has zero filesystem mutations and unchanged mtimes", async 
   assert.deepEqual(await mtimes(f.project), times);
 });
 
-test("deselection removes identifiable contributions, retains unrelated directories and shared requirements", async (t) => {
+await test("deselection removes identifiable contributions, retains unrelated directories and shared requirements", async (t) => {
   const f = await setup(t);
   await f.add("integrations/extra", {
     name: "Extra",
@@ -205,7 +205,7 @@ test("deselection removes identifiable contributions, retains unrelated director
   assert.doesNotMatch(manifest.scripts["its-checks:check"], /extra/);
 });
 
-test("failed deselection retains retry identity until all cleanup finishes", async (t) => {
+await test("failed deselection retains retry identity until all cleanup finishes", async (t) => {
   const f = await setup(t);
   await f.add("integrations/extra", {
     name: "Extra",
@@ -265,7 +265,7 @@ test("failed deselection retains retry identity until all cleanup finishes", asy
   assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
 });
 
-test("filesystem failure reports completed files, observed partial bytes/mode, stops and recovers by replanning", async (t) => {
+await test("filesystem failure reports completed files, observed partial bytes/mode, stops and recovers by replanning", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();
   let assessed = false;
@@ -312,8 +312,8 @@ test("filesystem failure reports completed files, observed partial bytes/mode, s
   assert.equal(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"), "{}\n");
 });
 
-for (const failureAt of ["write", "publication"] as const)
-  {test(`failed selection ${failureAt} preserves retry identity and leaves no temporary files`, async (t) => {
+for (const failureAt of ["write", "publication"] as const) {
+  await test(`failed selection ${failureAt} preserves retry identity and leaves no temporary files`, async (t) => {
     const f = await setup(t);
     await f.add("integrations/extra", { name: "Extra" });
     const selected = { integrations: ["extra"], automation: [] };
@@ -344,7 +344,7 @@ for (const failureAt of ["write", "publication"] as const)
       },
       rename:
         failureAt === "publication"
-          ? async () => {
+          ? () => {
               throw Error("selection publication failed");
             }
           : fs.rename,
@@ -372,9 +372,10 @@ for (const failureAt of ["write", "publication"] as const)
       ),
     );
     assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
-  });}
+  });
+}
 
-test("installation failure retains all configuration and intent; matching rerun still requests recovery", async (t) => {
+await test("installation failure retains all configuration and intent; matching rerun still requests recovery", async (t) => {
   const f = await setup(t);
   let installed = false;
   let attempts = 0;
@@ -384,14 +385,18 @@ test("installation failure retains all configuration and intent; matching rerun 
       Effect.tryPromise({
         try: async () => {
           assert.ok(await run(loadPreviousIntent(f.project)));
-          for (const file of plan.files)
-            {if (file.after.kind === "file")
+          for (const file of plan.files) {
+            if (file.after.kind === "file") {
               assert.equal(
                 (await fs.readFile(path.join(f.project, file.path))).toString("base64"),
                 file.after.base64,
-              );}
+              );
+            }
+          }
           attempts++;
-          if (attempts === 1) {throw Error("install failed, lockfile may be partial");}
+          if (attempts === 1) {
+            throw Error("install failed, lockfile may be partial");
+          }
           installed = true;
         },
         catch: (cause) => new OperationError({ detail: String(cause) }),
@@ -414,7 +419,7 @@ test("installation failure retains all configuration and intent; matching rerun 
   assert.equal(attempts, 2);
 });
 
-test("new symlink parents and leafs after planning fail without traversing outside the project", async (t) => {
+await test("new symlink parents and leafs after planning fail without traversing outside the project", async (t) => {
   const f = await setup(t);
   await f.write("typescript/base/files/nested/config.sh", "managed");
   const plan = await f.plan();
@@ -433,7 +438,7 @@ test("new symlink parents and leafs after planning fail without traversing outsi
   );
 });
 
-test("failed parent creation reports observed directory without deleting it or continuing", async (t) => {
+await test("failed parent creation reports observed directory without deleting it or continuing", async (t) => {
   const f = await setup(t);
   await f.write("typescript/base/files/tools/deep/check.sh", "echo check");
   const error = await failure(
@@ -443,17 +448,15 @@ test("failed parent creation reports observed directory without deleting it or c
       fileSystem: {
         ...nodeApplicationFileSystem,
         createDirectory: (destination) =>
-          nodeApplicationFileSystem
-            .createDirectory(destination)
-            .pipe(
-              Effect.andThen(
-                Effect.fail(
-                  new OperationError({
-                    detail: "directory created but downstream filesystem failure",
-                  }),
-                ),
+          nodeApplicationFileSystem.createDirectory(destination).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new OperationError({
+                  detail: "directory created but downstream filesystem failure",
+                }),
               ),
             ),
+          ),
       },
     }),
   );
@@ -478,7 +481,7 @@ test("failed parent creation reports observed directory without deleting it or c
   await run(applyPlan(await f.plan(), { approved: true, dependencies: noInstall }));
 });
 
-test("saved answers and config finish before dependency assessment fails", async (t) => {
+await test("saved answers and config finish before dependency assessment fails", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -528,7 +531,7 @@ test("saved answers and config finish before dependency assessment fails", async
   );
 });
 
-test("file removal failure stops and reports retained migration content", async (t) => {
+await test("file removal failure stops and reports retained migration content", async (t) => {
   const f = await setup(t);
   await f.put("prettier.config.js", "throw Error('never execute');");
   const error = await failure(
@@ -556,7 +559,7 @@ test("file removal failure stops and reports retained migration content", async 
   );
 });
 
-test("a symlink introduced during application is rechecked before the next file write", async (t) => {
+await test("a symlink introduced during application is rechecked before the next file write", async (t) => {
   const f = await setup(t);
   const outside = path.join(f.root, "outside.json");
   await fs.writeFile(outside, "keep");
@@ -567,18 +570,16 @@ test("a symlink introduced during application is rechecked before the next file 
       fileSystem: {
         ...nodeApplicationFileSystem,
         writeFile: (destination, state, create) =>
-          nodeApplicationFileSystem
-            .writeFile(destination, state, create)
-            .pipe(
-              Effect.andThen(
-                destination.endsWith(".oxfmtrc.json")
-                  ? Effect.tryPromise({
-                      try: () => fs.symlink(outside, path.join(f.project, ".oxlintrc.json")),
-                      catch: (cause) => new OperationError({ detail: String(cause) }),
-                    })
-                  : Effect.void,
-              ),
+          nodeApplicationFileSystem.writeFile(destination, state, create).pipe(
+            Effect.andThen(
+              destination.endsWith(".oxfmtrc.json")
+                ? Effect.tryPromise({
+                    try: () => fs.symlink(outside, path.join(f.project, ".oxlintrc.json")),
+                    catch: (cause) => new OperationError({ detail: String(cause) }),
+                  })
+                : Effect.void,
             ),
+          ),
       },
     }),
   );
@@ -589,7 +590,7 @@ test("a symlink introduced during application is rechecked before the next file 
   assert.equal(await fs.readFile(outside, "utf8"), "keep");
 });
 
-test("a failed operation that already wrote intended bytes is not relabeled successful", async (t) => {
+await test("a failed operation that already wrote intended bytes is not relabeled successful", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();
   const error = await failure(

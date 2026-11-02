@@ -3,16 +3,19 @@ import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-import { Data, Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import type { ChangePlan, FileChange, FileState } from "./planning.ts";
 import { selectionFilename } from "./selections.ts";
 import { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
 
-export class OperationError extends Data.TaggedError("OperationError")<{
-  readonly detail: string;
-}> {
-  override get message() {
+export class OperationError extends Schema.TaggedError<
+  OperationError,
+  { readonly brand: unique symbol }
+>()("OperationError", {
+  detail: Schema.String,
+}) {
+  override get message(): string {
     return this.detail;
   }
 }
@@ -39,34 +42,43 @@ export interface ApplicationOptions {
   readonly dependencies: ApplicationDependencies;
   readonly fileSystem?: ApplicationFileSystem;
 }
-export interface ApplicationOperation {
-  readonly kind:
-    | "create-directory"
-    | "write-file"
-    | "remove-file"
-    | "assess-dependencies"
-    | "install-dependencies";
-  readonly path: string;
-}
-export interface ApplicationReport {
-  readonly status: "declined" | "completed" | "failed";
-  readonly completed: readonly ApplicationOperation[];
-  readonly incomplete: readonly ApplicationOperation[];
-  readonly dependencyWork: "not-assessed" | "required" | "not-required" | "completed";
-  readonly failed?: ApplicationOperation;
+const Operation = Schema.Struct({
+  kind: Schema.Literals([
+    "create-directory",
+    "write-file",
+    "remove-file",
+    "assess-dependencies",
+    "install-dependencies",
+  ]),
+  path: Schema.String,
+});
+const Observed = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("absent") }),
+  Schema.Struct({ kind: Schema.Literal("file"), base64: Schema.String, mode: Schema.Finite }),
+  Schema.Struct({ kind: Schema.Literal("directory"), mode: Schema.Finite }),
+  Schema.Literal("unavailable"),
+]);
+const Report = Schema.Struct({
+  status: Schema.Literals(["declined", "completed", "failed"]),
+  completed: Schema.Array(Operation),
+  incomplete: Schema.Array(Operation),
+  dependencyWork: Schema.Literals(["not-assessed", "required", "not-required", "completed"]),
+  failed: Schema.optionalKey(Operation),
   /** State observed after a failed file operation; unavailable means inspection also failed. */
-  readonly observed?:
-    | FileState
-    | { readonly kind: "directory"; readonly mode: number }
-    | "unavailable";
-  readonly retry?: string;
-}
-export class ApplicationError extends Data.TaggedError("ApplicationError")<{
-  readonly phase: "validation" | "filesystem" | "dependencies";
-  readonly detail: string;
-  readonly report: ApplicationReport;
-}> {
-  override get message() {
+  observed: Schema.optionalKey(Observed),
+  retry: Schema.optionalKey(Schema.String),
+});
+export type ApplicationOperation = typeof Operation.Type;
+export type ApplicationReport = typeof Report.Type;
+export class ApplicationError extends Schema.TaggedError<
+  ApplicationError,
+  { readonly brand: unique symbol }
+>()("ApplicationError", {
+  phase: Schema.Literals(["validation", "filesystem", "dependencies"]),
+  detail: Schema.String,
+  report: Report,
+}) {
+  override get message(): string {
     return `${this.phase}: ${this.detail}`;
   }
 }
@@ -106,11 +118,16 @@ export function createNodeApplicationFileSystem(
                 await handle.close();
               }
               // Never expose partial JSON. Exclusive publication also protects an initially absent selection file.
-              if (create) {await fileSystem.link(temporary, destination);}
-              else {await fileSystem.rename(temporary, destination);}
+              if (create) {
+                await fileSystem.link(temporary, destination);
+              } else {
+                await fileSystem.rename(temporary, destination);
+              }
             } finally {
-              await fileSystem.unlink(temporary).catch((cause: NodeJS.ErrnoException) => {
-                if (cause.code !== "ENOENT") {throw cause;}
+              await fileSystem.unlink(temporary).catch((cause: unknown) => {
+                if (!(cause instanceof Error && "code" in cause && cause.code === "ENOENT")) {
+                  throw cause;
+                }
               });
             }
           })
@@ -127,7 +144,9 @@ export function createNodeApplicationFileSystem(
             (handle) =>
               io(async () => {
                 // Truncation, writing, chmod, or close may fail after changing the file. Report observation, not rollback.
-                if (!(await handle.stat()).isFile()) {throw new Error("Expected a regular file");}
+                if (!(await handle.stat()).isFile()) {
+                  throw new Error("Expected a regular file");
+                }
                 await handle.truncate(0);
                 await handle.writeFile(Buffer.from(state.base64, "base64"));
                 await handle.chmod(state.mode);
@@ -162,8 +181,9 @@ export function applyPlan(
     const completed: ApplicationOperation[] = [];
     let incomplete = [...changes.map(operation), assess, install];
     let dependencyWork: ApplicationReport["dependencyWork"] = "not-assessed";
-    if (options.approved !== true)
-      {return { status: "declined", completed, incomplete, dependencyWork };}
+    if (options.approved !== true) {
+      return { status: "declined", completed, incomplete, dependencyWork };
+    }
     const failure = (
       phase: ApplicationError["phase"],
       detail: string,
@@ -177,28 +197,29 @@ export function applyPlan(
           status: "failed",
           completed: [...completed],
           incomplete:
-            failed &&
+            failed !== undefined &&
             !incomplete.some((entry) => entry.kind === failed.kind && entry.path === failed.path)
               ? [failed, ...incomplete]
               : [...incomplete],
           dependencyWork,
-          ...(failed ? { failed } : {}),
-          ...(observed ? { observed } : {}),
+          ...(failed !== undefined ? { failed } : {}),
+          ...(observed !== undefined ? { observed } : {}),
           retry:
             "Inspect the reported partial state, fix the failure, then build and approve a fresh plan. Already applied configuration remains; no rollback was performed. Run the selected package manager's install again to retry dependency installation.",
         },
       });
-    if (!plan.complete)
-      {return yield* Effect.fail(
-        failure("validation", "Incomplete plan; finish deferred planning before approval"),
-      );}
+    if (!plan.complete) {
+      return yield* failure(
+        "validation",
+        "Incomplete plan; finish deferred planning before approval",
+      );
+    }
     // A plan is trusted application data, but observations must cover every approved operation.
     for (const file of plan.files) {
       const before = plan.snapshot.files[file.path];
-      if (!before || !same(before, file.before))
-        {return yield* Effect.fail(
-          failure("validation", `Missing or inconsistent snapshot: ${file.path}`),
-        );}
+      if (before === undefined || !same(before, file.before)) {
+        return yield* failure("validation", `Missing or inconsistent snapshot: ${file.path}`);
+      }
     }
     yield* assertTargetUnchanged(plan.snapshot).pipe(
       Effect.mapError((cause) => failure("validation", cause.message)),
@@ -221,17 +242,18 @@ export function applyPlan(
               try {
                 return await fs.lstat(destination);
               } catch (cause) {
-                if ((cause as NodeJS.ErrnoException).code === "ENOENT") {return undefined;}
+                if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+                  return undefined;
+                }
                 throw cause;
               }
             });
-            if (stat) {
-              if (!stat.isDirectory())
-                {return yield* Effect.fail(
-                  new OperationError({
-                    detail: `${relative}: Expected a directory, not a symlink`,
-                  }),
-                );}
+            if (stat !== undefined) {
+              if (!stat.isDirectory()) {
+                return yield* new OperationError({
+                  detail: `${relative}: Expected a directory, not a symlink`,
+                });
+              }
             } else {
               const mkdir: ApplicationOperation = { kind: "create-directory", path: relative };
               yield* fileSystem
@@ -249,38 +271,43 @@ export function applyPlan(
             file.after,
             file.before.kind === "absent",
           );
-        } else {yield* fileSystem.removeFile(path.join(plan.snapshot.root, file.path));}
+        } else {
+          yield* fileSystem.removeFile(path.join(plan.snapshot.root, file.path));
+        }
         const actual = yield* readTargetSnapshot(plan.snapshot.root, [file.path]);
-        if (!same(actual.files[file.path]!, file.after))
-          {return yield* Effect.fail(
-            new OperationError({
-              detail: `${file.path}: Operation did not produce the approved bytes and mode`,
-            }),
-          );}
+        const observedFile = actual.files[file.path];
+        if (observedFile === undefined || !same(observedFile, file.after)) {
+          return yield* new OperationError({
+            detail: `${file.path}: Operation did not produce the approved bytes and mode`,
+          });
+        }
+        return undefined;
       });
       yield* attempt.pipe(
         Effect.catch((cause) =>
           Effect.gen(function* () {
-            const failed =
-              cause instanceof ApplicationError ? cause.report.failed : currentOperation;
+            const failed = Schema.is(ApplicationError)(cause)
+              ? cause.report.failed
+              : currentOperation;
             const observed = yield* failed?.kind === "create-directory"
               ? io(async () => {
                   const stat = await fs.lstat(path.join(plan.snapshot.root, failed.path));
                   return stat.isDirectory()
                     ? { kind: "directory" as const, mode: stat.mode & 0o777 }
                     : ("unavailable" as const);
-                }).pipe(Effect.catch(() => Effect.succeed("unavailable" as const)))
+                }).pipe(Effect.orElseSucceed(() => "unavailable" as const))
               : readTargetSnapshot(plan.snapshot.root, [file.path]).pipe(
-                  Effect.map((snapshot) => snapshot.files[file.path]!),
-                  Effect.catch(() => Effect.succeed("unavailable" as const)),
+                  Effect.map((snapshot) => snapshot.files[file.path] ?? ("unavailable" as const)),
+                  Effect.orElseSucceed(() => "unavailable" as const),
                 );
-            if (cause instanceof ApplicationError)
-              {return yield* Effect.fail(
-                new ApplicationError({ ...cause, report: { ...cause.report, observed } }),
-              );}
-            return yield* Effect.fail(
-              failure("filesystem", cause.message, currentOperation, observed),
-            );
+            if (Schema.is(ApplicationError)(cause)) {
+              return yield* new ApplicationError({
+                phase: cause.phase,
+                detail: cause.detail,
+                report: { ...cause.report, observed },
+              });
+            }
+            return yield* failure("filesystem", cause.message, currentOperation, observed);
           }),
         ),
       );

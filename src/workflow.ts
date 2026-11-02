@@ -1,11 +1,13 @@
-import { Data, Effect } from "effect";
+import { Effect, Schema } from "effect";
 
+import type { ApplicationError } from "./application.ts";
 import {
   applyPlan,
   type ApplicationDependencies,
   type ApplicationReport,
   OperationError,
 } from "./application.ts";
+import type { BundleError } from "./bundle-errors.ts";
 import type { BundleInfo } from "./bundle-types.ts";
 import { discoverPolicy, loadPolicy } from "./bundles.ts";
 import { enumerateInputs, resolveInputs, type DeclaredInput } from "./inputs.ts";
@@ -15,11 +17,15 @@ import {
   type ManagerResolution,
   type TargetManager,
 } from "./package-managers.ts";
+import type { PlanError } from "./plan-errors.ts";
 import { planProject, type ChangePlan } from "./planning.ts";
 import type { PackageManager } from "./scripts.ts";
 import { loadPreviousIntent, type Answer } from "./selections.ts";
 
-export class Cancelled extends Data.TaggedError("Cancelled") {}
+export class Cancelled extends Schema.TaggedError<Cancelled, { readonly brand: unique symbol }>()(
+  "Cancelled",
+  {},
+) {}
 export type Question<A> = Effect.Effect<A, Cancelled | OperationError>;
 /** Presentation only: no target reads, planning, or dependency decisions. */
 export interface SetupPresentation {
@@ -32,7 +38,7 @@ export interface SetupPresentation {
   readonly manager: (
     question: Extract<ManagerResolution, { kind: "question" }>,
   ) => Question<PackageManager>;
-  readonly confirm: () => Question<boolean>;
+  readonly confirm: (message: string) => Question<boolean>;
   readonly note: (message: string) => void;
   readonly plan: (plan: ChangePlan, dependencies: "required" | "not-required") => void;
   readonly progress: (message: string) => void;
@@ -50,15 +56,19 @@ export interface SetupOptions {
 }
 
 /** All discovery, questions and previews finish before applying the exact displayed plan. */
-export function setup(options: SetupOptions) {
+export function setup(
+  options: SetupOptions,
+): Effect.Effect<
+  ApplicationReport | { readonly status: "declined" },
+  Cancelled | OperationError | BundleError | PlanError | ApplicationError
+> {
   return Effect.gen(function* () {
-    if (!options.interactive)
-      {return yield* Effect.fail(
-        new OperationError({
-          detail:
-            "its-checks requires an interactive terminal (stdin and stdout). Run it directly from the target package in a terminal; unattended flags are not supported.",
-        }),
-      );}
+    if (!options.interactive) {
+      return yield* new OperationError({
+        detail:
+          "its-checks requires an interactive terminal (stdin and stdout). Run it directly from the target package in a terminal; unattended flags are not supported.",
+      });
+    }
     const ui = options.presentation;
     const previous = yield* loadPreviousIntent(options.projectRoot);
     const catalog = yield* discoverPolicy(options.policyRoot);
@@ -72,12 +82,13 @@ export function setup(options: SetupOptions) {
         .filter((id) => !prior[category].includes(id))
         .map((id) => `${category}/${id}`),
     );
-    if (retired.length)
-      {yield* Effect.sync(() =>
+    if (retired.length > 0) {
+      yield* Effect.sync(() =>
         ui.note(
           `Retired saved options: ${retired.join(", ")}. They cannot be selected; their answers will be dropped when saving. Historical setup cannot be identified: inspect and clean it up manually.`,
         ),
-      );}
+      );
+    }
     const integrations = yield* ui.choices(
       "integrations",
       catalog.integrations,
@@ -92,12 +103,14 @@ export function setup(options: SetupOptions) {
     }
     const resolved = yield* resolveInputs(policy, answers, options.commit);
     let manager = yield* resolveTargetManager(options.projectRoot);
-    if (manager.kind === "question")
-      {manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));}
-    if (manager.kind !== "resolved")
-      {return yield* Effect.fail(
-        new OperationError({ detail: "Choose a supported target package manager and retry." }),
-      );}
+    if (manager.kind === "question") {
+      manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));
+    }
+    if (manager.kind !== "resolved") {
+      return yield* new OperationError({
+        detail: "Choose a supported target package manager and retry.",
+      });
+    }
     // Current definitions of old selections identify deselection, never a historical inventory.
     const current = yield* loadPolicy(options.policyRoot, prior);
     const plan = yield* planProject(options.projectRoot, resolved, {
@@ -109,7 +122,12 @@ export function setup(options: SetupOptions) {
     // Preview installation work without invoking the package manager.
     const preview = yield* dependencies.assess(plan);
     yield* Effect.sync(() => ui.plan(plan, preview));
-    if (plan.requiresConfirmation && !(yield* ui.confirm())) {return { status: "declined" as const };}
+    if (
+      plan.requiresConfirmation &&
+      !(yield* ui.confirm("Apply this plan, including replacements and removals?"))
+    ) {
+      return { status: "declined" as const };
+    }
     yield* Effect.sync(() =>
       ui.progress("Applying approved configuration, then installing dependencies…"),
     );

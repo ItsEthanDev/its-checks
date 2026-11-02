@@ -56,7 +56,9 @@ function dialogue(
     plan: (value) => {
       plan = value;
     },
-    progress: () => {},
+    progress: () => {
+      /* empty */
+    },
     complete: (value) => {
       completion = value;
     },
@@ -109,7 +111,7 @@ async function inputPolicy(f: Awaited<ReturnType<typeof fixture>>) {
   );
 }
 
-test("first run asks explicit categories and selected inputs; rerun preselects and prefills without writes or install", async (t) => {
+await test("first run asks explicit categories and selected inputs; rerun preselects and prefills without writes or install", async (t) => {
   const f = await fixture(t);
   await inputPolicy(f);
   const first = dialogue({
@@ -171,7 +173,7 @@ test("first run asks explicit categories and selected inputs; rerun preselects a
   assert.equal((await fs.stat(path.join(f.project, ".its-checks.json"))).mtimeMs, stat.mtimeMs);
 });
 
-test("one declined conflict includes current-known deselection and leaves all project state unchanged", async (t) => {
+await test("one declined conflict includes current-known deselection and leaves all project state unchanged", async (t) => {
   const f = await fixture(t);
   await inputPolicy(f);
   await Effect.runPromise(
@@ -203,11 +205,11 @@ test("one declined conflict includes current-known deselection and leaves all pr
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("accepted deselection removes only identifiable current setup and records new intent", async (t) => {
+await test("accepted deselection removes only identifiable current setup and records new intent", async (t) => {
   const f = await fixture(t);
   await inputPolicy(f);
-  for (const integrations of [["example"], []])
-    {await Effect.runPromise(
+  for (const integrations of [["example"], []]) {
+    await Effect.runPromise(
       setup({
         interactive: true,
         projectRoot: f.project,
@@ -215,7 +217,8 @@ test("accepted deselection removes only identifiable current setup and records n
         presentation: dialogue({ integrations }).ui,
         dependencies: () => ready,
       }),
-    );}
+    );
+  }
   const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
   assert.equal(manifest.devDependencies.example, undefined);
   assert.equal(manifest.scripts.install, "exit 99");
@@ -225,7 +228,7 @@ test("accepted deselection removes only identifiable current setup and records n
   );
 });
 
-test("source identity changes preserve prefills, decline safeguards, and deselection identity", async (t) => {
+await test("source identity changes preserve prefills, decline safeguards, and deselection identity", async (t) => {
   const f = await fixture(t);
   await inputPolicy(f);
   await Effect.runPromise(
@@ -295,7 +298,7 @@ test("source identity changes preserve prefills, decline safeguards, and deselec
   });
 });
 
-test("retired saved IDs are disclosed, not passed as invalid selections; accepted no-history cleanup remains manual", async (t) => {
+await test("retired saved IDs are disclosed, not passed as invalid selections; accepted no-history cleanup remains manual", async (t) => {
   const f = await fixture(t);
   await inputPolicy(f);
   await Effect.runPromise(
@@ -330,7 +333,7 @@ test("retired saved IDs are disclosed, not passed as invalid selections; accepte
   );
 });
 
-test("cancellation during choices, inputs, manager or confirmation is read-only", async (t) => {
+await test("cancellation during choices, inputs, manager or confirmation is read-only", async (t) => {
   for (const stage of ["choices", "input", "manager", "confirm"] as const) {
     const f = await fixture(t);
     await inputPolicy(f);
@@ -352,7 +355,7 @@ test("cancellation during choices, inputs, manager or confirmation is read-only"
   }
 });
 
-test("noninteractive execution fails before any discovery/target reads or questions", async () => {
+await test("noninteractive execution fails before any discovery/target reads or questions", async () => {
   const d = dialogue();
   const result = await Effect.runPromise(
     setup({
@@ -363,11 +366,13 @@ test("noninteractive execution fails before any discovery/target reads or questi
     }).pipe(Effect.result),
   );
   assert.equal(result._tag, "Failure");
-  if (result._tag === "Failure") {assert.match(String(result.failure), /interactive terminal/);}
+  if (result._tag === "Failure") {
+    assert.match(String(result.failure), /interactive terminal/);
+  }
   assert.deepEqual(d.shown, []);
 });
 
-test("project package-manager settings do not block setup before approval", async (t) => {
+await test("project package-manager settings do not block setup before approval", async (t) => {
   const f = await fixture(t);
   await fs.writeFile(path.join(f.project, "package.json"), '{"packageManager":"pnpm@99.0.0"}');
   await fs.writeFile(path.join(f.project, ".oxlintrc.json"), '{"old":true}');
@@ -390,7 +395,7 @@ test("project package-manager settings do not block setup before approval", asyn
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("installation failure retains applied intent, reports incomplete work, never emits completion", async (t) => {
+await test("installation failure retains applied intent, reports incomplete work, never emits completion", async (t) => {
   const f = await fixture(t);
   const d = dialogue();
   const dependencies: ApplicationDependencies = {
@@ -422,12 +427,13 @@ test("installation failure retains applied intent, reports incomplete work, neve
   assert.ok(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"));
 });
 
-test("invalid selected native policy and invalid typed answers fail before any mutation", async (t) => {
+await test("invalid selected native policy and invalid typed answers fail before any mutation", async (t) => {
   for (const invalid of ["policy", "answer"]) {
     const f = await fixture(t);
     await inputPolicy(f);
-    if (invalid === "policy")
-      {await f.write("typescript/integrations/example/files/.oxfmtrc.json", "{broken");}
+    if (invalid === "policy") {
+      await f.write("typescript/integrations/example/files/.oxfmtrc.json", "{broken");
+    }
     const before = await snapshot(f.project);
     const d = dialogue({
       integrations: ["example"],
@@ -443,18 +449,19 @@ test("invalid selected native policy and invalid typed answers fail before any m
       }).pipe(Effect.result),
     );
     assert.equal(result._tag, "Failure");
-    if (result._tag === "Failure")
-      {assert.match(
+    if (result._tag === "Failure") {
+      assert.match(
         String(result.failure),
         invalid === "policy" ? /\.oxfmtrc\.json/ : /requires path/,
-      );}
+      );
+    }
     assert.equal(d.confirmations, 0);
     assert.equal(d.completion, undefined);
     assert.deepEqual(await snapshot(f.project), before);
   }
 });
 
-test("dependency state is reassessed after configuration, not cached from read-only preview", async (t) => {
+await test("dependency state is reassessed after configuration, not cached from read-only preview", async (t) => {
   const f = await fixture(t);
   const d = dialogue();
   let installed = false;

@@ -41,7 +41,7 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   return { ...f, resolve, writeProject };
 }
 
-test("fresh package gets a complete read-only plan with exact creations, additions, and stale observations", async (t) => {
+await test("fresh package gets a complete read-only plan with exact creations, additions, and stale observations", async (t) => {
   const f = await setup(t);
   const before = await snapshot(f.project);
   const plan = await run(planProject(f.project, await f.resolve()));
@@ -67,7 +67,7 @@ test("fresh package gets a complete read-only plan with exact creations, additio
   await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed since planning/);
 });
 
-test("native fragments compose in stable category order with atomic rules, ordered deduplication and overrides", async (t) => {
+await test("native fragments compose in stable category order with atomic rules, ordered deduplication and overrides", async (t) => {
   const f = await setup(t);
   await f.write("typescript/base/files/.oxlintrc.json", {
     rules: { tuple: ["warn", { allow: ["base"], nested: { base: true } }], baseline: "error" },
@@ -84,7 +84,9 @@ test("native fragments compose in stable category order with atomic rules, order
     ignorePatterns: ["base"],
     overrides: [{ files: ["base/**"], options: { semi: true } }],
   });
-  for (const key of ["integrations/z", "integrations/a", "automation/ci"]) {await f.add(key);}
+  for (const key of ["integrations/z", "integrations/a", "automation/ci"]) {
+    await f.add(key);
+  }
   await f.write("typescript/integrations/a/files/.oxlintrc.json", {
     rules: { tuple: ["error", { allow: ["a"] }] },
     plugins: ["typescript", "react"],
@@ -141,7 +143,7 @@ test("native fragments compose in stable category order with atomic rules, order
   });
 });
 
-test("existing dedicated configuration is replaced, never inherited; matching JSON preserves exact bytes", async (t) => {
+await test("existing dedicated configuration is replaced, never inherited; matching JSON preserves exact bytes", async (t) => {
   const f = await setup(t);
   await f.writeProject(".oxlintrc.json", { rules: { local: "error", "no-debugger": "off" } });
   await f.writeProject(".oxfmtrc.json", "{   }\n\n");
@@ -153,7 +155,7 @@ test("existing dedicated configuration is replaced, never inherited; matching JS
   assert.equal(plan.files.find((file) => file.path === ".oxfmtrc.json")!.kind, "noop");
 });
 
-test("explicit migration and alternate config names are proposed without executing modules or guessing cleanup", async (t) => {
+await test("explicit migration and alternate config names are proposed without executing modules or guessing cleanup", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -161,8 +163,9 @@ test("explicit migration and alternate config names are proposed without executi
   });
   const sentinel = path.join(f.project, "EXECUTED");
   const executable = `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(sentinel)}, 'bad'); throw Error('executed');`;
-  for (const relative of ["prettier.config.js", "oxlint.config.ts", "oxfmt.config.mjs"])
-    {await f.writeProject(relative, executable);}
+  for (const relative of ["prettier.config.js", "oxlint.config.ts", "oxfmt.config.mjs"]) {
+    await f.writeProject(relative, executable);
+  }
   await f.writeProject("unlisted-legacy.js", executable);
   await f.writeProject(".oxlintrc.jsonc", "{ // not imported\n}");
   await f.writeProject("package.json", {
@@ -195,7 +198,7 @@ test("explicit migration and alternate config names are proposed without executi
   await assert.rejects(fs.stat(sentinel), { code: "ENOENT" });
 });
 
-test("different dependency requirements fail with both policy sources, not range resolution", async (t) => {
+await test("different dependency requirements fail with both policy sources, not range resolution", async (t) => {
   const f = await setup(t);
   await f.add("integrations/a", { name: "Alpha", dependencies: { oxlint: "^1.0.0" } });
   const before = await snapshot(f.project);
@@ -211,7 +214,7 @@ test("different dependency requirements fail with both policy sources, not range
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("same-version cross-section requests use runtime placement; existing versions are confirmation conflicts", async (t) => {
+await test("same-version cross-section requests use runtime placement; existing versions are confirmation conflicts", async (t) => {
   const f = await setup(t);
   await f.add("integrations/runtime", { name: "Runtime", dependencies: { oxlint: "1.0.0" } });
   await f.writeProject("package.json", {
@@ -243,7 +246,7 @@ test("same-version cross-section requests use runtime placement; existing versio
   );
 });
 
-test("deselection removes only current-known contributions and keeps requirements and files shared by remaining bundles", async (t) => {
+await test("deselection removes only current-known contributions and keeps requirements and files shared by remaining bundles", async (t) => {
   const f = await setup(t);
   await f.add("integrations/a", { name: "A", devDependencies: { shared: "1", unique: "2" } });
   await f.add("integrations/b", { name: "B", devDependencies: { shared: "1" } });
@@ -279,7 +282,7 @@ test("deselection removes only current-known contributions and keeps requirement
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("migration is selected-only and cannot remove any remaining selected dependency requirement", async (t) => {
+await test("migration is selected-only and cannot remove any remaining selected dependency requirement", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -303,7 +306,7 @@ test("migration is selected-only and cannot remove any remaining selected depend
   );
 });
 
-test("dependency names that match object prototypes remain ordinary additions", async (t) => {
+await test("dependency names that match object prototypes remain ordinary additions", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", dependencies: { constructor: "1" } });
   await f.writeProject("package.json", { dependencies: {} });
@@ -318,7 +321,7 @@ test("dependency names that match object prototypes remain ordinary additions", 
   assert.equal(plan.requiresConfirmation, false);
 });
 
-test("snapshots retain arbitrary migration bytes and stale checks include mode and content", async (t) => {
+await test("snapshots retain arbitrary migration bytes and stale checks include mode and content", async (t) => {
   const f = await setup(t);
   const bytes = Buffer.from([0xff, 0x00, 0x80, 0x61]);
   await fs.writeFile(path.join(f.project, "legacy.bin"), bytes, { mode: 0o600 });
@@ -336,19 +339,20 @@ test("snapshots retain arbitrary migration bytes and stale checks include mode a
   await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed/);
 });
 
-test("matching rerun preserves all bytes and permission bits, and needs no confirmation", async (t) => {
+await test("matching rerun preserves all bytes and permission bits, and needs no confirmation", async (t) => {
   const f = await setup(t);
   const resolved = await f.resolve();
   const first = await run(planProject(f.project, resolved));
   // Test-fixture materialization only; the production seam never applies plans.
-  for (const file of first.files)
-    {if (file.after.kind === "file") {
+  for (const file of first.files) {
+    if (file.after.kind === "file") {
       await fs.writeFile(
         path.join(f.project, file.path),
         Buffer.from(file.after.base64, "base64"),
         { mode: file.after.mode },
       );
-    }}
+    }
+  }
   await f.writeProject(
     "package.json",
     ' { "scripts": { "install": "exit 99" }, "devDependencies": {"oxlint":"1.0.0"}, "name":"untouched" }\n',
@@ -367,11 +371,13 @@ test("matching rerun preserves all bytes and permission bits, and needs no confi
   );
   assert.deepEqual(changed(again), []);
   assert.equal(again.requiresConfirmation, false);
-  for (const file of again.files) {assert.deepEqual(file.after, file.before);}
+  for (const file of again.files) {
+    assert.deepEqual(file.after, file.before);
+  }
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("scripts have an ordinary-manifest adapter; absent adapters defer rather than silently lose work", async (t) => {
+await test("scripts have an ordinary-manifest adapter; absent adapters defer rather than silently lose work", async (t) => {
   const f = await fixture(t);
   const resolved = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
   const plan = await run(planProject(f.project, resolved));
@@ -397,7 +403,7 @@ test("scripts have an ordinary-manifest adapter; absent adapters defer rather th
   });
 });
 
-test("unrelated workflows block automation planning rather than becoming replaceable dedicated configuration", async (t) => {
+await test("unrelated workflows block automation planning rather than becoming replaceable dedicated configuration", async (t) => {
   const f = await setup(t);
   await f.add("automation/ci", {
     name: "CI",
@@ -424,7 +430,7 @@ test("unrelated workflows block automation planning rather than becoming replace
   assert.deepEqual(await snapshot(f.project), before);
 });
 
-test("malformed manifests fail with typed target diagnostics before mutation", async (t) => {
+await test("malformed manifests fail with typed target diagnostics before mutation", async (t) => {
   for (const content of [
     '{"name":',
     '{"name":"a","name":"b"}',
@@ -443,9 +449,9 @@ test("malformed manifests fail with typed target diagnostics before mutation", a
   }
 });
 
-test("target symlinks, nonregular destinations, unsafe paths and case aliases fail without traversing them", async (t) => {
-  for (const relative of ["package.json", ".oxlintrc.json", "oxlint.config.ts"])
-    {await t.test(relative, async (t) => {
+await test("target symlinks, nonregular destinations, unsafe paths and case aliases fail without traversing them", async (t) => {
+  for (const relative of ["package.json", ".oxlintrc.json", "oxlint.config.ts"]) {
+    await t.test(relative, async (t) => {
       const f = await setup(t);
       await fs.rm(path.join(f.project, relative), { force: true });
       await fs.symlink(path.join(f.root, "outside"), path.join(f.project, relative));
@@ -453,7 +459,8 @@ test("target symlinks, nonregular destinations, unsafe paths and case aliases fa
         run(planProject(f.project, await f.resolve())),
         /symlinks are forbidden/,
       );
-    });}
+    });
+  }
   const f = await setup(t);
   const rootLink = path.join(f.root, "project-link");
   await fs.symlink(f.project, rootLink);
@@ -475,7 +482,7 @@ test("target symlinks, nonregular destinations, unsafe paths and case aliases fa
   await assert.rejects(run(readTargetSnapshot(f.project, [".oxlintrc.json"])), /regular file/);
 });
 
-test("invalid composition shapes and policy/removal collisions fail with native source context", async (t) => {
+await test("invalid composition shapes and policy/removal collisions fail with native source context", async (t) => {
   const f = await setup(t);
   await f.write("typescript/base/files/.oxlintrc.json", { rules: [] });
   await assert.rejects(

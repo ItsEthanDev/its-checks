@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import { TextDecoder } from "node:util";
 
 import { Effect } from "effect";
@@ -68,22 +69,26 @@ export interface PlanOptions {
 }
 const sections = ["dependencies", "devDependencies", "scripts"] as const;
 // Explicit competing names, not a search heuristic or a released-version discovery claim.
-const alternates = ["oxfmt", "oxlint"].flatMap((tool) => [
-  `.${tool}rc.jsonc`,
-  ...["ts", "mts", "cts", "js", "mjs", "cjs"].map((extension) => `${tool}.config.${extension}`),
-]);
-const state = (content: string, before: FileState, executable = false): FileState => ({
-  kind: "file",
-  base64: Buffer.from(content).toString("base64"),
-  mode: before.kind === "file" ? before.mode : executable ? 0o755 : 0o644,
-});
+const alternates = ["oxfmt", "oxlint"].flatMap((tool) =>
+  [`.${tool}rc.jsonc`].concat(
+    ["ts", "mts", "cts", "js", "mjs", "cjs"].map((extension) => `${tool}.config.${extension}`),
+  ),
+);
+const state = (content: string, before: FileState, executable = false): FileState => {
+  let mode = executable ? 0o755 : 0o644;
+  if (before.kind === "file") {
+    mode = before.mode;
+  }
+  return { kind: "file", base64: Buffer.from(content).toString("base64"), mode };
+};
 const equal = (a: FileState, b: FileState) => JSON.stringify(a) === JSON.stringify(b);
 const fail = (source: string, field: string, detail: string) =>
   new PlanError({ source, field, detail });
 function decode(source: string, file: FileState): Effect.Effect<JsonValue, PlanError> {
   return Effect.gen(function* () {
-    if (file.kind === "absent")
-      {return yield* Effect.fail(fail(source, "$", "Required target file is missing"));}
+    if (file.kind === "absent") {
+      return yield* fail(source, "$", "Required target file is missing");
+    }
     const text = yield* Effect.try({
       try: () =>
         new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(file.base64, "base64")),
@@ -94,14 +99,15 @@ function decode(source: string, file: FileState): Effect.Effect<JsonValue, PlanE
     );
   });
 }
-const kind = (before: string | null, after: string | null): ChangeKind =>
-  before === after
-    ? "noop"
-    : before === null
-      ? "addition"
-      : after === null
-        ? "removal"
-        : "replacement";
+const kind = (before: string | null, after: string | null): ChangeKind => {
+  if (before === after) {
+    return "noop";
+  }
+  if (before === null) {
+    return "addition";
+  }
+  return after === null ? "removal" : "replacement";
+};
 
 /** Build one deterministic plan from actual files. No writes, imports of target configs, or dependency operations. */
 export function planProject(
@@ -124,36 +130,38 @@ export function planProject(
       string,
       { content: string; executable: boolean; reasons: string[]; json?: JsonValue }
     >();
-    for (const [relative, value] of Object.entries(configs))
-      {desired.set(relative, {
+    for (const [relative, value] of Object.entries(configs)) {
+      desired.set(relative, {
         content: jsonContent(value),
         executable: false,
         reasons: ["selected Oxc policy (replaces target configuration)"],
         json: value,
-      });}
+      });
+    }
     const deferred: DeferredChange[] = [];
     const defer = (relative: string, reason: string) => {
       deferred.push({ path: relative, reason });
     };
-    for (const bundle of selected)
-      {for (const file of bundle.files) {
-        if (configDestination(file.path)) continue;
-        if (isAutomationPath(file.path)) continue;
-        if (file.path === ".its-checks.json")
-          return yield* Effect.fail(
-            fail(file.source, "$", "The saved-intent destination is reserved"),
-          );
+    for (const bundle of selected) {
+      for (const file of bundle.files) {
+        if (configDestination(file.path) !== undefined) {
+          continue;
+        }
+        if (isAutomationPath(file.path)) {
+          continue;
+        }
+        if (file.path === ".its-checks.json") {
+          return yield* fail(file.source, "$", "The saved-intent destination is reserved");
+        }
         const existing = desired.get(file.path);
         if (
-          existing &&
+          existing !== undefined &&
           (existing.content !== file.content || existing.executable !== file.executable)
         ) {
-          return yield* Effect.fail(
-            fail(
-              file.source,
-              "$",
-              `Different dedicated-file contributions at ${file.path}: ${existing.reasons.join(", ")} and ${bundle.key}`,
-            ),
+          return yield* fail(
+            file.source,
+            "$",
+            `Different dedicated-file contributions at ${file.path}: ${existing.reasons.join(", ")} and ${bundle.key}`,
           );
         }
         desired.set(file.path, {
@@ -161,7 +169,8 @@ export function planProject(
           executable: file.executable,
           reasons: [...(existing?.reasons ?? []), bundle.key],
         });
-      }}
+      }
+    }
     desired.set(resolved.selectionFile.path, {
       content: resolved.selectionFile.content,
       executable: false,
@@ -169,35 +178,39 @@ export function planProject(
     });
     const removals = new Map<string, string[]>();
     const remove = (relative: string, reason: string) => {
-      if (isAutomationPath(relative)) {return;}
+      if (isAutomationPath(relative)) {
+        return;
+      }
       removals.set(relative, [...(removals.get(relative) ?? []), reason]);
     };
-    for (const relative of alternates)
-      {remove(relative, "explicit competing Oxc configuration name");}
-    for (const bundle of selected)
-      {for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
-        if (desired.has(relative))
-          return yield* Effect.fail(
-            fail(
-              bundle.source,
-              "migration.removeFiles",
-              `Cannot remove selected output ${relative}`,
-            ),
+    for (const relative of alternates) {
+      remove(relative, "explicit competing Oxc configuration name");
+    }
+    for (const bundle of selected) {
+      for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
+        if (desired.has(relative)) {
+          return yield* fail(
+            bundle.source,
+            "migration.removeFiles",
+            `Cannot remove selected output ${relative}`,
           );
+        }
         remove(relative, `${bundle.key}: explicit migration`);
-      }}
-    for (const bundle of deselected)
-      {for (const file of bundle.files) {
-        if (!configDestination(file.path) && !desired.has(file.path))
+      }
+    }
+    for (const bundle of deselected) {
+      for (const file of bundle.files) {
+        if (configDestination(file.path) === undefined && !desired.has(file.path)) {
           remove(file.path, `${bundle.key}: current-known deselection`);
-      }}
+        }
+      }
+    }
     // A selected fragment may not reintroduce an alternate executable config alongside generated JSON.
-    for (const relative of removals.keys())
-      {if (desired.has(relative)) {
-        return yield* Effect.fail(
-          fail(relative, "$", "Selected output conflicts with a declared removal"),
-        );
-      }}
+    for (const relative of removals.keys()) {
+      if (desired.has(relative)) {
+        return yield* fail(relative, "$", "Selected output conflicts with a declared removal");
+      }
+    }
     const automation = yield* prepareAutomation(selected, deselected);
     const snapshot = yield* readTargetSnapshot(projectRoot, [
       "package.json",
@@ -206,16 +219,19 @@ export function planProject(
       ...automation.paths,
     ]);
     const automationChanges = yield* automation.plan(snapshot);
-    const original = yield* decode("package.json", snapshot.files["package.json"]!);
-    if (!isObject(original))
-      {return yield* Effect.fail(fail("package.json", "$", "Expected an object"));}
+    const packageFile = snapshot.files["package.json"];
+    assert(packageFile !== undefined);
+    const original = yield* decode("package.json", packageFile);
+    if (!isObject(original)) {
+      return yield* fail("package.json", "$", "Expected an object");
+    }
     for (const section of sections) {
       const entries = original[section];
       if (
         entries !== undefined &&
         (!isObject(entries) || Object.values(entries).some((value) => typeof value !== "string"))
       ) {
-        return yield* Effect.fail(fail("package.json", section, "Expected an object of strings"));
+        return yield* fail("package.json", section, "Expected an object of strings");
       }
     }
     const manifest: Record<string, JsonValue> = { ...original };
@@ -223,26 +239,26 @@ export function planProject(
       string,
       { requirement: string; section: "dependencies" | "devDependencies"; source: string }
     >();
-    for (const bundle of selected)
-      {for (const section of ["dependencies", "devDependencies"] as const) {
+    for (const bundle of selected) {
+      for (const section of ["dependencies", "devDependencies"] as const) {
         for (const [name, requirement] of Object.entries(bundle.declaration[section] ?? {})) {
           const source = `${bundle.key} (${bundle.declaration.name}, ${bundle.source})`;
           const earlier = required.get(name);
-          if (earlier && earlier.requirement !== requirement)
-            return yield* Effect.fail(
-              fail(
-                bundle.source,
-                `${section}.${name}`,
-                `Dependency ${name}: ${earlier.source} requires ${JSON.stringify(earlier.requirement)}; ${source} requires ${JSON.stringify(requirement)}`,
-              ),
+          if (earlier !== undefined && earlier.requirement !== requirement) {
+            return yield* fail(
+              bundle.source,
+              `${section}.${name}`,
+              `Dependency ${name}: ${earlier.source} requires ${canonical(earlier.requirement)}; ${source} requires ${canonical(requirement)}`,
             );
+          }
           required.set(name, {
             requirement,
             source,
             section: earlier?.section === "dependencies" ? "dependencies" : section,
           });
         }
-      }}
+      }
+    }
     const edits = new Map<
       string,
       { section: "dependencies" | "devDependencies"; name: string; after: string | null }
@@ -252,35 +268,50 @@ export function planProject(
       name: string,
       after: string | null,
     ) => edits.set(`${section}/${name}`, { section, name, after });
-    for (const bundle of deselected)
-      {for (const section of ["dependencies", "devDependencies"] as const) {
-        for (const name of Object.keys(bundle.declaration[section] ?? {}))
-          if (!required.has(name)) edit(section, name, null);
-      }}
-    for (const bundle of selected)
-      {for (const section of ["dependencies", "devDependencies"] as const) {
+    for (const bundle of deselected) {
+      for (const section of ["dependencies", "devDependencies"] as const) {
+        for (const name of Object.keys(bundle.declaration[section] ?? {})) {
+          if (!required.has(name)) {
+            edit(section, name, null);
+          }
+        }
+      }
+    }
+    for (const bundle of selected) {
+      for (const section of ["dependencies", "devDependencies"] as const) {
         const migration =
           section === "dependencies"
             ? bundle.declaration.migration?.removeDependencies
             : bundle.declaration.migration?.removeDevDependencies;
-        for (const name of migration ?? []) if (!required.has(name)) edit(section, name, null);
-      }}
+        for (const name of migration ?? []) {
+          if (!required.has(name)) {
+            edit(section, name, null);
+          }
+        }
+      }
+    }
     for (const [name, entry] of required) {
       edit(entry.section, name, entry.requirement);
       edit(entry.section === "dependencies" ? "devDependencies" : "dependencies", name, null);
     }
     for (const { section, name, after } of edits.values()) {
-      const entries = { ...(manifest[section] as JsonObject | undefined) };
-      if (after === null) {delete entries[name];}
-      else {entries[name] = after;}
+      const prior = manifest[section];
+      const entries = { ...(isObject(prior) ? prior : {}) };
+      if (after === null) {
+        delete entries[name];
+      } else {
+        entries[name] = after;
+      }
       // Do not add an empty section just to delete an absent entry.
-      if (Object.hasOwn(manifest, section) || Object.keys(entries).length)
-        {manifest[section] = entries;}
+      if (Object.hasOwn(manifest, section) || Object.keys(entries).length > 0) {
+        manifest[section] = entries;
+      }
     }
-    if (options.scripts) {
+    if (options.scripts !== undefined) {
       const scripts = yield* options.scripts({ manifest, selected, deselected });
-      if (Object.hasOwn(manifest, "scripts") || Object.keys(scripts).length)
-        {manifest.scripts = scripts;}
+      if (Object.hasOwn(manifest, "scripts") || Object.keys(scripts).length > 0) {
+        manifest.scripts = scripts;
+      }
     } else {
       for (const name of [
         ...new Set(
@@ -288,7 +319,7 @@ export function planProject(
             Object.keys(bundle.declaration.scripts ?? {}),
           ),
         ),
-      ].sort()) {
+      ].toSorted()) {
         defer(
           `package.json#scripts.${name}`,
           "Script composition requires the #6 adapter; existing scripts remain untouched",
@@ -297,8 +328,10 @@ export function planProject(
     }
     const packageEntries: EntryChange[] = [];
     for (const section of sections) {
-      const before = original[section] as Readonly<Record<string, string>> | undefined;
-      const after = manifest[section] as Readonly<Record<string, string>> | undefined;
+      const originalEntries = original[section];
+      const manifestEntries = manifest[section];
+      const before = isObject(originalEntries) ? originalEntries : {};
+      const after = isObject(manifestEntries) ? manifestEntries : {};
       const names = new Set([
         ...Object.keys(before ?? {}),
         ...Object.keys(after ?? {}),
@@ -306,9 +339,11 @@ export function planProject(
           .filter((entry) => entry.section === section)
           .map((entry) => entry.name),
       ]);
-      for (const name of [...names].sort()) {
-        const a = before && Object.hasOwn(before, name) ? before[name]! : null;
-        const b = after && Object.hasOwn(after, name) ? after[name]! : null;
+      for (const name of [...names].toSorted()) {
+        const previousValue = Object.hasOwn(before, name) ? before[name] : undefined;
+        const nextValue = Object.hasOwn(after, name) ? after[name] : undefined;
+        const a = typeof previousValue === "string" ? previousValue : null;
+        const b = typeof nextValue === "string" ? nextValue : null;
         packageEntries.push({
           section,
           name,
@@ -329,30 +364,37 @@ export function planProject(
     const files: FileChange[] = [];
     for (const relative of [
       ...new Set([...desired.keys(), ...removals.keys(), ...automationChanges.keys()]),
-    ].sort()) {
-      const before = snapshot.files[relative]!;
+    ].toSorted()) {
+      const before = snapshot.files[relative];
+      assert(before !== undefined);
       const output = desired.get(relative);
       const automationChange = automationChanges.get(relative);
       let after: FileState =
         automationChange?.after ??
-        (output ? state(output.content, before, output.executable) : { kind: "absent" });
-      if (relative === "package.json" && !manifestChanged) {after = before;}
-      else if (output?.json && before.kind === "file") {
-        const parsed = yield* decode(relative, before).pipe(
-          Effect.catch(() => Effect.succeed(undefined)),
-        );
-        if (parsed !== undefined && canonical(parsed) === canonical(output.json)) {after = before;}
+        (output !== undefined
+          ? state(output.content, before, output.executable)
+          : { kind: "absent" });
+      if (relative === "package.json" && !manifestChanged) {
+        after = before;
+      } else if (output?.json !== undefined && before.kind === "file") {
+        const parsed = yield* decode(relative, before).pipe(Effect.orElseSucceed(() => undefined));
+        if (parsed !== undefined && canonical(parsed) === canonical(output.json)) {
+          after = before;
+        }
       }
       const unchanged = equal(before, after);
-      const fileKind: ChangeKind = unchanged
-        ? "noop"
-        : before.kind === "absent"
-          ? "creation"
-          : after.kind === "absent"
-            ? "removal"
-            : relative === "package.json" && !packageEntries.some((entry) => entry.conflict)
-              ? "addition"
-              : "replacement";
+      let fileKind: ChangeKind = "replacement";
+      if (unchanged) {
+        fileKind = "noop";
+      } else if (before.kind === "absent") {
+        fileKind = "creation";
+      } else if (after.kind === "absent") {
+        fileKind = "removal";
+      } else if (relative === "package.json" && !packageEntries.some((entry) => entry.conflict)) {
+        fileKind = "addition";
+      }
+      const reasons = automationChange?.reasons ?? output?.reasons ?? removals.get(relative);
+      assert(reasons !== undefined);
       files.push({
         path: relative,
         before,
@@ -362,7 +404,7 @@ export function planProject(
           !unchanged &&
           before.kind === "file" &&
           (relative !== "package.json" || packageEntries.some((entry) => entry.conflict)),
-        reasons: automationChange?.reasons ?? output?.reasons ?? removals.get(relative)!,
+        reasons,
       });
     }
     const uniqueDeferred = deferred
@@ -372,17 +414,15 @@ export function planProject(
             (other) => other.path === entry.path && other.reason === entry.reason,
           ) === index,
       )
-      .sort((a, b) =>
-        a.path < b.path
-          ? -1
-          : a.path > b.path
-            ? 1
-            : a.reason < b.reason
-              ? -1
-              : a.reason > b.reason
-                ? 1
-                : 0,
-      );
+      .toSorted((a, b) => {
+        if (a.path !== b.path) {
+          return a.path < b.path ? -1 : 1;
+        }
+        if (a.reason === b.reason) {
+          return 0;
+        }
+        return a.reason < b.reason ? -1 : 1;
+      });
     return {
       snapshot,
       files,

@@ -1,5 +1,7 @@
+import assert from "node:assert/strict";
+
 import { Effect, Schema } from "effect";
-import { applyEdits, modify } from "jsonc-parser";
+import { applyEdits, modify, parse } from "jsonc-parser";
 
 import { BundleError } from "./bundle-errors.ts";
 import { safePath } from "./bundle-loading.ts";
@@ -10,6 +12,7 @@ import type {
   LoadedPolicy,
   NativeFile,
 } from "./bundle-types.ts";
+import { canonical, isArray, isObject } from "./composition.ts";
 import {
   Answers,
   selectionContent,
@@ -35,7 +38,7 @@ export interface ResolvedInputs {
 }
 const answerAt = (answers: Answers | undefined, bundle: string, id: string): Answer | undefined => {
   const values = answers?.[bundle];
-  return values && Object.hasOwn(values, id) ? values[id] : undefined;
+  return values !== undefined && Object.hasOwn(values, id) ? values[id] : undefined;
 };
 const error = (bundle: LoadedBundle, field: string, detail: string) =>
   new BundleError({
@@ -61,23 +64,26 @@ function validateAnswer(
         (typeof value !== "number" || Number.isFinite(value)),
       `Input ${input.id} requires ${input.type}`,
     );
-    if (input.type === "path")
-      {yield* check(
+    if (input.type === "path") {
+      yield* check(
         bundle,
         field,
         typeof value === "string" && safePath(value),
         `Input ${input.id} requires a safe target-package-relative POSIX path; existence is not required`,
-      );}
+      );
+    }
   });
 }
 
 function destination(bundle: LoadedBundle, input: InputDeclaration) {
   return Effect.gen(function* () {
     const field = `inputs.${input.id}.destination`;
-    const file = bundle.files.find((file) => file.path === input.destination.file);
-    if (!file || (file.format !== "json" && file.format !== "jsonc")) {
-      return yield* Effect.fail(
-        error(bundle, field, `Expected this bundle's JSON/JSONC file: ${input.destination.file}`),
+    const file = bundle.files.find((candidate) => candidate.path === input.destination.file);
+    if (file === undefined || (file.format !== "json" && file.format !== "jsonc")) {
+      return yield* error(
+        bundle,
+        field,
+        `Expected this bundle's JSON/JSONC file: ${input.destination.file}`,
       );
     }
     const keys = input.destination.field;
@@ -99,9 +105,13 @@ function destination(bundle: LoadedBundle, input: InputDeclaration) {
           typeof value === "object" &&
           (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
           Object.hasOwn(value, key),
-        `Destination field ${JSON.stringify(keys)} must exist with object keys/array indexes in ${file.source}`,
+        `Destination field ${canonical(keys)} must exist with object keys/array indexes in ${file.source}`,
       );
-      value = (value as Record<string | number, JsonValue>)[key];
+      if (isArray(value) && typeof key === "number") {
+        value = value[key];
+      } else if (isObject(value) && typeof key === "string") {
+        value = value[key];
+      }
     }
     return file;
   });
@@ -136,13 +146,14 @@ export function enumerateInputs(
         }
         const saved = answerAt(previous?.answers, bundle.key, input.id);
         const initialValue = saved ?? input.default;
-        if (initialValue !== undefined)
-          {yield* validateAnswer(
+        if (initialValue !== undefined) {
+          yield* validateAnswer(
             bundle,
             input,
             initialValue,
             `${saved !== undefined ? "saved answers" : "defaults"}.${bundle.key}.${input.id}`,
-          );}
+          );
+        }
         result.push({
           bundle: bundle.key,
           source: bundle.source,
@@ -156,18 +167,18 @@ export function enumerateInputs(
 }
 
 function bind(file: NativeFile, input: InputDeclaration, answer: Answer): NativeFile {
-  if (file.format !== "json" && file.format !== "jsonc") {return file;}
-  const value = structuredClone(file.value);
-  let parent = value as Record<string | number, JsonValue>;
+  if (file.format !== "json" && file.format !== "jsonc") {
+    return file;
+  }
   const keys = input.destination.field;
-  for (const key of keys.slice(0, -1)) {parent = parent[key] as Record<string | number, JsonValue>;}
-  parent[keys.at(-1)!] = answer;
   const content = applyEdits(
     file.content,
     modify(file.content, [...keys], answer, {
       formattingOptions: { insertSpaces: true, tabSize: 2 },
     }),
   );
+  const parsed: unknown = parse(content);
+  const value = Schema.decodeUnknownSync(Schema.Json)(parsed);
   return { ...file, value, content };
 }
 
@@ -189,37 +200,33 @@ export function resolveInputs(
     for (const [key, values] of Object.entries(answers)) {
       for (const id of Object.keys(values)) {
         if (!declared.some((entry) => entry.bundle === key && entry.input.id === id)) {
-          return yield* Effect.fail(
-            new BundleError({
-              ...ctx,
-              field: `answers.${key}.${id}`,
-              detail:
-                "Answer is not declared by a selected bundle; discard deselected/retired answers before resolving",
-            }),
-          );
+          return yield* new BundleError({
+            ...ctx,
+            field: `answers.${key}.${id}`,
+            detail:
+              "Answer is not declared by a selected bundle; discard deselected/retired answers before resolving",
+          });
         }
       }
       if (!policy.bundles.some((bundle) => bundle.key === key)) {
-        return yield* Effect.fail(
-          new BundleError({
-            ...ctx,
-            field: `answers.${key}`,
-            detail: "Answer namespace is not selected",
-          }),
-        );
+        return yield* new BundleError({
+          ...ctx,
+          field: `answers.${key}`,
+          detail: "Answer namespace is not selected",
+        });
       }
     }
     for (const entry of declared) {
-      const bundle = policy.bundles.find((bundle) => bundle.key === entry.bundle)!;
+      const bundle = policy.bundles.find((candidate) => candidate.key === entry.bundle);
+      assert(bundle !== undefined);
       const value = answerAt(answers, entry.bundle, entry.input.id);
-      if (value === undefined)
-        {return yield* Effect.fail(
-          error(
-            bundle,
-            `answers.${entry.bundle}.${entry.input.id}`,
-            "Missing explicit answer; show the input dialogue even when a saved value/default exists",
-          ),
-        );}
+      if (value === undefined) {
+        return yield* error(
+          bundle,
+          `answers.${entry.bundle}.${entry.input.id}`,
+          "Missing explicit answer; show the input dialogue even when a saved value/default exists",
+        );
+      }
       yield* validateAnswer(
         bundle,
         entry.input,
@@ -234,8 +241,11 @@ export function resolveInputs(
           files: bundle.files.map((file) => {
             let bound = file;
             for (const input of bundle.declaration.inputs ?? []) {
-              if (input.destination.file === file.path)
-                {bound = bind(bound, input, answers[bundle.key]![input.id]!);}
+              if (input.destination.file === file.path) {
+                const answer = answerAt(answers, bundle.key, input.id);
+                assert(answer !== undefined);
+                bound = bind(bound, input, answer);
+              }
             }
             return bound;
           }),
@@ -250,8 +260,11 @@ export function resolveInputs(
     );
     // Rebuild the answer map from declarations: no empty namespaces or stale input history.
     const intendedAnswers: Record<string, Record<string, Answer>> = {};
-    for (const { bundle, input } of declared)
-      {(intendedAnswers[bundle] ??= {})[input.id] = answers[bundle]![input.id]!;}
+    for (const { bundle, input } of declared) {
+      const answer = answerAt(answers, bundle, input.id);
+      assert(answer !== undefined);
+      (intendedAnswers[bundle] ??= {})[input.id] = answer;
+    }
     const selected = (kind: "integration" | "automation") =>
       policy.bundles.filter((bundle) => bundle.kind === kind).map((bundle) => bundle.id);
     const intent: SavedIntent = {

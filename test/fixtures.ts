@@ -45,14 +45,16 @@ export async function fixture(t: TestContext) {
 export async function snapshot(directory: string): Promise<Record<string, string>> {
   const result: Record<string, string> = {};
   async function walk(relative: string) {
-    for (const name of (await fs.readdir(path.join(directory, relative))).sort()) {
+    for (const name of (await fs.readdir(path.join(directory, relative))).toSorted()) {
       const key = path.join(relative, name);
       const stat = await fs.lstat(path.join(directory, key));
-      if (stat.isDirectory()) {await walk(key);}
-      else
-        {result[key] = stat.isSymbolicLink()
+      if (stat.isDirectory()) {
+        await walk(key);
+      } else {
+        result[key] = stat.isSymbolicLink()
           ? `link:${await fs.readlink(path.join(directory, key))}`
-          : await fs.readFile(path.join(directory, key), "utf8");}
+          : await fs.readFile(path.join(directory, key), "utf8");
+      }
     }
   }
   await walk("");

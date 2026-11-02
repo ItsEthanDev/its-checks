@@ -1,14 +1,14 @@
 import { fileURLToPath } from "node:url";
 
 import * as clack from "@clack/prompts";
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { createClackPresentation } from "./presentation.ts";
 import { executingCommit } from "./source-revision.ts";
 import { Cancelled, setup } from "./workflow.ts";
 
 // Policy belongs to the executed package/checkout, never the target cwd.
-const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+const interactive = process.stdin.isTTY && process.stdout.isTTY;
 if (!interactive || process.argv.length > 2) {
   console.error(
     !interactive
@@ -33,11 +33,12 @@ if (!interactive || process.argv.length > 2) {
       Effect.match({
         onFailure: (error) => {
           ui.failure(error);
-          process.exitCode = error instanceof Cancelled ? 130 : 1;
+          process.exitCode = Schema.is(Cancelled)(error) ? 130 : 1;
         },
         onSuccess: (report) => {
-          if (report.status === "declined")
-            {clack.cancel("Plan declined. No project writes or installation.");}
+          if (report.status === "declined") {
+            clack.cancel("Plan declined. No project writes or installation.");
+          }
         },
       }),
     ),

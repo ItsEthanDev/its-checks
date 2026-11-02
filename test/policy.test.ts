@@ -29,7 +29,7 @@ const noInstall = {
 };
 
 // Approved seams: discovery, planning and application with native policy; dependency effects only are substituted.
-test("reference policy composes, preserves shared content, reruns, and removes only current-known deselections", async (t) => {
+await test("reference policy composes, preserves shared content, reruns, and removes only current-known deselections", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.writeFile(
@@ -99,7 +99,7 @@ test("reference policy composes, preserves shared content, reruns, and removes o
   assert.ok(after.devDependencies.oxfmt);
 });
 
-test("native baseline/integration/declarations edits and a new directory reach output without installer changes", async (t) => {
+await test("native baseline/integration/declarations edits and a new directory reach output without installer changes", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-author-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const policy = path.join(root, "policy"),
@@ -168,7 +168,7 @@ test("native baseline/integration/declarations edits and a new directory reach o
   await fs.writeFile(path.join(directory, ".oxlintrc.json"), '{"rules":{"eqeqeq":"error"}}');
   assert.deepEqual(
     (await run(discoverPolicy(policy))).integrations.map((entry) => entry.id),
-    [...existingIntegrations, "strict"].sort(),
+    [...existingIntegrations, "strict"].toSorted(),
   );
   assert.equal((await setup(["tailwind", "strict"])).requiresConfirmation, true);
   const read = async (file: string) => await fs.readFile(path.join(target, file), "utf8");
