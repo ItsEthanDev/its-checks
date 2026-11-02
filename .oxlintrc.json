@@ -4,27 +4,13 @@
     "correctness": "error",
     "suspicious": "error"
   },
-  "extends": [
-    "./node_modules/@effect/tsgo/oxlint-presets/strict.json"
-  ],
-  "ignorePatterns": [
-    "**/node_modules/**",
-    "dist/**",
-    "coverage/**",
-    ".husky/_/**",
-    "./agents/**"
-  ],
+  "extends": ["./node_modules/@effect/tsgo/oxlint-presets/strict.json"],
+  "ignorePatterns": ["**/node_modules/**", "dist/**", "coverage/**", ".husky/_/**", "./agents/**"],
   "options": {
     "reportUnusedDisableDirectives": "error",
     "typeAware": true
   },
-  "plugins": [
-    "typescript",
-    "unicorn",
-    "oxc",
-    "import",
-    "effecttsgo"
-  ],
+  "plugins": ["typescript", "unicorn", "oxc", "import", "effecttsgo"],
   "rules": {
     "array-callback-return": "error",
     "curly": "error",
@@ -58,10 +44,7 @@
     "no-nested-ternary": "error",
     "no-param-reassign": "error",
     "no-promise-executor-return": "error",
-    "no-return-assign": [
-      "error",
-      "always"
-    ],
+    "no-return-assign": ["error", "always"],
     "no-self-compare": "error",
     "no-sequences": [
       "error",
@@ -139,10 +122,7 @@
         "allowRegExp": false
       }
     ],
-    "typescript/return-await": [
-      "error",
-      "always"
-    ],
+    "typescript/return-await": ["error", "always"],
     "typescript/strict-boolean-expressions": [
       "error",
       {

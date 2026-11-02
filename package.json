@@ -1,6 +1,36 @@
 {
+  "name": "its-checks",
+  "version": "0.1.0-beta.4",
+  "private": true,
   "bin": {
     "its-checks": "bin/its-checks.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "policy",
+    "schemas"
+  ],
+  "type": "module",
+  "scripts": {
+    "check": "bun run its-checks:check",
+    "fmt": "bun run its-checks:fmt",
+    "fmt:check": "bun run its-checks:fmt:check",
+    "its-checks:check": "(\nnode --run fmt:check && node --run lint\n\n)",
+    "its-checks:fmt": "(\noxfmt .\n\n)",
+    "its-checks:fmt:check": "(\noxfmt --check .\n\n)",
+    "its-checks:lint": "(\neffect-tsgo oxlint --deny-warnings .\n\n)",
+    "its-checks:lint:fix": "(\neffect-tsgo oxlint --fix --deny-warnings .\n\n)",
+    "its-checks:postinstall": "(\nhusky\n\n)",
+    "lint": "bun run its-checks:lint",
+    "lint:fix": "bun run its-checks:lint:fix",
+    "postinstall": "bun run its-checks:postinstall",
+    "test": "bun test ./test/*.test.ts",
+    "test:cli": "python3 test/cli.pty.py",
+    "test:managers": "bun test --timeout=120000 --max-concurrency=1 ./test/real-managers.integration.ts",
+    "test:package": "bun test --timeout=120000 ./test/package.integration.ts",
+    "test:policy": "bun test --timeout=180000 --max-concurrency=1 ./test/policy-compatibility.integration.ts",
+    "typecheck": "bun --bun tsc --noEmit"
   },
   "dependencies": {
     "@clack/prompts": "1.8.1",
@@ -24,35 +54,5 @@
   "engines": {
     "node": ">=22"
   },
-  "files": [
-    "bin",
-    "src",
-    "policy",
-    "schemas"
-  ],
-  "name": "its-checks",
-  "packageManager": "bun@1.4.0",
-  "private": true,
-  "scripts": {
-    "check": "bun run its-checks:check",
-    "fmt": "bun run its-checks:fmt",
-    "fmt:check": "bun run its-checks:fmt:check",
-    "its-checks:check": "(\nnode --run fmt:check && node --run lint\n\n)",
-    "its-checks:fmt": "(\noxfmt .\n\n)",
-    "its-checks:fmt:check": "(\noxfmt --check .\n\n)",
-    "its-checks:lint": "(\neffect-tsgo oxlint --deny-warnings .\n\n)",
-    "its-checks:lint:fix": "(\neffect-tsgo oxlint --fix --deny-warnings .\n\n)",
-    "its-checks:postinstall": "(\nhusky\n\n)",
-    "lint": "bun run its-checks:lint",
-    "lint:fix": "bun run its-checks:lint:fix",
-    "postinstall": "bun run its-checks:postinstall",
-    "test": "bun test ./test/*.test.ts",
-    "test:cli": "python3 test/cli.pty.py",
-    "test:managers": "bun test --timeout=120000 --max-concurrency=1 ./test/real-managers.integration.ts",
-    "test:package": "bun test --timeout=120000 ./test/package.integration.ts",
-    "test:policy": "bun test --timeout=180000 --max-concurrency=1 ./test/policy-compatibility.integration.ts",
-    "typecheck": "bun --bun tsc --noEmit"
-  },
-  "type": "module",
-  "version": "0.1.0-beta.4"
+  "packageManager": "bun@1.4.0"
 }

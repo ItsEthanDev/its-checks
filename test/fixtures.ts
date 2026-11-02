@@ -1,6 +1,6 @@
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
 import * as os from "node:os";
+import * as path from "node:path";
 import type { TestContext } from "node:test";
 
 export async function fixture(t: TestContext) {
@@ -11,7 +11,10 @@ export async function fixture(t: TestContext) {
   const write = async (relative: string, content: string | object) => {
     const destination = path.join(policy, relative);
     await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.writeFile(destination, typeof content === "string" ? content : JSON.stringify(content, null, 2));
+    await fs.writeFile(
+      destination,
+      typeof content === "string" ? content : JSON.stringify(content, null, 2),
+    );
     return destination;
   };
   const add = async (key: string, declaration: object = { name: key }) => {
@@ -32,7 +35,10 @@ export async function fixture(t: TestContext) {
   });
   await write("typescript/base/files/.oxlintrc.json", { rules: { "no-debugger": "error" } });
   await fs.mkdir(project);
-  await fs.writeFile(path.join(project, "package.json"), '{"name":"untouched","scripts":{"install":"exit 99"}}\n');
+  await fs.writeFile(
+    path.join(project, "package.json"),
+    '{"name":"untouched","scripts":{"install":"exit 99"}}\n',
+  );
   return { root, policy, project, write, add };
 }
 
@@ -43,7 +49,10 @@ export async function snapshot(directory: string): Promise<Record<string, string
       const key = path.join(relative, name);
       const stat = await fs.lstat(path.join(directory, key));
       if (stat.isDirectory()) await walk(key);
-      else result[key] = stat.isSymbolicLink() ? `link:${await fs.readlink(path.join(directory, key))}` : await fs.readFile(path.join(directory, key), "utf8");
+      else
+        result[key] = stat.isSymbolicLink()
+          ? `link:${await fs.readlink(path.join(directory, key))}`
+          : await fs.readFile(path.join(directory, key), "utf8");
     }
   }
   await walk("");

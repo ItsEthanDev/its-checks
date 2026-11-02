@@ -1,6 +1,8 @@
 import { Schema } from "effect";
 
-const Text = Schema.String.check(Schema.makeFilter((value) => value.trim().length > 0 || "Must not be blank"));
+const Text = Schema.String.check(
+  Schema.makeFilter((value) => value.trim().length > 0 || "Must not be blank"),
+);
 const Strings = Schema.Record(Schema.String, Text);
 const InputValue = Schema.Union([Schema.String, Schema.Number, Schema.Boolean]);
 
@@ -15,33 +17,52 @@ export const RootDeclaration = Schema.Struct({
 export const BundleDeclaration = Schema.Struct({
   name: Text,
   description: Schema.optionalKey(Text),
-  scripts: Schema.optionalKey(Schema.Record(Schema.String, Schema.Union([
-    Text,
-    Schema.Struct({ command: Text, replaces: Text }),
-  ]))),
+  scripts: Schema.optionalKey(
+    Schema.Record(
+      Schema.String,
+      Schema.Union([Text, Schema.Struct({ command: Text, replaces: Text })]),
+    ),
+  ),
   dependencies: Schema.optionalKey(Strings),
   devDependencies: Schema.optionalKey(Strings),
-  inputs: Schema.optionalKey(Schema.Array(Schema.Struct({
-    id: Text,
-    prompt: Text,
-    type: Schema.Literals(["string", "number", "boolean", "path"]),
-    default: Schema.optionalKey(InputValue),
-    destination: Schema.Struct({
-      file: Text,
-      field: Schema.Array(Schema.Union([Text, Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))])),
+  inputs: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        id: Text,
+        prompt: Text,
+        type: Schema.Literals(["string", "number", "boolean", "path"]),
+        default: Schema.optionalKey(InputValue),
+        destination: Schema.Struct({
+          file: Text,
+          field: Schema.Array(
+            Schema.Union([
+              Text,
+              Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+            ]),
+          ),
+        }),
+      }),
+    ),
+  ),
+  migration: Schema.optionalKey(
+    Schema.Struct({
+      removeFiles: Schema.optionalKey(Schema.Array(Text)),
+      removeDependencies: Schema.optionalKey(Schema.Array(Text)),
+      removeDevDependencies: Schema.optionalKey(Schema.Array(Text)),
     }),
-  }))),
-  migration: Schema.optionalKey(Schema.Struct({
-    removeFiles: Schema.optionalKey(Schema.Array(Text)),
-    removeDependencies: Schema.optionalKey(Schema.Array(Text)),
-    removeDevDependencies: Schema.optionalKey(Schema.Array(Text)),
-  })),
+  ),
 });
 
 export type RootDeclaration = typeof RootDeclaration.Type;
 export type BundleDeclaration = typeof BundleDeclaration.Type;
 export type BundleKind = "base" | "integration" | "automation";
-export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue };
 
 export interface BundleInfo {
   readonly id: string;

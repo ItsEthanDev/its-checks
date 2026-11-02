@@ -6,5 +6,7 @@ export class PlanError extends Data.TaggedError("PlanError")<{
   readonly field: string;
   readonly detail: string;
 }> {
-  override get message() { return `${this.source}: ${this.field}: ${this.detail}`; }
+  override get message() {
+    return `${this.source}: ${this.field}: ${this.detail}`;
+  }
 }

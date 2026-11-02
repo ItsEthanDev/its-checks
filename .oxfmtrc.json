@@ -1,11 +1,5 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": [
-    ".its-checks.json",
-    "dist/**",
-    "coverage/**",
-    ".husky/_/**",
-    ".agents/**"
-  ],
+  "ignorePatterns": [".its-checks.json", "dist/**", "coverage/**", ".husky/_/**", ".agents/**"],
   "sortImports": true
 }

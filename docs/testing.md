@@ -18,13 +18,13 @@ Tool compatibility tests may execute fixed reference configurations. Packaging t
 
 Run the relevant checks with Bun:
 
-| Command | Coverage |
-| --- | --- |
-| `bun run test` | CLI contracts using test-owned fixtures |
-| `bun run typecheck` | Source and test types |
-| `bun run test:managers` | Real package-manager behavior |
-| `bun run test:policy` | CLI/tool compatibility using the fixed reference policy |
-| `bun run test:cli` | Interactive terminal behavior |
-| `bun run test:package` | Packaged CLI and runtime assets |
+| Command                 | Coverage                                                |
+| ----------------------- | ------------------------------------------------------- |
+| `bun run test`          | CLI contracts using test-owned fixtures                 |
+| `bun run typecheck`     | Source and test types                                   |
+| `bun run test:managers` | Real package-manager behavior                           |
+| `bun run test:policy`   | CLI/tool compatibility using the fixed reference policy |
+| `bun run test:cli`      | Interactive terminal behavior                           |
+| `bun run test:package`  | Packaged CLI and runtime assets                         |
 
 Integration checks use temporary projects; some install dependencies. Keep effects isolated and inspect dependency lifecycle hooks before allowing them to execute.

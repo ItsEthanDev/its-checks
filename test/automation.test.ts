@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
+
 import { Effect } from "effect";
+
+import { applyPlan, type ApplicationDependencies } from "../src/application.ts";
 import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
 import { planProject, type PlanOptions } from "../src/planning.ts";
-import { applyPlan, type ApplicationDependencies } from "../src/application.ts";
 import { createScriptPlanner } from "../src/scripts.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
@@ -17,8 +19,12 @@ const hook = ".husky/pre-commit";
 const dedicated = ".husky/its-checks-pre-commit";
 const workflow = ".github/workflows/quality.yml";
 const shell = "#!/bin/sh\n# its-checks: managed\nprintf 'native ${literal}'\nexit 99\n";
-const yaml = "# its-checks: managed\nname: Native\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo '${literal}'\n";
-const deps: ApplicationDependencies = { assess: () => Effect.succeed("not-required"), install: () => Effect.die("Never install") };
+const yaml =
+  "# its-checks: managed\nname: Native\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo '${literal}'\n";
+const deps: ApplicationDependencies = {
+  assess: () => Effect.succeed("not-required"),
+  install: () => Effect.die("Never install"),
+};
 async function setup(t: Parameters<typeof fixture>[0]) {
   const f = await fixture(t);
   await f.add("automation/local");
@@ -30,8 +36,15 @@ async function setup(t: Parameters<typeof fixture>[0]) {
     await fs.writeFile(path.join(f.project, relative), content);
   };
   const read = (relative: string) => fs.readFile(path.join(f.project, relative), "utf8");
-  const resolve = async (selection = enabled) => run(resolveInputs(await run(loadPolicy(f.policy, selection)), {}));
-  const plan = async (selection = enabled, options: PlanOptions = {}) => run(planProject(f.project, await resolve(selection), { scripts: createScriptPlanner("npm"), ...options }));
+  const resolve = async (selection = enabled) =>
+    run(resolveInputs(await run(loadPolicy(f.policy, selection)), {}));
+  const plan = async (selection = enabled, options: PlanOptions = {}) =>
+    run(
+      planProject(f.project, await resolve(selection), {
+        scripts: createScriptPlanner("npm"),
+        ...options,
+      }),
+    );
   const apply = async (selection = enabled, options: PlanOptions = {}) => {
     const planned = await plan(selection, options);
     assert.equal(planned.complete, true);
@@ -41,7 +54,13 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   return { ...f, put, read, resolve, plan, apply };
 }
 
-for (const original of ["echo before\n", "#!/bin/sh\r\necho before\r\n", "echo before", "", "\uFEFFecho unicode ✓\n"]) {
+for (const original of [
+  "echo before\n",
+  "#!/bin/sh\r\necho before\r\n",
+  "echo before",
+  "",
+  "\uFEFFecho unicode ✓\n",
+]) {
   test(`enable, rerun, native edit and disable preserve hook bytes: ${JSON.stringify(original)}`, async (t) => {
     const f = await setup(t);
     await f.put(hook, original);
@@ -102,10 +121,16 @@ test("current-known cleanup requires prior intent and retains shared selected re
   await f.apply({ integrations: [], automation: ["other"] }, options);
   assert.equal(await f.read(dedicated), shell);
   assert.equal(await f.read(workflow), yaml);
-  assert.equal((await f.plan(none)).files.some((file) => file.path === dedicated), false);
+  assert.equal(
+    (await f.plan(none)).files.some((file) => file.path === dedicated),
+    false,
+  );
   // Retired definitions cannot be reconstructed and leave manual cleanup, not guessed removal.
   const retired = await f.plan(none, { previous: resolved.intent, currentBundles: [] });
-  assert.equal(retired.files.some((file) => file.path === workflow), false);
+  assert.equal(
+    retired.files.some((file) => file.path === workflow),
+    false,
+  );
 });
 
 for (const destination of [workflow, dedicated]) {
@@ -115,7 +140,10 @@ for (const destination of [workflow, dedicated]) {
     await f.put(destination, "# user-owned\nname: keep\n");
     const before = await snapshot(f.project);
     await assert.rejects(f.plan(), /Unrelated content.*Move or rename/);
-    await assert.rejects(f.plan(none, { previous: resolved.intent, currentBundles: resolved.policy.bundles }), /Unrelated content/);
+    await assert.rejects(
+      f.plan(none, { previous: resolved.intent, currentBundles: resolved.policy.bundles }),
+      /Unrelated content/,
+    );
     await f.add("base", { name: "Base", migration: { removeFiles: [destination] } });
     await assert.rejects(f.plan(none), /Unrelated content/);
     assert.deepEqual(await snapshot(f.project), before);
@@ -135,7 +163,10 @@ for (const content of [
     await f.put(hook, content);
     const before = await snapshot(f.project);
     await assert.rejects(f.plan(), /Malformed or duplicate/);
-    await assert.rejects(f.plan(none, { previous: resolved.intent, currentBundles: resolved.policy.bundles }), /Malformed or duplicate/);
+    await assert.rejects(
+      f.plan(none, { previous: resolved.intent, currentBundles: resolved.policy.bundles }),
+      /Malformed or duplicate/,
+    );
     assert.deepEqual(await snapshot(f.project), before);
   });
 }
@@ -145,7 +176,10 @@ test("identifiable edited invocation is replaced with confirmation; migration re
   const outside = "#!/bin/sh\necho before\n";
   await f.put(hook, outside + "\n# BEGIN its-checks\necho edited\n# END its-checks\necho after");
   await f.apply();
-  assert.equal(await f.read(hook), outside + "\n# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks\necho after");
+  assert.equal(
+    await f.read(hook),
+    outside + "\n# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks\necho after",
+  );
   await f.add("base", { name: "Base", migration: { removeFiles: [hook, dedicated, workflow] } });
   await assert.rejects(f.plan(), /Cannot remove selected automation/);
   await f.apply(none);
@@ -167,7 +201,10 @@ test("fresh hooks are executable, matching managed files need no history, and di
   const resolved = await f.resolve();
   await f.apply();
   assert.equal((await fs.stat(path.join(f.project, hook))).mode & 0o777, 0o755);
-  assert.equal(await f.read(hook), "# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks");
+  assert.equal(
+    await f.read(hook),
+    "# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks",
+  );
   assert.ok((await f.plan()).files.every((file) => file.kind === "noop"));
   await f.apply(none, { previous: resolved.intent, currentBundles: resolved.policy.bundles });
   assert.equal(await f.read(hook), "");
@@ -176,9 +213,15 @@ test("fresh hooks are executable, matching managed files need no history, and di
 test("different selected native contributions conflict with both sources before mutation", async (t) => {
   const f = await setup(t);
   await f.add("automation/other");
-  await f.write(`typescript/automation/other/files/${workflow}`, yaml.replace("Native", "Different"));
+  await f.write(
+    `typescript/automation/other/files/${workflow}`,
+    yaml.replace("Native", "Different"),
+  );
   const before = await snapshot(f.project);
-  await assert.rejects(f.plan({ integrations: [], automation: ["ci", "other"] }), /Different dedicated automation contributions.*ci.*other/);
+  await assert.rejects(
+    f.plan({ integrations: [], automation: ["ci", "other"] }),
+    /Different dedicated automation contributions.*ci.*other/,
+  );
   assert.deepEqual(await snapshot(f.project), before);
 });
 
@@ -187,6 +230,9 @@ test("a complete automation snapshot rejects stale hook changes before applying 
   const planned = await f.plan();
   await f.put(hook, "echo appeared after planning\n");
   const before = await snapshot(f.project);
-  await assert.rejects(run(applyPlan(planned, { approved: true, dependencies: deps })), /Target changed/);
+  await assert.rejects(
+    run(applyPlan(planned, { approved: true, dependencies: deps })),
+    /Target changed/,
+  );
   assert.deepEqual(await snapshot(f.project), before);
 });

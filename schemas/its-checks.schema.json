@@ -37,7 +37,9 @@
     },
     "answers": {
       "type": "object",
-      "propertyNames": { "pattern": "^(?:base|(?:integrations|automation)/[a-z0-9]+(?:-[a-z0-9]+)*)$" },
+      "propertyNames": {
+        "pattern": "^(?:base|(?:integrations|automation)/[a-z0-9]+(?:-[a-z0-9]+)*)$"
+      },
       "additionalProperties": {
         "type": "object",
         "propertyNames": { "$ref": "#/$defs/id" },
