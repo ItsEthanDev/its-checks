@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   applyPlan,
@@ -18,9 +18,11 @@ import { resolveInputs } from "../src/inputs.ts";
 import { planProject, type ChangePlan, type PlanOptions } from "../src/planning.ts";
 import { createScriptPlanner } from "../src/scripts.ts";
 import { loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+import { defined, json, manifest as parseManifest, object } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
+const forbiddenMutation = () => Effect.die("Matching application must not mutate filesystem");
 const empty: PolicySelections = { integrations: [], automation: [] };
 const noInstall: ApplicationDependencies = {
   assess: () => Effect.succeed("not-required"),
@@ -63,10 +65,13 @@ async function mtimes(project: string) {
   const entries = await snapshot(project);
   return Object.fromEntries(
     await Promise.all(
-      Object.keys(entries).map(async (relative) => [
-        relative,
-        (await fs.stat(path.join(project, relative), { bigint: true })).mtimeNs,
-      ]),
+      Object.keys(entries).map(
+        async (relative) =>
+          [
+            relative,
+            (await fs.stat(path.join(project, relative), { bigint: true })).mtimeNs,
+          ] as const,
+      ),
     ),
   );
 }
@@ -150,7 +155,7 @@ await test("applies approved replacements/migration exactly, preserves unrelated
       assert.equal((await fs.stat(path.join(f.project, file.path))).mode & 0o777, file.after.mode);
     }
   }
-  const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
+  const manifest = parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
   assert.deepEqual(manifest.custom, { keep: [1, 2] });
   assert.equal(manifest.scripts.install, "exit 99");
   assert.equal(manifest.devDependencies.unrelated, "4");
@@ -166,12 +171,15 @@ await test("matching rerun has zero filesystem mutations and unchanged mtimes", 
   assert.ok(plan.files.every((file) => file.kind === "noop"));
   const before = await snapshot(f.project);
   const times = await mtimes(f.project);
-  const forbidden = () => Effect.die("Matching application must not mutate filesystem");
   const report = await run(
     applyPlan(plan, {
       approved: true,
       dependencies: noInstall,
-      fileSystem: { createDirectory: forbidden, writeFile: forbidden, removeFile: forbidden },
+      fileSystem: {
+        createDirectory: forbiddenMutation,
+        writeFile: forbiddenMutation,
+        removeFile: forbiddenMutation,
+      },
     }),
   );
   assert.equal(report.dependencyWork, "not-required");
@@ -193,16 +201,16 @@ await test("deselection removes identifiable contributions, retains unrelated di
   await run(applyPlan(await f.plan(selected), { approved: true, dependencies: noInstall }));
   await f.put("extra/unrelated.txt", "keep");
   const previous = await run(loadPreviousIntent(f.project));
-  assert.ok(previous);
+  assert.ok(previous !== undefined);
   const plan = await f.plan(empty, { previous, currentBundles: loaded.bundles });
   assert.equal(plan.requiresConfirmation, true);
   await run(applyPlan(plan, { approved: true, dependencies: noInstall }));
   await assert.rejects(fs.stat(path.join(f.project, "extra/config.sh")), { code: "ENOENT" });
   assert.equal(await fs.readFile(path.join(f.project, "extra/unrelated.txt"), "utf8"), "keep");
-  const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
+  const manifest = parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
   assert.equal(manifest.devDependencies.extra, undefined);
   assert.equal(manifest.devDependencies.oxlint, "1.0.0");
-  assert.doesNotMatch(manifest.scripts["its-checks:check"], /extra/);
+  assert.doesNotMatch(defined(manifest.scripts["its-checks:check"]), /extra/);
 });
 
 await test("failed deselection retains retry identity until all cleanup finishes", async (t) => {
@@ -223,7 +231,7 @@ await test("failed deselection retains retry identity until all cleanup finishes
   await f.write("typescript/base/files/.oxfmtrc.json", { printWidth: 100 });
   const replan = async () => {
     const previous = await run(loadPreviousIntent(f.project));
-    assert.ok(previous);
+    assert.ok(previous !== undefined);
     const currentBundles = (await run(loadPolicy(f.policy, previous))).bundles;
     return await f.plan(empty, { previous, currentBundles });
   };
@@ -248,20 +256,20 @@ await test("failed deselection retains retry identity until all cleanup finishes
   assert.deepEqual(approved.files, displayed);
   assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, ["extra"]);
   assert.equal(
-    JSON.parse(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8")).printWidth,
+    json(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8")).printWidth,
     100,
   );
   await run(applyPlan(await replan(), { approved: true, dependencies: noInstall }));
   await assert.rejects(fs.stat(path.join(f.project, "extra/config.sh")), { code: "ENOENT" });
   assert.equal(await fs.readFile(path.join(f.project, "extra/unrelated.txt"), "utf8"), "keep");
-  const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
+  const manifest = parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
   assert.equal(manifest.devDependencies.extra, undefined);
   assert.equal(manifest.devDependencies.oxlint, "1.0.0");
   assert.equal(manifest.devDependencies.unrelated, "2");
   assert.equal(manifest.scripts.extra, "echo original");
   assert.equal(manifest.scripts["its-checks:extra"], undefined);
   assert.equal(manifest.scripts.unrelated, "echo keep");
-  assert.doesNotMatch(manifest.scripts["its-checks:check"], /extra/);
+  assert.doesNotMatch(defined(manifest.scripts["its-checks:check"]), /extra/);
   assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
 });
 
@@ -294,7 +302,7 @@ await test("filesystem failure reports completed files, observed partial bytes/m
       },
     }),
   );
-  assert.ok(error instanceof ApplicationError);
+  assert.ok(Schema.is(ApplicationError)(error));
   assert.equal(error.phase, "filesystem");
   assert.equal(assessed, false);
   assert.deepEqual(error.report.completed, []);
@@ -305,7 +313,7 @@ await test("filesystem failure reports completed files, observed partial bytes/m
     mode: 0o600,
   });
   assert.ok(error.report.incomplete.some((operation) => operation.path === "package.json"));
-  assert.match(error.report.retry!, /fresh plan/);
+  assert.match(defined(error.report.retry), /fresh plan/);
   assert.equal(await run(loadPreviousIntent(f.project)), undefined);
   const retry = await f.plan();
   await run(applyPlan(retry, { approved: true, dependencies: noInstall }));
@@ -319,7 +327,7 @@ for (const failureAt of ["write", "publication"] as const) {
     const selected = { integrations: ["extra"], automation: [] };
     await run(applyPlan(await f.plan(selected), { approved: true, dependencies: noInstall }));
     const previous = await run(loadPreviousIntent(f.project));
-    assert.ok(previous);
+    assert.ok(previous !== undefined);
     const plan = await f.plan(empty, {
       previous,
       currentBundles: (await run(loadPolicy(f.policy, selected))).bundles,
@@ -357,7 +365,7 @@ for (const failureAt of ["write", "publication"] as const) {
     assert.deepEqual(error.report.completed, []);
     assert.deepEqual(
       error.report.observed,
-      plan.files.find((file) => file.path === selectionFilename)!.before,
+      defined(plan.files.find((file) => file.path === selectionFilename)).before,
     );
     assert.deepEqual(await snapshot(f.project), before); // No leftover staging file.
     const saved = await run(loadPreviousIntent(f.project));
@@ -384,7 +392,7 @@ await test("installation failure retains all configuration and intent; matching 
     install: (plan: ChangePlan) =>
       Effect.tryPromise({
         try: async () => {
-          assert.ok(await run(loadPreviousIntent(f.project)));
+          assert.ok((await run(loadPreviousIntent(f.project))) !== undefined);
           for (const file of plan.files) {
             if (file.after.kind === "file") {
               assert.equal(
@@ -511,8 +519,10 @@ await test("saved answers and config finish before dependency assessment fails",
               const intent = await run(loadPreviousIntent(f.project));
               assert.deepEqual(intent?.answers, { base: { stylesheet: "src/app.css" } });
               assert.equal(
-                JSON.parse(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"))
-                  .sortTailwindcss.stylesheet,
+                object(
+                  json(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"))
+                    .sortTailwindcss,
+                ).stylesheet,
                 "src/app.css",
               );
               throw Error("Cannot inspect installed state");
@@ -614,7 +624,7 @@ await test("a failed operation that already wrote intended bytes is not relabele
   assert.equal(error.report.failed?.path, ".oxfmtrc.json");
   assert.deepEqual(
     error.report.observed,
-    plan.files.find((file) => file.path === ".oxfmtrc.json")!.after,
+    defined(plan.files.find((file) => file.path === ".oxfmtrc.json")).after,
   );
   assert.ok(error.report.incomplete.some((entry) => entry.path === ".oxfmtrc.json"));
 });

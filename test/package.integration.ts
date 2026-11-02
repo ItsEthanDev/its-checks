@@ -6,6 +6,8 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
+import { defined, json, strings } from "./assertions.ts";
+
 const exec = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "..");
 
@@ -23,20 +25,19 @@ await test(
     });
     await exec("tar", ["-xzf", archive, "-C", root]);
     const packed = path.join(root, "package");
-    const manifest = JSON.parse(await fs.readFile(path.join(packed, "package.json"), "utf8"));
+    const manifest = json(await fs.readFile(path.join(packed, "package.json"), "utf8"));
+    const binEntries = strings(manifest.bin);
+    const engines = strings(manifest.engines);
+    const scripts = strings(manifest.scripts ?? {});
     assert.deepEqual(manifest.bin, { "its-checks": "bin/its-checks.js" });
     assert.match(
-      await fs.readFile(path.join(packed, manifest.bin["its-checks"]), "utf8"),
+      await fs.readFile(path.join(packed, defined(binEntries["its-checks"])), "utf8"),
       /^#!\/usr\/bin\/env node\n/,
     );
-    assert.equal(manifest.engines.bun, undefined);
-    assert.equal(manifest.engines.node, ">=22");
+    assert.equal(engines.bun, undefined);
+    assert.equal(engines.node, ">=22");
     for (const hook of ["build", "prepare", "prepack", "preinstall", "install", "postinstall"]) {
-      assert.equal(
-        manifest.scripts?.[hook],
-        undefined,
-        `Git installation must not trigger ${hook}`,
-      );
+      assert.equal(scripts[hook], undefined, `Git installation must not trigger ${hook}`);
     }
     const files = async (directory: string, prefix = ""): Promise<string[]> => {
       const result: string[] = [];

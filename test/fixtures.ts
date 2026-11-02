@@ -3,7 +3,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { TestContext } from "node:test";
 
-export async function fixture(t: TestContext) {
+interface Fixture {
+  readonly root: string;
+  readonly policy: string;
+  readonly project: string;
+  readonly write: (relative: string, content: string | object) => Promise<string>;
+  readonly add: (key: string, declaration?: object) => Promise<void>;
+}
+
+export async function fixture(t: TestContext): Promise<Fixture> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-checks-bundles-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const policy = path.join(root, "policy");

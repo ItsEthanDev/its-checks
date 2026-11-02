@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { applyPlan, ApplicationError } from "../src/application.ts";
 import { loadPolicy } from "../src/bundles.ts";
@@ -17,6 +17,7 @@ import {
 import { planProject } from "../src/planning.ts";
 import type { PackageManager } from "../src/scripts.ts";
 import { loadPreviousIntent } from "../src/selections.ts";
+import { json, object, manifest as parseManifest } from "./assertions.ts";
 
 const run = Effect.runPromise;
 const empty = { integrations: [], automation: [] };
@@ -24,6 +25,21 @@ const empty = { integrations: [], automation: [] };
 const lifecycle = `node -e 'const f=require("node:fs"); if(!f.existsSync(".oxlintrc.json"))process.exit(81); f.appendFileSync("lifecycle.log","postinstall\\n"); if(f.existsSync("fail-lifecycle"))process.exit(42)'`;
 const original = `node -e 'require("node:fs").appendFileSync("commands.log","original\\n")'`;
 const helper = `node -e 'require("node:fs").appendFileSync("commands.log","helper\\n")'`;
+
+const put = async (file: string, value: string | object) => {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(
+    file,
+    typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`,
+  );
+};
+const declaration = (archive: string | null) => ({
+  name: "Base",
+  scripts: { check: helper },
+  ...(archive !== null
+    ? { devDependencies: { "managed-dep": `file:../${archive}.tgz` } }
+    : { migration: { removeDevDependencies: ["managed-dep"] } }),
+});
 
 for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
   await test(
@@ -34,19 +50,12 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       t.after(() => fs.rm(root, { recursive: true, force: true }));
       const project = path.join(root, "project"),
         policy = path.join(root, "policy");
-      const put = async (file: string, value: string | object) => {
-        await fs.mkdir(path.dirname(file), { recursive: true });
-        await fs.writeFile(
-          file,
-          typeof value === "string" ? value : `${JSON.stringify(value, null, 2)}\n`,
-        );
-      };
       for (const [name, version, archive] of [
         ["managed-dep", "1.0.0", "one"],
         ["managed-dep", "2.0.0", "two"],
         ["unrelated-dep", "1.0.0", "keep"],
-      ]) {
-        const dir = path.join(root, archive!, "package");
+      ] as const) {
+        const dir = path.join(root, archive, "package");
         await put(path.join(dir, "package.json"), { name, version });
         const tar = await run(
           nodeManagerOperations.run(
@@ -79,13 +88,6 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
           selectionSchema: "schemas/its-checks.schema.json",
         },
       });
-      const declaration = (archive: string | null) => ({
-        name: "Base",
-        scripts: { check: helper },
-        ...(archive
-          ? { devDependencies: { "managed-dep": `file:../${archive}.tgz` } }
-          : { migration: { removeDevDependencies: ["managed-dep"] } }),
-      });
       await put(path.join(policy, "typescript/base/bundle.json"), declaration("one"));
       await put(path.join(policy, "typescript/base/files/.oxlintrc.json"), {
         rules: { "no-debugger": "error" },
@@ -108,7 +110,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         return await run(
           planProject(project, await run(resolveInputs(loaded, {})), {
             scripts: resolution.target.scripts,
-            ...(previous ? { previous } : {}),
+            ...(previous !== undefined ? { previous } : {}),
             currentBundles: loaded.bundles,
           }),
         );
@@ -116,9 +118,8 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       const apply = async () =>
         await run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
       const version = async (name = "managed-dep") =>
-        JSON.parse(
-          await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"),
-        ).version;
+        json(await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"))
+          .version;
       assert.equal(await run(adapter.assess(await plan())), "required");
       assert.equal(installs, 0);
       assert.equal((await apply()).dependencyWork, "completed");
@@ -133,7 +134,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       // A matching or reformatted configuration still delegates installation; no native-state audit.
       for (const layout of ["whitespace", "key-order"]) {
         const file = path.join(project, "package.json");
-        const manifest = JSON.parse(await fs.readFile(file, "utf8"));
+        const manifest = json(await fs.readFile(file, "utf8"));
         const bytes =
           layout === "whitespace"
             ? `${JSON.stringify(manifest, null, 4)}\n\n`
@@ -159,14 +160,14 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       assert.equal(await version(), "2.0.0");
       await put(path.join(project, "fail-lifecycle"), "");
       const manifestFile = path.join(project, "package.json");
-      const beforeFailure = JSON.parse(await fs.readFile(manifestFile, "utf8"));
+      const beforeFailure = json(await fs.readFile(manifestFile, "utf8"));
       // pnpm may skip root hooks on unchanged installs. Use an unresolvable local input
       // to test its failure path without overriding native caching or lifecycle policy.
       if (manager === "pnpm") {
         await put(manifestFile, {
           ...beforeFailure,
           devDependencies: {
-            ...beforeFailure.devDependencies,
+            ...object(beforeFailure.devDependencies),
             "missing-dep": "file:../missing.tgz",
           },
         });
@@ -184,13 +185,13 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
           }),
         ),
       );
-      assert.ok(failed instanceof ApplicationError);
+      assert.ok(Schema.is(ApplicationError)(failed));
       assert.equal(failed.phase, "dependencies");
       assert.match(failed.message, manager === "pnpm" ? /missing\.tgz/ : /42|postinstall/);
       assert.ok(failed.message.includes(`rerun ${manager} install`));
-      assert.ok(await fs.readFile(path.join(project, ".its-checks.json"), "utf8"));
+      assert.ok((await fs.readFile(path.join(project, ".its-checks.json"), "utf8")).length > 0);
       assert.equal(
-        JSON.parse(await fs.readFile(path.join(project, ".oxlintrc.json"), "utf8")).rules[
+        object(json(await fs.readFile(path.join(project, ".oxlintrc.json"), "utf8")).rules)[
           "no-debugger"
         ],
         "warn",
@@ -202,7 +203,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       assert.equal((await apply()).dependencyWork, "completed");
       await put(path.join(policy, "typescript/base/bundle.json"), declaration(null));
       await apply();
-      const removed = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
+      const removed = parseManifest(await fs.readFile(path.join(project, "package.json"), "utf8"));
       assert.equal(removed.devDependencies["managed-dep"], undefined);
       assert.equal(await version("unrelated-dep"), "1.0.0");
       // The package manager decides whether removed packages remain incidentally installed.
@@ -217,9 +218,9 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
           },
         });
         await apply();
-        const current = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"))
+        const current = parseManifest(await fs.readFile(path.join(project, "package.json"), "utf8"))
           .scripts.prepare;
-        if (wrapper) {
+        if (wrapper !== undefined) {
           assert.equal(current, wrapper);
         }
         wrapper = current;
@@ -230,7 +231,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
           "first\nsecond\n",
         );
       }
-      const final = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
+      const final = parseManifest(await fs.readFile(path.join(project, "package.json"), "utf8"));
       assert.deepEqual(final.custom, { preserved: true });
       assert.equal(final.scripts.postinstall, lifecycle);
       assert.equal(final.devDependencies["unrelated-dep"], "file:../keep.tgz");

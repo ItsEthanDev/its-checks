@@ -3,9 +3,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect, Result } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import { BundleError, discoverPolicy, loadPolicy } from "../src/bundles.ts";
+import { defined } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const none = { integrations: [], automation: [] };
@@ -13,8 +14,7 @@ const none = { integrations: [], automation: [] };
 async function failure(effect: Effect.Effect<unknown, BundleError>) {
   const result = await Effect.runPromise(Effect.result(effect));
   assert.ok(Result.isFailure(result), "expected a typed policy failure, not success");
-  assert.ok(result.failure instanceof BundleError);
-  assert.equal(result.failure._tag, "BundleError");
+  assert.ok(Schema.is(BundleError)(result.failure));
   return result.failure;
 }
 
@@ -53,20 +53,20 @@ await test("loads baseline plus selected external JSONC, shell and YAML in stabl
     ["base", "integrations/alpha", "integrations/zebra", "automation/actions", "automation/zed"],
   );
   assert.equal(loaded.declaration.source.repository, "https://github.com/example/fork");
-  assert.deepEqual(loaded.bundles[0]!.declaration.migration, {
+  assert.deepEqual(loaded.bundles[0]?.declaration.migration, {
     removeFiles: ["prettier.config.js"],
     removeDevDependencies: ["prettier"],
   });
-  const native = loaded.bundles[1]!.files[0]!;
+  const native = defined(loaded.bundles[1]?.files[0]);
   assert.equal(native.path, ".oxfmtrc.jsonc");
   assert.equal(native.content, jsonc);
   assert.equal(native.format, "jsonc");
   if (native.format === "jsonc") {
     assert.deepEqual(native.value, { sortTailwindcss: { stylesheet: "src/app.css" } });
   }
-  assert.equal(loaded.bundles[3]!.files[0]!.content, yaml);
-  assert.equal(loaded.bundles[4]!.files[0]!.content, shell);
-  assert.equal(loaded.bundles[4]!.files[0]!.executable, true);
+  assert.equal(loaded.bundles[3]?.files[0]?.content, yaml);
+  assert.equal(loaded.bundles[4]?.files[0]?.content, shell);
+  assert.equal(loaded.bundles[4]?.files[0]?.executable, true);
   assert.deepEqual(await snapshot(f.root), before, "loading cannot mutate policy or project");
 });
 
@@ -85,7 +85,7 @@ await test("new directories appear without a registry; display names are not ide
     catalog.integrations.map((b) => b.id),
     ["alpha", "middle", "zebra"],
   );
-  assert.equal(catalog.automation[0]!.key, "automation/alpha");
+  assert.equal(catalog.automation[0]?.key, "automation/alpha");
   assert.deepEqual(
     (await Effect.runPromise(loadPolicy(f.policy, none))).bundles.map((b) => b.key),
     ["base"],
@@ -142,15 +142,15 @@ await test("baseline and automation declare typed inputs and native files sort i
   const policy = await Effect.runPromise(
     loadPolicy(f.policy, { integrations: [], automation: ["custom"] }),
   );
-  assert.equal(policy.bundles[0]!.declaration.inputs![0]!.id, "level");
-  assert.equal(policy.bundles[1]!.declaration.inputs!.length, 3);
-  assert.equal(policy.bundles[1]!.declaration.devDependencies!["some-tool"], ">=1 <2");
+  assert.equal(policy.bundles[0]?.declaration.inputs?.[0]?.id, "level");
+  assert.equal(policy.bundles[1]?.declaration.inputs?.length, 3);
+  assert.equal(policy.bundles[1]?.declaration.devDependencies?.["some-tool"], ">=1 <2");
   assert.deepEqual(
-    policy.bundles[1]!.files.map((file) => file.path),
+    policy.bundles[1]?.files.map((file) => file.path),
     ["a.sh", "options.json", "z.sh"],
   );
   // Loading validates declarations but does not bind answers/defaults; that belongs to #4.
-  const options = policy.bundles[1]!.files[1]!;
+  const options = defined(policy.bundles[1]?.files[1]);
   assert.ok(options.format === "json");
   assert.deepEqual(options.value, { enabled: false, counts: [1], Enabled: true });
 });
@@ -159,7 +159,7 @@ await test("ordinary policy edits change loaded content without implementation c
   const f = await fixture(t);
   await f.write("typescript/base/files/.oxlintrc.json", { rules: { "no-debugger": "warn" } });
   const loaded = await Effect.runPromise(loadPolicy(f.policy, none));
-  const file = loaded.bundles[0]!.files[0]!;
+  const file = defined(loaded.bundles[0]?.files[0]);
   assert.ok(file.format === "json");
   assert.deepEqual(file.value, { rules: { "no-debugger": "warn" } });
 });

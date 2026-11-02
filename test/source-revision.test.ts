@@ -64,21 +64,34 @@ await test("generating commit belongs to a clean executing checkout, never an en
   );
 });
 
+const npmLock = (resolved: string) => ({
+  lockfileVersion: 3,
+  packages: {
+    "": { dependencies: { "its-checks": "github:example/fork#main" } },
+    "node_modules/its-checks": { resolved },
+    "node_modules/other": { resolved: `git+https://example.com/other.git#${"d".repeat(40)}` },
+  },
+});
+const bunLock = (request: string, resolved = "c".repeat(7)) => ({
+  lockfileVersion: 2,
+  workspaces: { "": { dependencies: { "its-checks": request } } },
+  packages: {
+    "its-checks": [
+      `its-checks@github:example/fork#${resolved}`,
+      {},
+      "example-fork-cache",
+      "sha512-fixture",
+    ],
+  },
+});
+
 await test("npm provenance uses the installed package's resolved Git commit, not its requested branch or another package", async (t) => {
   const root = await temporary(t),
     installed = path.join(root, "node_modules/its-checks");
   await put(path.join(installed, "package.json"), { name: "its-checks" });
-  const lock = (resolved: string) => ({
-    lockfileVersion: 3,
-    packages: {
-      "": { dependencies: { "its-checks": "github:example/fork#main" } },
-      "node_modules/its-checks": { resolved },
-      "node_modules/other": { resolved: `git+https://example.com/other.git#${"d".repeat(40)}` },
-    },
-  });
   await put(
     path.join(root, "package-lock.json"),
-    lock(`git+ssh://git@github.com/example/fork.git#${"b".repeat(40)}`),
+    npmLock(`git+ssh://git@github.com/example/fork.git#${"b".repeat(40)}`),
   );
   const before = await snapshot(root);
   assert.equal(await run(executingCommit(installed)), "b".repeat(40));
@@ -88,7 +101,7 @@ await test("npm provenance uses the installed package's resolved Git commit, not
     `https://registry.invalid/its-checks.tgz#${"b".repeat(40)}`,
     "git+https://github.com/example/fork.git#main",
   ]) {
-    await put(path.join(root, "package-lock.json"), lock(ref));
+    await put(path.join(root, "package-lock.json"), npmLock(ref));
     assert.equal(await run(executingCommit(installed)), undefined);
   }
   await put(path.join(root, "package-lock.json"), "{broken");
@@ -103,18 +116,6 @@ await test("Bunx abbreviated resolutions are omitted unless a full requested pin
   const root = await temporary(t),
     installed = path.join(root, "node_modules/its-checks");
   await put(path.join(installed, "package.json"), { name: "its-checks" });
-  const lock = (request: string, resolved = "c".repeat(7)) => ({
-    lockfileVersion: 2,
-    workspaces: { "": { dependencies: { "its-checks": request } } },
-    packages: {
-      "its-checks": [
-        `its-checks@github:example/fork#${resolved}`,
-        {},
-        "example-fork-cache",
-        "sha512-fixture",
-      ],
-    },
-  });
   const writeLock = (value: object) =>
     put(
       path.join(root, "bun.lock"),
@@ -123,23 +124,23 @@ await test("Bunx abbreviated resolutions are omitted unless a full requested pin
         ",\n}",
       )}\n`,
     );
-  await writeLock(lock("github:example/fork"));
+  await writeLock(bunLock("github:example/fork"));
   assert.equal(await run(executingCommit(installed)), undefined);
   for (const request of [
     `github:example/fork#${"c".repeat(40)}`,
     `git+https://github.com/example/fork.git#${"c".repeat(40)}`,
   ]) {
-    await writeLock(lock(request));
+    await writeLock(bunLock(request));
     assert.equal(await run(executingCommit(installed)), "c".repeat(40));
   }
   for (const request of [
     `github:example/fork#${"d".repeat(40)}`,
     `github:example/other#${"c".repeat(40)}`,
   ]) {
-    await writeLock(lock(request));
+    await writeLock(bunLock(request));
     assert.equal(await run(executingCommit(installed)), undefined);
   }
-  await writeLock(lock("github:example/fork#main", "e".repeat(40)));
+  await writeLock(bunLock("github:example/fork#main", "e".repeat(40)));
   assert.equal(await run(executingCommit(installed)), "e".repeat(40));
   await put(path.join(root, "package-lock.json"), {
     packages: {

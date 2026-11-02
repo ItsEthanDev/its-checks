@@ -68,7 +68,7 @@ for (const original of [
     const resolved = await f.resolve();
     const options = { previous: resolved.intent, currentBundles: resolved.policy.bundles };
     const first = await f.apply();
-    assert.equal(first.files.find((file) => file.path === hook)!.conflict, true);
+    assert.equal(first.files.find((file) => file.path === hook)?.conflict, true);
     const installed = await f.read(hook);
     assert.ok(installed.startsWith(original));
     assert.equal(installed.match(/# BEGIN its-checks/g)?.length, 1);
@@ -86,7 +86,7 @@ for (const original of [
     await f.write(`typescript/automation/ci/files/${workflow}`, changedYaml);
     await f.put(dedicated, `${shell}# project edit\n`);
     const edited = await f.plan(enabled, options);
-    assert.equal(edited.files.find((file) => file.path === dedicated)!.conflict, true);
+    assert.equal(edited.files.find((file) => file.path === dedicated)?.conflict, true);
     await run(applyPlan(edited, { approved: false, dependencies: deps }));
     assert.equal(await f.read(dedicated), `${shell}# project edit\n`);
     await run(applyPlan(edited, { approved: true, dependencies: deps }));

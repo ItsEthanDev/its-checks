@@ -11,6 +11,7 @@ import { parse } from "jsonc-parser";
 import { loadPolicy } from "../src/bundles.ts";
 import { enumerateInputs, resolveInputs } from "../src/inputs.ts";
 import { decodeSavedIntent, loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+import { defined, json } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
@@ -81,8 +82,8 @@ await test("first use enumerates every selected bundle and resolves explicit nat
     ],
   );
   const resolved = await run(resolveInputs(policy, answers));
-  const files = resolved.policy.bundles[0]!.files;
-  const native = files.find((file) => file.path === "config.jsonc")!;
+  const files = defined(resolved.policy.bundles[0]).files;
+  const native = defined(files.find((file) => file.path === "config.jsonc"));
   assert.deepEqual(parse(native.content), {
     label: "project",
     limits: [0],
@@ -91,12 +92,12 @@ await test("first use enumerates every selected bundle and resolves explicit nat
   assert.ok(native.format === "jsonc");
   assert.deepEqual(native.value, parse(native.content));
   assert.match(native.content, /preserve this comment/);
-  const automation = resolved.policy.bundles[2]!.files;
+  const automation = defined(resolved.policy.bundles[2]).files;
   assert.equal(
-    automation.find((file) => file.format === "yaml")!.content,
+    automation.find((file) => file.format === "yaml")?.content,
     'name: "${label}"\non: push\n',
   );
-  assert.equal(automation.find((file) => file.format === "shell")!.content, 'echo "${label}"\n');
+  assert.equal(automation.find((file) => file.format === "shell")?.content, 'echo "${label}"\n');
   assert.deepEqual(policy, original);
   assert.deepEqual(await snapshot(f.project), before);
   assert.equal(resolved.selectionFile.path, ".its-checks.json");
@@ -143,7 +144,10 @@ await test("offline saved intent is returned for preselection/prefill, changed a
     resolveInputs(policy, { ...answers, base: { label: "changed", limit: 8 } }),
   );
   assert.deepEqual(
-    parse(changed.policy.bundles[0]!.files.find((file) => file.path === "config.jsonc")!.content),
+    parse(
+      defined(changed.policy.bundles[0]?.files.find((file) => file.path === "config.jsonc"))
+        .content,
+    ),
     { label: "changed", limits: [8], fixed: "not a question" },
   );
   const baseline = await run(loadPolicy(f.policy, empty));
@@ -325,18 +329,20 @@ await test("JSON binding treats input IDs as own map keys and preserves target-r
   const saved = (await run(resolveInputs(policy, { base: { constructor: "src/first.css" } })))
     .intent;
   const previous = { ...saved, answers: { base: {} } };
-  assert.equal((await run(enumerateInputs(policy, previous)))[0]!.initialValue, "src/default.css");
+  assert.equal((await run(enumerateInputs(policy, previous)))[0]?.initialValue, "src/default.css");
   await assert.rejects(run(resolveInputs(policy, { base: {} })), /Missing explicit answer/);
   const resolved = await run(resolveInputs(policy, { base: { constructor: "src/new.css" } }));
-  const file = resolved.policy.bundles[0]!.files.find((file) => file.path === "config.json")!;
-  assert.deepEqual(JSON.parse(file.content), { stylesheet: "src/new.css", fixed: true });
+  const file = defined(
+    resolved.policy.bundles[0]?.files.find((candidate) => candidate.path === "config.json"),
+  );
+  assert.deepEqual(json(file.content), { stylesheet: "src/new.css", fixed: true });
   assert.deepEqual(resolved.intent.answers, { base: { constructor: "src/new.css" } });
 });
 
 await test("the editor schema accepts generated intent with optional provenance and rejects malformed intent", async (t) => {
   const f = await fixture(t);
   const generated = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
-  const schema = JSON.parse(
+  const schema = json(
     await fs.readFile(new URL("../schemas/its-checks.schema.json", import.meta.url), "utf8"),
   );
   const ajv = new Ajv2020({ formats: fullFormats });

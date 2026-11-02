@@ -12,6 +12,7 @@ import { resolveInputs } from "../src/inputs.ts";
 import { planProject } from "../src/planning.ts";
 import { createScriptPlanner } from "../src/scripts.ts";
 import { loadPreviousIntent } from "../src/selections.ts";
+import { defined, json, object, strings, manifest as parseManifest } from "./assertions.ts";
 
 const run = Effect.runPromise;
 // Fixed, test-owned native policy; operational policy/ choices are not test expectations.
@@ -54,18 +55,18 @@ await test("reference policy composes, preserves shared content, reruns, and rem
     (await run(applyPlan(initial, { approved: true, dependencies: noInstall }))).status,
     "completed",
   );
-  const manifest = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
+  const manifest = parseManifest(await fs.readFile(path.join(root, "package.json"), "utf8"));
   assert.equal(manifest.custom, true);
-  assert.match(manifest.scripts.check, /echo original/);
+  assert.match(defined(manifest.scripts.check), /echo original/);
   assert.equal(manifest.devDependencies.oxlint, "1.90.0");
   assert.equal(manifest.devDependencies["eslint-plugin-tailwindcss"], "4.4.0");
-  const lint = JSON.parse(await fs.readFile(path.join(root, ".oxlintrc.json"), "utf8"));
-  assert.equal(lint.rules["no-debugger"], "error");
-  assert.equal(lint.rules["tailwindcss/no-contradicting-classname"], "error");
+  const lint = json(await fs.readFile(path.join(root, ".oxlintrc.json"), "utf8"));
+  assert.equal(object(lint.rules)["no-debugger"], "error");
+  assert.equal(object(lint.rules)["tailwindcss/no-contradicting-classname"], "error");
   assert.deepEqual(lint.jsPlugins, ["eslint-plugin-tailwindcss"]);
-  assert.equal(lint.settings.tailwindcss.cssConfigPath, "src/theme.css");
-  const format = JSON.parse(await fs.readFile(path.join(root, ".oxfmtrc.json"), "utf8"));
-  assert.equal(format.sortTailwindcss.stylesheet, "src/theme.css");
+  assert.equal(object(object(lint.settings).tailwindcss).cssConfigPath, "src/theme.css");
+  const format = json(await fs.readFile(path.join(root, ".oxfmtrc.json"), "utf8"));
+  assert.equal(object(format.sortTailwindcss).stylesheet, "src/theme.css");
   assert.match(
     await fs.readFile(path.join(root, ".husky/pre-commit"), "utf8"),
     /^echo unrelated\n/,
@@ -93,10 +94,10 @@ await test("reference policy composes, preserves shared content, reruns, and rem
   await assert.rejects(fs.stat(path.join(root, ".github/workflows/its-checks.yml")), {
     code: "ENOENT",
   });
-  const after = JSON.parse(await fs.readFile(path.join(root, "package.json"), "utf8"));
+  const after = parseManifest(await fs.readFile(path.join(root, "package.json"), "utf8"));
   assert.equal(after.devDependencies.tailwindcss, undefined);
   assert.equal(after.scripts.postinstall, undefined);
-  assert.ok(after.devDependencies.oxfmt);
+  assert.ok(after.devDependencies.oxfmt !== undefined);
 });
 
 await test("native baseline/integration/declarations edits and a new directory reach output without installer changes", async (t) => {
@@ -118,29 +119,28 @@ await test("native baseline/integration/declarations edits and a new directory r
     const plan = await run(
       planProject(target, resolved, {
         scripts: createScriptPlanner("npm"),
-        ...(previous ? { previous } : {}),
+        ...(previous !== undefined ? { previous } : {}),
       }),
     );
     await run(applyPlan(plan, { approved: true, dependencies: noInstall }));
     return plan;
   };
   await setup();
-  const modify = async (file: string, edit: (value: any) => void) => {
-    const full = path.join(policy, file),
-      value = JSON.parse(await fs.readFile(full, "utf8"));
-    edit(value);
-    await fs.writeFile(full, JSON.stringify(value));
+  const modify = async (file: string, edit: (value: ReturnType<typeof json>) => object) => {
+    const full = path.join(policy, file);
+    const value = json(await fs.readFile(full, "utf8"));
+    await fs.writeFile(full, JSON.stringify(edit(value)));
   };
-  await modify("typescript/base/files/.oxfmtrc.json", (v) => {
-    v.semi = false;
-  });
-  await modify("typescript/base/bundle.json", (v) => {
-    v.scripts.lint = "oxlint --deny-warnings src";
-    v.devDependencies.oxlint = "1.89.0";
-  });
-  await modify("typescript/integrations/tailwind/files/.oxlintrc.json", (v) => {
-    v.rules["tailwindcss/no-arbitrary-value"] = "error";
-  });
+  await modify("typescript/base/files/.oxfmtrc.json", (v) => ({ ...v, semi: false }));
+  await modify("typescript/base/bundle.json", (v) => ({
+    ...v,
+    scripts: { ...strings(v.scripts), lint: "oxlint --deny-warnings src" },
+    devDependencies: { ...strings(v.devDependencies), oxlint: "1.89.0" },
+  }));
+  await modify("typescript/integrations/tailwind/files/.oxlintrc.json", (v) => ({
+    ...v,
+    rules: { ...object(v.rules), "tailwindcss/no-arbitrary-value": "error" },
+  }));
   await fs.writeFile(
     path.join(policy, "typescript/automation/husky/files/.husky/its-checks-pre-commit"),
     "# its-checks: managed\nnode --run lint\n",
@@ -172,16 +172,16 @@ await test("native baseline/integration/declarations edits and a new directory r
   );
   assert.equal((await setup(["tailwind", "strict"])).requiresConfirmation, true);
   const read = async (file: string) => await fs.readFile(path.join(target, file), "utf8");
-  assert.equal(JSON.parse(await read(".oxfmtrc.json")).semi, false);
+  assert.equal(json(await read(".oxfmtrc.json")).semi, false);
   assert.equal(
-    JSON.parse(await read(".oxlintrc.json")).rules["tailwindcss/no-arbitrary-value"],
+    object(json(await read(".oxlintrc.json")).rules)["tailwindcss/no-arbitrary-value"],
     "error",
   );
-  assert.equal(JSON.parse(await read(".oxlintrc.json")).rules.eqeqeq, "error");
-  const manifest = JSON.parse(await read("package.json"));
+  assert.equal(object(json(await read(".oxlintrc.json")).rules).eqeqeq, "error");
+  const manifest = parseManifest(await read("package.json"));
   assert.equal(manifest.devDependencies.oxlint, "1.89.0");
-  assert.match(manifest.scripts["its-checks:lint"], /--deny-warnings src/);
-  assert.match(manifest.scripts["its-checks:check"], /echo strict/);
+  assert.match(defined(manifest.scripts["its-checks:lint"]), /--deny-warnings src/);
+  assert.match(defined(manifest.scripts["its-checks:check"]), /echo strict/);
   assert.match(await read(".husky/its-checks-pre-commit"), /node --run lint/);
   assert.match(await read(".github/workflows/its-checks.yml"), /- run: node --run lint/);
   assert.ok((await setup(["strict", "tailwind"])).files.every((file) => file.kind === "noop"));

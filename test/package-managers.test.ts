@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { applyPlan, ApplicationError, OperationError } from "../src/application.ts";
 import { loadPolicy } from "../src/bundles.ts";
@@ -11,6 +11,7 @@ import { resolveInputs } from "../src/inputs.ts";
 import { resolveTargetManager, createDependencyAdapter } from "../src/package-managers.ts";
 import { planProject } from "../src/planning.ts";
 import type { PackageManager } from "../src/scripts.ts";
+import { defined, manifest as parseManifest } from "./assertions.ts";
 import { fixture } from "./fixtures.ts";
 
 const run = Effect.runPromise;
@@ -38,12 +39,12 @@ await test("manager evidence asks on absent, malformed, conflicting declarations
     ["yarn.lock", "yarn"],
     ["bun.lock", "bun"],
     ["bun.lockb", "bun"],
-  ]) {
+  ] as const) {
     await put(f.project, "package.json", {});
-    await put(f.project, lock!, "lock evidence only; never parsed");
+    await put(f.project, lock, "lock evidence only; never parsed");
     const resolved = await run(resolveTargetManager(f.project));
     assert.equal(resolved.kind === "resolved" && resolved.target.manager, manager);
-    await fs.unlink(path.join(f.project, lock!));
+    await fs.unlink(path.join(f.project, lock));
   }
   await put(f.project, "package.json", { packageManager: "npm@99.0.0" });
   await put(f.project, "yarn.lock", "");
@@ -60,12 +61,12 @@ await test("manager evidence asks on absent, malformed, conflicting declarations
     resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {}),
   );
   const plan = await run(planProject(f.project, resolved, { scripts: resolution.target.scripts }));
-  const state = plan.files.find((file) => file.path === "package.json")!.after;
+  const state = defined(plan.files.find((file) => file.path === "package.json")).after;
   if (state.kind !== "file") {
     throw Error("Expected manifest");
   }
   assert.equal(
-    JSON.parse(Buffer.from(state.base64, "base64").toString()).scripts.check,
+    parseManifest(Buffer.from(state.base64, "base64").toString()).scripts.check,
     "pnpm run its-checks:check",
   );
   await put(f.project, "package.json", { packageManager: "unknown@1" });
@@ -139,7 +140,7 @@ for (const manager of managers) {
     );
     assert.deepEqual(calls, [[manager, ["install"], f.project]]);
     const approved = await fs.readFile(path.join(f.project, "package.json"), "utf8");
-    const manifest = JSON.parse(approved);
+    const manifest = parseManifest(approved);
     assert.equal(manifest.custom, true);
     assert.equal(manifest.scripts.install, "exit 99");
     assert.equal(manifest.devDependencies.unrelated, "1.0.0");
@@ -170,7 +171,7 @@ for (const manager of managers) {
           }),
         ),
       );
-      assert.ok(failed instanceof ApplicationError);
+      assert.ok(Schema.is(ApplicationError)(failed));
       assert.equal(failed.phase, "dependencies");
       assert.equal(failed.report.failed?.kind, "install-dependencies");
       assert.match(
@@ -179,7 +180,7 @@ for (const manager of managers) {
       );
       assert.ok(failed.message.includes(`rerun ${manager} install`));
       assert.equal(await fs.readFile(path.join(f.project, "package.json"), "utf8"), approved);
-      assert.ok(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"));
+      assert.ok((await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).length > 0);
       assert.equal(
         await fs.readFile(path.join(f.project, "node_modules/.package-lock.json"), "utf8"),
         "native metadata",

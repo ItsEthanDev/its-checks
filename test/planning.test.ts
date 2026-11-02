@@ -13,16 +13,17 @@ import {
   readTargetSnapshot,
   type ChangePlan,
 } from "../src/planning.ts";
+import { defined, json, strings } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
 const empty: PolicySelections = { integrations: [], automation: [] };
 const output = (plan: ChangePlan, relative: string) => {
-  const file = plan.files.find((file) => file.path === relative)!;
+  const file = defined(plan.files.find((candidate) => candidate.path === relative));
   assert.equal(file.after.kind, "file");
   return Buffer.from(file.after.base64, "base64").toString("utf8");
 };
-const value = (plan: ChangePlan, relative: string) => JSON.parse(output(plan, relative));
+const value = (plan: ChangePlan, relative: string) => json(output(plan, relative));
 const changed = (plan: ChangePlan) =>
   plan.files.filter((file) => file.kind !== "noop").map((file) => [file.path, file.kind]);
 async function setup(t: Parameters<typeof fixture>[0]) {
@@ -61,7 +62,7 @@ await test("fresh package gets a complete read-only plan with exact creations, a
     devDependencies: { oxlint: "1.0.0" },
   });
   assert.deepEqual(await snapshot(f.project), before);
-  assert.equal(plan.snapshot.files["oxlint.config.ts"]!.kind, "absent");
+  assert.equal(plan.snapshot.files["oxlint.config.ts"]?.kind, "absent");
   await run(assertTargetUnchanged(plan.snapshot));
   await f.writeProject("oxlint.config.ts", "throw Error('never execute');");
   await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed since planning/);
@@ -149,10 +150,10 @@ await test("existing dedicated configuration is replaced, never inherited; match
   await f.writeProject(".oxfmtrc.json", "{   }\n\n");
   const plan = await run(planProject(f.project, await f.resolve()));
   assert.deepEqual(value(plan, ".oxlintrc.json"), { rules: { "no-debugger": "error" } });
-  assert.equal(plan.files.find((file) => file.path === ".oxlintrc.json")!.kind, "replacement");
+  assert.equal(plan.files.find((file) => file.path === ".oxlintrc.json")?.kind, "replacement");
   assert.equal(plan.requiresConfirmation, true);
   assert.equal(output(plan, ".oxfmtrc.json"), "{   }\n\n");
-  assert.equal(plan.files.find((file) => file.path === ".oxfmtrc.json")!.kind, "noop");
+  assert.equal(plan.files.find((file) => file.path === ".oxfmtrc.json")?.kind, "noop");
 });
 
 await test("explicit migration and alternate config names are proposed without executing modules or guessing cleanup", async (t) => {
@@ -181,7 +182,7 @@ await test("explicit migration and alternate config names are proposed without e
     "oxfmt.config.mjs",
     ".oxlintrc.jsonc",
   ]) {
-    const file = plan.files.find((file) => file.path === relative)!;
+    const file = defined(plan.files.find((candidate) => candidate.path === relative));
     assert.equal(file.kind, "removal");
     assert.equal(file.conflict, true);
   }
@@ -268,8 +269,8 @@ await test("deselection removes only current-known contributions and keeps requi
       currentBundles: prior.policy.bundles,
     }),
   );
-  assert.equal(plan.files.find((file) => file.path === "known.json")!.kind, "removal");
-  assert.equal(plan.files.find((file) => file.path === "shared.json")!.kind, "noop");
+  assert.equal(plan.files.find((file) => file.path === "known.json")?.kind, "removal");
+  assert.equal(plan.files.find((file) => file.path === "shared.json")?.kind, "noop");
   assert.equal(
     plan.files.some((file) => file.path === "historical-renamed.json"),
     false,
@@ -299,7 +300,7 @@ await test("migration is selected-only and cannot remove any remaining selected 
   assert.deepEqual(value(plan, "package.json"), {
     devDependencies: { shared: "1", unrelated: "2" },
   });
-  assert.equal(plan.files.find((file) => file.path === "package.json")!.kind, "noop");
+  assert.equal(plan.files.find((file) => file.path === "package.json")?.kind, "noop");
   assert.equal(
     plan.files.some((file) => file.path === "unselected-legacy.json"),
     false,
@@ -315,7 +316,7 @@ await test("dependency names that match object prototypes remain ordinary additi
   assert.equal(
     plan.packageEntries.find(
       (entry) => entry.section === "dependencies" && entry.name === "constructor",
-    )!.kind,
+    )?.kind,
     "addition",
   );
   assert.equal(plan.requiresConfirmation, false);
@@ -382,15 +383,15 @@ await test("scripts have an ordinary-manifest adapter; absent adapters defer rat
   const resolved = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
   const plan = await run(planProject(f.project, resolved));
   assert.equal(plan.complete, false);
-  assert.match(plan.deferred[0]!.path, /scripts.check/);
+  assert.match(defined(plan.deferred[0]).path, /scripts.check/);
   assert.deepEqual(value(plan, "package.json").scripts, { install: "exit 99" });
   const adapted = await run(
     planProject(f.project, resolved, {
       scripts: ({ manifest, selected, deselected }) => {
-        assert.equal(selected[0]!.declaration.scripts!.check, "oxlint .");
+        assert.equal(selected[0]?.declaration.scripts?.check, "oxlint .");
         assert.deepEqual(deselected, []);
         return Effect.succeed({
-          ...(manifest.scripts as Record<string, string>),
+          ...strings(manifest.scripts),
           placeholder: "adapter-owned result",
         });
       },
@@ -439,8 +440,8 @@ await test("malformed manifests fail with typed target diagnostics before mutati
     '{"scripts":{"check":3}}',
     '{"devDependencies":{"x":null}}',
   ]) {
-    await t.test(content, async (t) => {
-      const f = await setup(t);
+    await t.test(content, async (subtest) => {
+      const f = await setup(subtest);
       await f.writeProject("package.json", content);
       const before = await snapshot(f.project);
       await assert.rejects(run(planProject(f.project, await f.resolve())), /package.json/);
@@ -451,8 +452,8 @@ await test("malformed manifests fail with typed target diagnostics before mutati
 
 await test("target symlinks, nonregular destinations, unsafe paths and case aliases fail without traversing them", async (t) => {
   for (const relative of ["package.json", ".oxlintrc.json", "oxlint.config.ts"]) {
-    await t.test(relative, async (t) => {
-      const f = await setup(t);
+    await t.test(relative, async (subtest) => {
+      const f = await setup(subtest);
       await fs.rm(path.join(f.project, relative), { force: true });
       await fs.symlink(path.join(f.root, "outside"), path.join(f.project, relative));
       await assert.rejects(

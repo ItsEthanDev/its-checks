@@ -10,15 +10,17 @@ import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
 import { planProject, type ChangePlan, type PlanOptions } from "../src/planning.ts";
 import { createScriptPlanner, type PackageManager } from "../src/scripts.ts";
+import { defined, json, manifest as parseManifest } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
 const empty: PolicySelections = { integrations: [], automation: [] };
-function manifest(plan: ChangePlan): { scripts: Record<string, string> } {
-  const after = plan.files.find((file) => file.path === "package.json")!.after;
+function content(plan: ChangePlan): string {
+  const after = defined(plan.files.find((file) => file.path === "package.json")).after;
   assert.equal(after.kind, "file");
-  return JSON.parse(Buffer.from(after.base64, "base64").toString("utf8"));
+  return Buffer.from(after.base64, "base64").toString("utf8");
 }
+const manifest = (plan: ChangePlan) => parseManifest(content(plan));
 async function setup(t: Parameters<typeof fixture>[0]) {
   const f = await fixture(t);
   await f.add("base", { name: "TypeScript" });
@@ -73,9 +75,9 @@ process.exit(result.status ?? 90);
     );
   }
   const execute = (p: ChangePlan, name: string) =>
-    spawnSync("/bin/sh", ["-c", manifest(p).scripts[name]!], {
+    spawnSync("/bin/sh", ["-c", defined(manifest(p).scripts[name])], {
       cwd: f.project,
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}` },
       encoding: "utf8",
       timeout: 5000,
     });
@@ -112,8 +114,8 @@ await test("check and prepare compose in bundle order, deduplicate exact strings
   for (const [name, expected] of [
     ["check", "base\nz\nci\n"],
     ["prepare", "base\na\nz\nci\n"],
-  ]) {
-    const result = f.execute(p, name!);
+  ] as const) {
+    const result = f.execute(p, name);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stdout, expected);
   }
@@ -233,8 +235,8 @@ await test("an absent scripts section stays absent when there is nothing to mana
   const f = await setup(t);
   await fs.writeFile(path.join(f.project, "package.json"), '{ "name": "fixture" }\n');
   const p = await f.plan();
-  assert.equal(manifest(p).scripts, undefined);
-  assert.equal(p.files.find((file) => file.path === "package.json")!.kind, "noop");
+  assert.equal(json(content(p)).scripts, undefined);
+  assert.equal(p.files.find((file) => file.path === "package.json")?.kind, "noop");
 });
 
 await test("opaque compound originals and contributions keep POSIX shell semantics", async (t) => {
@@ -261,8 +263,7 @@ await test("opaque compound originals and contributions keep POSIX shell semanti
     "continued\n",
   ];
   const f = await setup(t);
-  for (let index = 0; index < originals.length; index++) {
-    const original = originals[index]!;
+  for (const [index, original] of originals.entries()) {
     await f.writeScripts({ check: original, untouched: "echo untouched" });
     await f.add("base", { name: "Base", scripts: { check: original } });
     await f.add("integrations/end", { name: "End", scripts: { check: "printf 'managed-end\\n'" } });
@@ -270,7 +271,10 @@ await test("opaque compound originals and contributions keep POSIX shell semanti
     await f.materialize(p);
     const result = f.execute(p, "check");
     assert.equal(result.status, 0, `${original}: ${result.stderr}`);
-    assert.equal(result.stdout, `${expected[index]! + expected[index]!}managed-end\n`);
+    assert.equal(
+      result.stdout,
+      `${defined(expected[index])}${defined(expected[index])}managed-end\n`,
+    );
     assert.equal(manifest(p).scripts.untouched, "echo untouched");
   }
 });
@@ -335,7 +339,7 @@ await test("edited helpers are normal replacement conflicts, not inferred comman
   scripts["its-checks:check"] = "echo locally edited";
   await f.writeScripts(scripts);
   const p = await f.plan();
-  const helper = p.packageEntries.find((entry) => entry.name === "its-checks:check")!;
+  const helper = defined(p.packageEntries.find((entry) => entry.name === "its-checks:check"));
   assert.equal(helper.kind, "replacement");
   assert.equal(helper.conflict, true);
   assert.equal(p.requiresConfirmation, true);
@@ -383,7 +387,7 @@ await test("all target manager runners execute and exact wrappers migrate safely
   for (const manager of ["npm", "pnpm", "yarn", "bun"] as const) {
     const p = await f.plan(selected, manager);
     assert.equal(
-      manifest(p).scripts.check!.split(" && ").at(-1),
+      defined(manifest(p).scripts.check).split(" && ").at(-1),
       `${manager} run its-checks:check`,
     );
     await f.materialize(p);

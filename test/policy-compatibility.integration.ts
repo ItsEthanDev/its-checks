@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { applyPlan } from "../src/application.ts";
 import type { PolicySelections } from "../src/bundle-types.ts";
@@ -20,6 +20,7 @@ import {
 import { planProject } from "../src/planning.ts";
 import type { ChangePlan } from "../src/planning.ts";
 import { loadPreviousIntent } from "../src/selections.ts";
+import { defined, json, object, manifest as parseManifest } from "./assertions.ts";
 
 const run = Effect.runPromise;
 const exec = promisify(execFile);
@@ -40,28 +41,37 @@ const answers = {
 // then reuse that graph's lock. No remote executable project configuration is fetched.
 async function inspectInstall(plan: ChangePlan, audit: string, project: string) {
   await fs.mkdir(audit);
-  const manifest = plan.files.find((file) => file.path === "package.json")!.after;
+  const manifest = defined(plan.files.find((file) => file.path === "package.json")).after;
   assert.equal(manifest.kind, "file");
   if (manifest.kind !== "file") {
     throw Error("Missing planned manifest");
   }
   await fs.writeFile(path.join(audit, "package.json"), Buffer.from(manifest.base64, "base64"));
   await exec("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: audit });
-  const lock = JSON.parse(await fs.readFile(path.join(audit, "package-lock.json"), "utf8"));
+  const packages = object(
+    json(await fs.readFile(path.join(audit, "package-lock.json"), "utf8")).packages,
+  );
   let count = 0;
-  for (const location of Object.keys(lock.packages)) {
-    if (!location) {
+  for (const [location, metadata] of Object.entries(packages)) {
+    if (location.length === 0) {
       continue;
     }
-    let value;
+    let value: ReturnType<typeof parseManifest>;
     try {
-      value = JSON.parse(await fs.readFile(path.join(audit, location, "package.json"), "utf8"));
+      value = parseManifest(await fs.readFile(path.join(audit, location, "package.json"), "utf8"));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT" && lock.packages[location].optional) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        error.code === "ENOENT" &&
+        object(metadata).optional === true
+      ) {
         continue;
       }
       throw error;
     }
+    assert.ok(typeof value.name === "string");
+    assert.ok(typeof value.version === "string");
     for (const name of ["preinstall", "install", "postinstall"]) {
       assert.equal(
         value.scripts?.[name],
@@ -93,7 +103,7 @@ await test(
   async (t) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-compat-"));
     t.after(() =>
-      process.env.ITS_CHECKS_KEEP_FIXTURES
+      (process.env.ITS_CHECKS_KEEP_FIXTURES ?? "").length > 0
         ? console.error(`Fixture: ${root}`)
         : fs.rm(root, { recursive: true, force: true }),
     );
@@ -102,18 +112,22 @@ await test(
     await fs.cp(referencePolicy, policy, { recursive: true });
     // Fixed policy variation: native package sorting is valid and must converge with setup.
     const formatterPolicy = path.join(policy, "typescript/base/files/.oxfmtrc.json");
-    const formatter = JSON.parse(await fs.readFile(formatterPolicy, "utf8"));
+    const formatter = { ...json(await fs.readFile(formatterPolicy, "utf8")) };
     formatter.sortPackageJson = true;
     await fs.writeFile(formatterPolicy, `${JSON.stringify(formatter, null, 2)}\n`);
     // Fixed migration variation: remove direct ESLint, not the Tailwind plugin's
     // incidental peer installation. This must also no-op when ESLint was never direct.
     const declarationPath = path.join(policy, "typescript/base/bundle.json");
-    const declaration = JSON.parse(await fs.readFile(declarationPath, "utf8"));
-    declaration.migration.removeDevDependencies.push("eslint");
+    const declaration = { ...json(await fs.readFile(declarationPath, "utf8")) };
+    const migration = object(declaration.migration);
+    const removals = Schema.decodeUnknownSync(Schema.Array(Schema.String))(
+      migration.removeDevDependencies,
+    );
+    declaration.migration = { ...migration, removeDevDependencies: [...removals, "eslint"] };
     await fs.writeFile(declarationPath, `${JSON.stringify(declaration, null, 2)}\n`);
     await fs.cp(path.resolve("test/fixtures/projects/typescript"), project, { recursive: true });
     // Inspectable original lifecycle: append a local sentinel; preserved ahead of Husky.
-    const pkg = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
+    const pkg = { ...json(await fs.readFile(path.join(project, "package.json"), "utf8")) };
     pkg.scripts = {
       postinstall: `node -e 'require("node:fs").appendFileSync("lifecycle.log","installed\\n")'`,
     };
@@ -139,13 +153,13 @@ await test(
       const previous = await run(loadPreviousIntent(project));
       const loaded = await run(loadPolicy(policy, selected));
       const resolved = await run(
-        resolveInputs(loaded, selected.integrations.length ? answers : {}),
+        resolveInputs(loaded, selected.integrations.length > 0 ? answers : {}),
       );
-      const known = previous ? (await run(loadPolicy(policy, previous))).bundles : [];
+      const known = previous !== undefined ? (await run(loadPolicy(policy, previous))).bundles : [];
       return await run(
         planProject(project, resolved, {
           scripts: resolution.target.scripts,
-          ...(previous ? { previous } : {}),
+          ...(previous !== undefined ? { previous } : {}),
           currentBundles: known,
         }),
       );
@@ -184,11 +198,7 @@ await test(
     await good("npm", ["run", "format"]);
     const formatted = await fs.readFile(path.join(project, "package.json"), "utf8");
     assert.notEqual(formatted, beforeFormat, "Oxfmt actually changed manifest layout/key order");
-    assert.deepEqual(
-      JSON.parse(formatted),
-      JSON.parse(beforeFormat),
-      "formatting preserves manifest values",
-    );
+    assert.deepEqual(json(formatted), json(beforeFormat), "formatting preserves manifest values");
     await good("npm", ["run", "lint:fix"]);
     await good("npm", ["run", "check"]);
     for (let cycle = 0; cycle < 2; cycle++) {
@@ -236,14 +246,17 @@ await test(
     );
     assert.equal(installs, 4);
     const installed = async (name: string) =>
-      JSON.parse(
-        await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"),
-      ).version;
+      json(await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"))
+        .version;
     assert.equal(await installed("tailwindcss"), "4.3.3");
     assert.equal(await installed("eslint-plugin-tailwindcss"), "4.4.0");
     assert.equal(await installed("husky"), "9.1.7");
-    assert.ok(await installed("eslint"), "Tailwind plugin's peer is installed incidentally");
-    const combinedManifest = JSON.parse(
+    const incidental = await installed("eslint");
+    assert.ok(
+      typeof incidental === "string" && incidental.length > 0,
+      "Tailwind plugin's peer is installed incidentally",
+    );
+    const combinedManifest = parseManifest(
       await fs.readFile(path.join(project, "package.json"), "utf8"),
     );
     assert.equal(combinedManifest.dependencies?.eslint, undefined);

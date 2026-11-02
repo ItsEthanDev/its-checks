@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect } from "effect";
+import { Effect, Result, Schema } from "effect";
 
 import {
   ApplicationError,
@@ -15,6 +15,7 @@ import { createDependencyAdapter } from "../src/package-managers.ts";
 import type { ChangePlan } from "../src/planning.ts";
 import type { Answer } from "../src/selections.ts";
 import { Cancelled, setup, type SetupPresentation } from "../src/workflow.ts";
+import { json, object, manifest as parseManifest } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 function dialogue(
@@ -146,7 +147,7 @@ await test("first run asks explicit categories and selected inputs; rerun presel
   );
   assert.equal(first.questions[0]?.initial, "src/app.css");
   assert.equal(
-    JSON.parse(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8")).sortTailwindcss
+    object(json(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8")).sortTailwindcss)
       .stylesheet,
     "styles/site.css",
   );
@@ -198,10 +199,11 @@ await test("one declined conflict includes current-known deselection and leaves 
   );
   assert.equal(result.status, "declined");
   assert.equal(d.confirmations, 1);
+  assert.ok(d.plan !== undefined);
   assert.ok(
-    d.plan?.files.some((x) => x.path === ".github/workflows/check.yml" && x.kind === "removal"),
+    d.plan.files.some((x) => x.path === ".github/workflows/check.yml" && x.kind === "removal"),
   );
-  assert.ok(d.plan?.packageEntries.some((x) => x.name === "example" && x.kind === "removal"));
+  assert.ok(d.plan.packageEntries.some((x) => x.name === "example" && x.kind === "removal"));
   assert.deepEqual(await snapshot(f.project), before);
 });
 
@@ -219,11 +221,11 @@ await test("accepted deselection removes only identifiable current setup and rec
       }),
     );
   }
-  const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
+  const manifest = parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
   assert.equal(manifest.devDependencies.example, undefined);
   assert.equal(manifest.scripts.install, "exit 99");
   assert.deepEqual(
-    JSON.parse(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).integrations,
+    json(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).integrations,
     [],
   );
 });
@@ -281,7 +283,7 @@ await test("source identity changes preserve prefills, decline safeguards, and d
       dependencies: () => ready,
     }),
   );
-  const saved = JSON.parse(await fs.readFile(file, "utf8"));
+  const saved = json(await fs.readFile(file, "utf8"));
   assert.equal(saved.source, "https://github.com/example/fork");
   assert.equal(saved.commit, "c".repeat(40));
   assert.equal(saved.schemaVersion, undefined);
@@ -289,7 +291,7 @@ await test("source identity changes preserve prefills, decline safeguards, and d
   assert.deepEqual(saved.automation, []);
   assert.deepEqual(saved.answers, {});
   assert.equal(
-    JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies
+    parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies
       .example,
     undefined,
   );
@@ -323,11 +325,11 @@ await test("retired saved IDs are disclosed, not passed as invalid selections; a
   );
   assert.deepEqual(d.shown[0]?.previous, []);
   assert.match(d.notes.join("\n"), /Retired saved options: integrations\/example.*manually/);
-  const saved = JSON.parse(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"));
+  const saved = json(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"));
   assert.deepEqual(saved.integrations, []);
   assert.deepEqual(saved.answers, {});
   assert.equal(
-    JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies
+    parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies
       .example,
     "1.0.0",
   );
@@ -350,7 +352,7 @@ await test("cancellation during choices, inputs, manager or confirmation is read
         dependencies: () => ready,
       }).pipe(Effect.result),
     );
-    assert.equal(result._tag, "Failure");
+    assert.ok(Result.isFailure(result));
     assert.deepEqual(await snapshot(f.project), before);
   }
 });
@@ -365,10 +367,8 @@ await test("noninteractive execution fails before any discovery/target reads or 
       presentation: d.ui,
     }).pipe(Effect.result),
   );
-  assert.equal(result._tag, "Failure");
-  if (result._tag === "Failure") {
-    assert.match(String(result.failure), /interactive terminal/);
-  }
+  assert.ok(Result.isFailure(result));
+  assert.match(String(result.failure), /interactive terminal/);
   assert.deepEqual(d.shown, []);
 });
 
@@ -416,15 +416,13 @@ await test("installation failure retains applied intent, reports incomplete work
       dependencies: () => dependencies,
     }).pipe(Effect.result),
   );
-  assert.equal(result._tag, "Failure");
-  if (result._tag === "Failure") {
-    assert.ok(result.failure instanceof ApplicationError);
-    assert.equal(result.failure.report.status, "failed");
-    assert.ok(result.failure.report.completed.some((x) => x.path === ".its-checks.json"));
-    assert.ok(result.failure.report.incomplete.some((x) => x.kind === "install-dependencies"));
-  }
+  assert.ok(Result.isFailure(result));
+  assert.ok(Schema.is(ApplicationError)(result.failure));
+  assert.equal(result.failure.report.status, "failed");
+  assert.ok(result.failure.report.completed.some((x) => x.path === ".its-checks.json"));
+  assert.ok(result.failure.report.incomplete.some((x) => x.kind === "install-dependencies"));
   assert.equal(d.completion, undefined);
-  assert.ok(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"));
+  assert.ok((await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).length > 0);
 });
 
 await test("invalid selected native policy and invalid typed answers fail before any mutation", async (t) => {
@@ -448,13 +446,11 @@ await test("invalid selected native policy and invalid typed answers fail before
         dependencies: () => ready,
       }).pipe(Effect.result),
     );
-    assert.equal(result._tag, "Failure");
-    if (result._tag === "Failure") {
-      assert.match(
-        String(result.failure),
-        invalid === "policy" ? /\.oxfmtrc\.json/ : /requires path/,
-      );
-    }
+    assert.ok(Result.isFailure(result));
+    assert.match(
+      String(result.failure),
+      invalid === "policy" ? /\.oxfmtrc\.json/ : /requires path/,
+    );
     assert.equal(d.confirmations, 0);
     assert.equal(d.completion, undefined);
     assert.deepEqual(await snapshot(f.project), before);

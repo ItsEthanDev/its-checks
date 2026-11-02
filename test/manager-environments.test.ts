@@ -28,13 +28,12 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       ".pnp.cjs": "throw new Error('must not execute');\n",
       "bunfig.toml": '[install]\nlinker = "hoisted"\n',
       "node_modules/.package-lock.json": "native metadata\n",
-      ...(manager === "npm"
-        ? { "package-lock.json": '{"lockfileVersion":2}\n' }
-        : manager === "pnpm"
-          ? { "pnpm-lock.yaml": "unrecognized native format\n" }
-          : manager === "yarn"
-            ? { "yarn.lock": "unrecognized native format\n" }
-            : { "bun.lockb": Buffer.from([0, 255, 128, 1]) }),
+      ...{
+        npm: { "package-lock.json": '{"lockfileVersion":2}\n' },
+        pnpm: { "pnpm-lock.yaml": "unrecognized native format\n" },
+        yarn: { "yarn.lock": "unrecognized native format\n" },
+        bun: { "bun.lockb": Buffer.from([0, 255, 128, 1]) },
+      }[manager],
     };
     for (const [name, bytes] of Object.entries(files)) {
       await fs.mkdir(path.dirname(path.join(f.project, name)), { recursive: true });
