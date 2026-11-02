@@ -51,7 +51,7 @@ await test(
       }
       return result.toSorted();
     };
-    const expected: string[] = ["package.json", "README.md"];
+    const expected: string[] = ["package.json", "README.md", "LICENSE"];
     for (const directory of ["bin", "src", "policy", "schemas"]) {
       for (const relative of await files(path.join(repo, directory))) {
         const file = path.join(directory, relative);
@@ -63,6 +63,10 @@ await test(
         );
       }
     }
+    assert.deepEqual(
+      await fs.readFile(path.join(packed, "LICENSE")),
+      await fs.readFile(path.join(repo, "LICENSE")),
+    );
     assert.deepEqual(
       await files(packed),
       expected.toSorted(),
