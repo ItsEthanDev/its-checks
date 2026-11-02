@@ -81,10 +81,12 @@ export function composeConfigurations(
         if (!("value" in file) || !isObject(file.value)) {
           return yield* fail("$", "Expected a native JSON/JSONC object");
         }
-        yield* mergeConfiguration(outputs[destination], file.value, {
-          lint: destination === ".oxlintrc.json",
-          source: file.source,
-        });
+        yield* mergeConfiguration(
+          outputs[destination],
+          file.value,
+          destination === ".oxlintrc.json",
+          file.source,
+        );
       }
     }
     return outputs;
@@ -94,24 +96,30 @@ export function composeConfigurations(
 function mergeConfiguration(
   output: Record<string, JsonValue>,
   fragment: JsonObject,
-  context: { lint: boolean; source: string },
+  lint: boolean,
+  source: string,
 ) {
+  const fail = (field: string, detail: string) =>
+    Effect.fail(new PlanError({ source, field, detail }));
   return Effect.gen(function* () {
-    const { lint, source } = context;
-    const fail = (field: string, detail: string) =>
-      Effect.fail(new PlanError({ source, field, detail }));
     for (const [field, value] of Object.entries(fragment)) {
-      const mode = compositionMode(field, lint);
-      if (mode === "unsupported") {
+      if (!lint && field === "extends") {
         return yield* fail(field, "Oxfmt extends is not an installer-supported field");
       }
-      if (mode === "object") {
+      if (
+        lint &&
+        ["rules", "categories", "env", "globals", "settings", "options"].includes(field)
+      ) {
         if (!isObject(value)) {
           return yield* fail(field, "Expected an object; entries compose by key as whole values");
         }
         const previous = output[field];
         output[field] = { ...(isObject(previous) ? previous : {}), ...value };
-      } else if (mode === "array") {
+      } else if (
+        field === "overrides" ||
+        field === "ignorePatterns" ||
+        (lint && ["plugins", "jsPlugins", "extends"].includes(field))
+      ) {
         if (!isArray(value)) {
           return yield* fail(field, "Expected an array");
         }
@@ -131,21 +139,4 @@ function mergeConfiguration(
     }
     return undefined;
   });
-}
-
-function compositionMode(field: string, lint: boolean) {
-  if (!lint && field === "extends") {
-    return "unsupported";
-  }
-  if (lint && ["rules", "categories", "env", "globals", "settings", "options"].includes(field)) {
-    return "object";
-  }
-  if (
-    field === "overrides" ||
-    field === "ignorePatterns" ||
-    (lint && ["plugins", "jsPlugins", "extends"].includes(field))
-  ) {
-    return "array";
-  }
-  return "atomic";
 }

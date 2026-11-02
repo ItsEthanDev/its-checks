@@ -109,7 +109,7 @@ export function prepareAutomation(
         paths,
         plan: (snapshot: TargetSnapshot) =>
           Effect.try({
-            try: () => automationChanges(snapshot, { outputs, paths, manageHook }),
+            try: () => automationChanges(snapshot, outputs, paths, manageHook),
             catch: automationError,
           }),
       };
@@ -128,7 +128,15 @@ function automationRemovals(
 ) {
   const removals = new Set<string>();
   for (const bundle of selected) {
-    addMigrationRemovals(bundle, outputs, removals);
+    for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
+      if (!isAutomationPath(relative)) {
+        continue;
+      }
+      if (outputs.has(relative) || (relative === hook && outputs.has(dedicatedHook))) {
+        throw fail(bundle.source, `Cannot remove selected automation output ${relative}`);
+      }
+      removals.add(relative);
+    }
   }
   for (const bundle of deselected) {
     for (const file of bundle.files) {
@@ -142,13 +150,10 @@ function automationRemovals(
 
 function automationChanges(
   snapshot: TargetSnapshot,
-  context: {
-    outputs: ReadonlyMap<string, NativeFile>;
-    paths: readonly string[];
-    manageHook: boolean;
-  },
+  outputs: ReadonlyMap<string, NativeFile>,
+  paths: readonly string[],
+  manageHook: boolean,
 ) {
-  const { outputs, paths, manageHook } = context;
   const changes = new Map<string, AutomationChange>();
   for (const relative of paths) {
     if (relative === hook) {
@@ -197,27 +202,6 @@ function validateAutomationFile(file: NativeFile) {
     );
   }
 }
-function addMigrationRemovals(
-  bundle: LoadedBundle,
-  outputs: ReadonlyMap<string, NativeFile>,
-  removals: Set<string>,
-) {
-  for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
-    if (!isAutomationPath(relative)) {
-      continue;
-    }
-    if (outputs.has(relative) || (relative === hook && outputs.has(dedicatedHook))) {
-      throw fail(bundle.source, `Cannot remove selected automation output ${relative}`);
-    }
-    removals.add(relative);
-  }
-}
-function hookInvocation(content: string, range: ReturnType<typeof blockRange>, enabled: boolean) {
-  const newline = content.includes("\r\n") ? "\r\n" : "\n";
-  const invocation = `${begin}${newline}sh ${dedicatedHook}${newline}${end}`;
-  return enabled ? `${range?.start === 0 || content.length === 0 ? "" : newline}${invocation}` : "";
-}
-
 function hookChange(snapshot: TargetSnapshot, enabled: boolean): AutomationChange {
   const before = snapshot.files[hook];
   if (before === undefined) {
@@ -225,7 +209,11 @@ function hookChange(snapshot: TargetSnapshot, enabled: boolean): AutomationChang
   }
   const content = text(hook, before);
   const range = blockRange(content);
-  const replacement = hookInvocation(content, range, enabled);
+  const newline = content.includes("\r\n") ? "\r\n" : "\n";
+  const invocation = `${begin}${newline}sh ${dedicatedHook}${newline}${end}`;
+  const replacement = enabled
+    ? `${range?.start === 0 || content.length === 0 ? "" : newline}${invocation}`
+    : "";
   let after = content;
   if (range !== undefined) {
     after = content.slice(0, range.start) + replacement + content.slice(range.end);

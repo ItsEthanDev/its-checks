@@ -214,9 +214,7 @@ export function applyPlan(
     for (const file of changes) {
       const currentOperation = operation(file);
       yield* applyFile(file, { root: plan.snapshot.root, fileSystem, completed, failure }).pipe(
-        Effect.catch((cause) =>
-          reportFileFailure(cause, file, { root: plan.snapshot.root, failure }),
-        ),
+        Effect.catch((cause) => reportFileFailure(cause, file, plan.snapshot.root, failure)),
       );
       completed.push(currentOperation);
       incomplete = incomplete.slice(1);
@@ -355,11 +353,12 @@ function observeFailure(root: string, failed: ApplicationOperation | undefined, 
 function reportFileFailure(
   cause: OperationError | ApplicationError | PlanError,
   file: FileChange,
-  context: Pick<FileApplication, "root" | "failure">,
+  root: string,
+  failure: Failure,
 ) {
   return Effect.gen(function* () {
     const failed = Schema.is(ApplicationError)(cause) ? cause.report.failed : operation(file);
-    const observed = yield* observeFailure(context.root, failed, file);
+    const observed = yield* observeFailure(root, failed, file);
     if (Schema.is(ApplicationError)(cause)) {
       return yield* new ApplicationError({
         phase: cause.phase,
@@ -367,6 +366,6 @@ function reportFileFailure(
         report: { ...cause.report, observed },
       });
     }
-    return yield* context.failure("filesystem", cause.message, operation(file), observed);
+    return yield* failure("filesystem", cause.message, operation(file), observed);
   });
 }

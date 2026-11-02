@@ -71,9 +71,16 @@ export function resolveTargetManager(
     }
     const manager = answer ?? (!invalid && candidates.size === 1 ? [...candidates][0] : undefined);
     if (manager === undefined) {
+      let reason = "No package-manager declaration or lockfile; choose the target manager.";
+      if (invalid) {
+        reason = "Unsupported or malformed packageManager declaration; choose the target manager.";
+      } else if (candidates.size > 0) {
+        reason =
+          "Conflicting package-manager evidence; choose the target manager (other lockfiles are preserved).";
+      }
       return {
         kind: "question",
-        reason: managerQuestion(invalid, candidates.size),
+        reason,
         evidence,
         choices: ["npm", "pnpm", "yarn", "bun"],
       };
@@ -107,17 +114,6 @@ function declarationEvidence(declaration: unknown) {
     }
   }
   return { evidence, candidates, invalid };
-}
-
-function managerQuestion(invalid: boolean, candidates: number) {
-  let reason = "No package-manager declaration or lockfile; choose the target manager.";
-  if (invalid) {
-    reason = "Unsupported or malformed packageManager declaration; choose the target manager.";
-  } else if (candidates > 0) {
-    reason =
-      "Conflicting package-manager evidence; choose the target manager (other lockfiles are preserved).";
-  }
-  return reason;
 }
 
 export interface CommandResult {

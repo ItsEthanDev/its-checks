@@ -93,13 +93,18 @@ function destination(bundle: LoadedBundle, input: InputDeclaration) {
       yield* check(
         bundle,
         field,
-        validDestinationKey(key),
+        typeof key === "number"
+          ? Number.isInteger(key) && key >= 0
+          : !["__proto__", "prototype", "constructor"].includes(key),
         `Invalid destination key in ${file.source}`,
       );
       yield* check(
         bundle,
         field,
-        hasDestinationKey(value, key),
+        value !== null &&
+          typeof value === "object" &&
+          (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
+          Object.hasOwn(value, key),
         `Destination field ${canonical(keys)} must exist with object keys/array indexes in ${file.source}`,
       );
       if (isArray(value) && typeof key === "number") {
@@ -112,19 +117,6 @@ function destination(bundle: LoadedBundle, input: InputDeclaration) {
   });
 }
 
-function validDestinationKey(key: string | number) {
-  return typeof key === "number"
-    ? Number.isInteger(key) && key >= 0
-    : !["__proto__", "prototype", "constructor"].includes(key);
-}
-function hasDestinationKey(value: JsonValue | undefined, key: string | number) {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
-    Object.hasOwn(value, key)
-  );
-}
 function overlapping(a: InputDeclaration["destination"], b: InputDeclaration["destination"]) {
   return (
     a.file === b.file &&

@@ -143,7 +143,7 @@ export function headless(
     const policyRoot = path.join(packageRoot, "policy");
     switch (command) {
       case "options":
-        if (positionals.length === 1 && withoutPlanOptions(values)) {
+        if (positionals.length === 1 && values.config === undefined && values.out === undefined) {
           return { json: values.json === true, result: yield* describeOptions(policyRoot) };
         }
         break;
@@ -159,7 +159,12 @@ export function headless(
         }
         break;
       case "apply":
-        if (positionals.length === 2 && planFile !== undefined && withoutPlanOptions(values)) {
+        if (
+          positionals.length === 2 &&
+          planFile !== undefined &&
+          values.config === undefined &&
+          values.out === undefined
+        ) {
           const report = yield* applySavedPlan(path.resolve(projectRoot, planFile), packageRoot);
           return {
             json: values.json === true,
@@ -176,10 +181,6 @@ export function headless(
       "Usage: its-checks options [--json] | plan --config <file> --out <new-file> [--json] | apply <plan-file> [--json]",
     );
   });
-}
-
-function withoutPlanOptions(values: { config?: string; out?: string }) {
-  return values.config === undefined && values.out === undefined;
 }
 
 function describeOptions(policyRoot: string) {

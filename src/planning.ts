@@ -5,7 +5,7 @@ import { Effect } from "effect";
 
 import { isAutomationPath, prepareAutomation, type AutomationChange } from "./automation.ts";
 import { json } from "./bundle-loading.ts";
-import type { JsonValue, LoadedBundle, NativeFile } from "./bundles.ts";
+import type { JsonValue, LoadedBundle } from "./bundles.ts";
 import {
   canonical,
   composeConfigurations,
@@ -113,35 +113,30 @@ function dedicatedFiles(selected: readonly LoadedBundle[], desired: Map<string, 
   return Effect.gen(function* () {
     for (const bundle of selected) {
       for (const file of bundle.files) {
-        yield* addDedicatedFile(file, bundle.key, desired);
+        if (configDestination(file.path) !== undefined || isAutomationPath(file.path)) {
+          continue;
+        }
+        if (file.path === ".its-checks.json") {
+          return yield* fail(file.source, "$", "The saved-intent destination is reserved");
+        }
+        const existing = desired.get(file.path);
+        if (
+          existing !== undefined &&
+          (existing.content !== file.content || existing.executable !== file.executable)
+        ) {
+          return yield* fail(
+            file.source,
+            "$",
+            `Different dedicated-file contributions at ${file.path}: ${existing.reasons.join(", ")} and ${bundle.key}`,
+          );
+        }
+        desired.set(file.path, {
+          content: file.content,
+          executable: file.executable,
+          reasons: [...(existing?.reasons ?? []), bundle.key],
+        });
       }
     }
-  });
-}
-function addDedicatedFile(file: NativeFile, bundleKey: string, desired: Map<string, DesiredFile>) {
-  return Effect.gen(function* () {
-    if (configDestination(file.path) !== undefined || isAutomationPath(file.path)) {
-      return undefined;
-    }
-    if (file.path === ".its-checks.json") {
-      return yield* fail(file.source, "$", "The saved-intent destination is reserved");
-    }
-    const existing = desired.get(file.path);
-    if (
-      existing !== undefined &&
-      (existing.content !== file.content || existing.executable !== file.executable)
-    ) {
-      return yield* fail(
-        file.source,
-        "$",
-        `Different dedicated-file contributions at ${file.path}: ${existing.reasons.join(", ")} and ${bundleKey}`,
-      );
-    }
-    desired.set(file.path, {
-      content: file.content,
-      executable: file.executable,
-      reasons: [...(existing?.reasons ?? []), bundleKey],
-    });
     return undefined;
   });
 }
@@ -172,7 +167,13 @@ function fileRemovals(
         remove(relative, `${bundle.key}: explicit migration`);
       }
     }
-    removeDeselectedFiles(deselected, desired, remove);
+    for (const bundle of deselected) {
+      for (const file of bundle.files) {
+        if (configDestination(file.path) === undefined && !desired.has(file.path)) {
+          remove(file.path, `${bundle.key}: current-known deselection`);
+        }
+      }
+    }
     // A selected fragment may not reintroduce an alternate executable config alongside generated JSON.
     for (const relative of removals.keys()) {
       if (desired.has(relative)) {
@@ -182,20 +183,6 @@ function fileRemovals(
     return removals;
   });
 }
-function removeDeselectedFiles(
-  deselected: readonly LoadedBundle[],
-  desired: ReadonlyMap<string, DesiredFile>,
-  remove: (relative: string, reason: string) => void,
-) {
-  for (const bundle of deselected) {
-    for (const file of bundle.files) {
-      if (configDestination(file.path) === undefined && !desired.has(file.path)) {
-        remove(file.path, `${bundle.key}: current-known deselection`);
-      }
-    }
-  }
-}
-
 type FilePlanning = {
   snapshot: TargetSnapshot;
   desired: ReadonlyMap<string, DesiredFile>;
@@ -207,7 +194,11 @@ type FilePlanning = {
 function plannedState(relative: string, before: FileState, context: FilePlanning) {
   return Effect.gen(function* () {
     const output = context.desired.get(relative);
-    const after = desiredState(relative, before, context);
+    const after =
+      context.automation.get(relative)?.after ??
+      (output !== undefined
+        ? state(output.content, before, output.executable)
+        : { kind: "absent" as const });
     if (relative === "package.json" && !context.manifestChanged) {
       return before;
     }
@@ -219,13 +210,6 @@ function plannedState(relative: string, before: FileState, context: FilePlanning
     }
     return after;
   });
-}
-function desiredState(relative: string, before: FileState, context: FilePlanning): FileState {
-  const output = context.desired.get(relative);
-  return (
-    context.automation.get(relative)?.after ??
-    (output !== undefined ? state(output.content, before, output.executable) : { kind: "absent" })
-  );
 }
 function fileKind(before: FileState, after: FileState, packageAddition: boolean): ChangeKind {
   if (equal(before, after)) {
