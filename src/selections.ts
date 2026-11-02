@@ -129,7 +129,7 @@ export function loadPreviousIntent(
             ),
       ),
     );
-    if (!exists) return undefined;
+    if (!exists) {return undefined;}
     return yield* decodeSavedIntent(yield* readText({ bundle: "selections", source }), source);
   });
 }
@@ -138,7 +138,7 @@ export function loadPreviousIntent(
 export function selectionContent(intent: SavedIntent): Effect.Effect<string, BundleError> {
   return Effect.gen(function* () {
     const content = yield* Effect.try({
-      try: () => JSON.stringify(intent, null, 2) + "\n",
+      try: () => `${JSON.stringify(intent, null, 2)  }\n`,
       catch: (cause) => context(selectionFilename, "$", String(cause)),
     });
     yield* decodeSavedIntent(content);

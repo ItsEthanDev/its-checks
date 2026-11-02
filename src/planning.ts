@@ -83,7 +83,7 @@ const fail = (source: string, field: string, detail: string) =>
 function decode(source: string, file: FileState): Effect.Effect<JsonValue, PlanError> {
   return Effect.gen(function* () {
     if (file.kind === "absent")
-      return yield* Effect.fail(fail(source, "$", "Required target file is missing"));
+      {return yield* Effect.fail(fail(source, "$", "Required target file is missing"));}
     const text = yield* Effect.try({
       try: () =>
         new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(file.base64, "base64")),
@@ -125,18 +125,18 @@ export function planProject(
       { content: string; executable: boolean; reasons: string[]; json?: JsonValue }
     >();
     for (const [relative, value] of Object.entries(configs))
-      desired.set(relative, {
+      {desired.set(relative, {
         content: jsonContent(value),
         executable: false,
         reasons: ["selected Oxc policy (replaces target configuration)"],
         json: value,
-      });
+      });}
     const deferred: DeferredChange[] = [];
     const defer = (relative: string, reason: string) => {
       deferred.push({ path: relative, reason });
     };
     for (const bundle of selected)
-      for (const file of bundle.files) {
+      {for (const file of bundle.files) {
         if (configDestination(file.path)) continue;
         if (isAutomationPath(file.path)) continue;
         if (file.path === ".its-checks.json")
@@ -161,7 +161,7 @@ export function planProject(
           executable: file.executable,
           reasons: [...(existing?.reasons ?? []), bundle.key],
         });
-      }
+      }}
     desired.set(resolved.selectionFile.path, {
       content: resolved.selectionFile.content,
       executable: false,
@@ -169,13 +169,13 @@ export function planProject(
     });
     const removals = new Map<string, string[]>();
     const remove = (relative: string, reason: string) => {
-      if (isAutomationPath(relative)) return;
+      if (isAutomationPath(relative)) {return;}
       removals.set(relative, [...(removals.get(relative) ?? []), reason]);
     };
     for (const relative of alternates)
-      remove(relative, "explicit competing Oxc configuration name");
+      {remove(relative, "explicit competing Oxc configuration name");}
     for (const bundle of selected)
-      for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
+      {for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
         if (desired.has(relative))
           return yield* Effect.fail(
             fail(
@@ -185,19 +185,19 @@ export function planProject(
             ),
           );
         remove(relative, `${bundle.key}: explicit migration`);
-      }
+      }}
     for (const bundle of deselected)
-      for (const file of bundle.files) {
+      {for (const file of bundle.files) {
         if (!configDestination(file.path) && !desired.has(file.path))
           remove(file.path, `${bundle.key}: current-known deselection`);
-      }
+      }}
     // A selected fragment may not reintroduce an alternate executable config alongside generated JSON.
     for (const relative of removals.keys())
-      if (desired.has(relative)) {
+      {if (desired.has(relative)) {
         return yield* Effect.fail(
           fail(relative, "$", "Selected output conflicts with a declared removal"),
         );
-      }
+      }}
     const automation = yield* prepareAutomation(selected, deselected);
     const snapshot = yield* readTargetSnapshot(projectRoot, [
       "package.json",
@@ -208,7 +208,7 @@ export function planProject(
     const automationChanges = yield* automation.plan(snapshot);
     const original = yield* decode("package.json", snapshot.files["package.json"]!);
     if (!isObject(original))
-      return yield* Effect.fail(fail("package.json", "$", "Expected an object"));
+      {return yield* Effect.fail(fail("package.json", "$", "Expected an object"));}
     for (const section of sections) {
       const entries = original[section];
       if (
@@ -224,7 +224,7 @@ export function planProject(
       { requirement: string; section: "dependencies" | "devDependencies"; source: string }
     >();
     for (const bundle of selected)
-      for (const section of ["dependencies", "devDependencies"] as const) {
+      {for (const section of ["dependencies", "devDependencies"] as const) {
         for (const [name, requirement] of Object.entries(bundle.declaration[section] ?? {})) {
           const source = `${bundle.key} (${bundle.declaration.name}, ${bundle.source})`;
           const earlier = required.get(name);
@@ -242,7 +242,7 @@ export function planProject(
             section: earlier?.section === "dependencies" ? "dependencies" : section,
           });
         }
-      }
+      }}
     const edits = new Map<
       string,
       { section: "dependencies" | "devDependencies"; name: string; after: string | null }
@@ -253,34 +253,34 @@ export function planProject(
       after: string | null,
     ) => edits.set(`${section}/${name}`, { section, name, after });
     for (const bundle of deselected)
-      for (const section of ["dependencies", "devDependencies"] as const) {
+      {for (const section of ["dependencies", "devDependencies"] as const) {
         for (const name of Object.keys(bundle.declaration[section] ?? {}))
           if (!required.has(name)) edit(section, name, null);
-      }
+      }}
     for (const bundle of selected)
-      for (const section of ["dependencies", "devDependencies"] as const) {
+      {for (const section of ["dependencies", "devDependencies"] as const) {
         const migration =
           section === "dependencies"
             ? bundle.declaration.migration?.removeDependencies
             : bundle.declaration.migration?.removeDevDependencies;
         for (const name of migration ?? []) if (!required.has(name)) edit(section, name, null);
-      }
+      }}
     for (const [name, entry] of required) {
       edit(entry.section, name, entry.requirement);
       edit(entry.section === "dependencies" ? "devDependencies" : "dependencies", name, null);
     }
     for (const { section, name, after } of edits.values()) {
       const entries = { ...(manifest[section] as JsonObject | undefined) };
-      if (after === null) delete entries[name];
-      else entries[name] = after;
+      if (after === null) {delete entries[name];}
+      else {entries[name] = after;}
       // Do not add an empty section just to delete an absent entry.
       if (Object.hasOwn(manifest, section) || Object.keys(entries).length)
-        manifest[section] = entries;
+        {manifest[section] = entries;}
     }
     if (options.scripts) {
       const scripts = yield* options.scripts({ manifest, selected, deselected });
       if (Object.hasOwn(manifest, "scripts") || Object.keys(scripts).length)
-        manifest.scripts = scripts;
+        {manifest.scripts = scripts;}
     } else {
       for (const name of [
         ...new Set(
@@ -336,12 +336,12 @@ export function planProject(
       let after: FileState =
         automationChange?.after ??
         (output ? state(output.content, before, output.executable) : { kind: "absent" });
-      if (relative === "package.json" && !manifestChanged) after = before;
+      if (relative === "package.json" && !manifestChanged) {after = before;}
       else if (output?.json && before.kind === "file") {
         const parsed = yield* decode(relative, before).pipe(
           Effect.catch(() => Effect.succeed(undefined)),
         );
-        if (parsed !== undefined && canonical(parsed) === canonical(output.json)) after = before;
+        if (parsed !== undefined && canonical(parsed) === canonical(output.json)) {after = before;}
       }
       const unchanged = equal(before, after);
       const fileKind: ChangeKind = unchanged

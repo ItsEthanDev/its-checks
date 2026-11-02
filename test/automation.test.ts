@@ -37,9 +37,9 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   };
   const read = (relative: string) => fs.readFile(path.join(f.project, relative), "utf8");
   const resolve = async (selection = enabled) =>
-    run(resolveInputs(await run(loadPolicy(f.policy, selection)), {}));
+    await run(resolveInputs(await run(loadPolicy(f.policy, selection)), {}));
   const plan = async (selection = enabled, options: PlanOptions = {}) =>
-    run(
+    await run(
       planProject(f.project, await resolve(selection), {
         scripts: createScriptPlanner("npm"),
         ...options,
@@ -84,11 +84,11 @@ for (const original of [
     const changedYaml = yaml.replace("Native", "Edited native");
     await f.write(`typescript/automation/local/files/${dedicated}`, changedShell);
     await f.write(`typescript/automation/ci/files/${workflow}`, changedYaml);
-    await f.put(dedicated, shell + "# project edit\n");
+    await f.put(dedicated, `${shell  }# project edit\n`);
     const edited = await f.plan(enabled, options);
     assert.equal(edited.files.find((file) => file.path === dedicated)!.conflict, true);
     await run(applyPlan(edited, { approved: false, dependencies: deps }));
-    assert.equal(await f.read(dedicated), shell + "# project edit\n");
+    assert.equal(await f.read(dedicated), `${shell  }# project edit\n`);
     await run(applyPlan(edited, { approved: true, dependencies: deps }));
     assert.equal(await f.read(dedicated), changedShell);
     assert.equal(await f.read(workflow), changedYaml);
@@ -98,11 +98,11 @@ for (const original of [
     await f.apply(enabled);
     assert.equal(await f.read(hook), installed);
     // Preserve appended unrelated bytes too, including the END line's separator.
-    await f.put(hook, installed + "\necho after");
+    await f.put(hook, `${installed  }\necho after`);
     const disable = await f.plan(none, options);
     assert.equal(disable.requiresConfirmation, true);
     await run(applyPlan(disable, { approved: true, dependencies: deps }));
-    assert.equal(await f.read(hook), original + "\necho after");
+    assert.equal(await f.read(hook), `${original  }\necho after`);
     await assert.rejects(f.read(dedicated), { code: "ENOENT" });
     await assert.rejects(f.read(workflow), { code: "ENOENT" });
     assert.equal(await f.read(".github/workflows/unrelated.yml"), "name: Unrelated\non: push\n");
@@ -174,16 +174,16 @@ for (const content of [
 test("identifiable edited invocation is replaced with confirmation; migration removes only the block", async (t) => {
   const f = await setup(t);
   const outside = "#!/bin/sh\necho before\n";
-  await f.put(hook, outside + "\n# BEGIN its-checks\necho edited\n# END its-checks\necho after");
+  await f.put(hook, `${outside  }\n# BEGIN its-checks\necho edited\n# END its-checks\necho after`);
   await f.apply();
   assert.equal(
     await f.read(hook),
-    outside + "\n# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks\necho after",
+    `${outside  }\n# BEGIN its-checks\nsh .husky/its-checks-pre-commit\n# END its-checks\necho after`,
   );
   await f.add("base", { name: "Base", migration: { removeFiles: [hook, dedicated, workflow] } });
   await assert.rejects(f.plan(), /Cannot remove selected automation/);
   await f.apply(none);
-  assert.equal(await f.read(hook), outside + "\necho after");
+  assert.equal(await f.read(hook), `${outside  }\necho after`);
   await assert.rejects(f.read(dedicated), { code: "ENOENT" });
 });
 

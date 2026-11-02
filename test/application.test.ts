@@ -29,9 +29,9 @@ const noInstall: ApplicationDependencies = {
 async function setup(t: Parameters<typeof fixture>[0]) {
   const f = await fixture(t);
   const resolve = async (selections = empty) =>
-    run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
+    await run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
   const plan = async (selections = empty, options: PlanOptions = {}) =>
-    run(
+    await run(
       planProject(f.project, await resolve(selections), {
         scripts: createScriptPlanner("npm"),
         ...options,
@@ -48,7 +48,7 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   return { ...f, plan, put };
 }
 async function failure(effect: ReturnType<typeof applyPlan>) {
-  return run(
+  return await run(
     effect.pipe(
       Effect.match({
         onFailure: (error) => error,
@@ -141,7 +141,7 @@ test("applies approved replacements/migration exactly, preserves unrelated manif
   assert.deepEqual(report.incomplete, []);
   for (const file of plan.files) {
     if (file.after.kind === "absent")
-      await assert.rejects(fs.lstat(path.join(f.project, file.path)), { code: "ENOENT" });
+      {await assert.rejects(fs.lstat(path.join(f.project, file.path)), { code: "ENOENT" });}
     else {
       assert.equal(
         (await fs.readFile(path.join(f.project, file.path))).toString("base64"),
@@ -225,7 +225,7 @@ test("failed deselection retains retry identity until all cleanup finishes", asy
     const previous = await run(loadPreviousIntent(f.project));
     assert.ok(previous);
     const currentBundles = (await run(loadPolicy(f.policy, previous))).bundles;
-    return f.plan(empty, { previous, currentBundles });
+    return await f.plan(empty, { previous, currentBundles });
   };
   const approved = await replan();
   const displayed = structuredClone(approved.files);
@@ -313,7 +313,7 @@ test("filesystem failure reports completed files, observed partial bytes/mode, s
 });
 
 for (const failureAt of ["write", "publication"] as const)
-  test(`failed selection ${failureAt} preserves retry identity and leaves no temporary files`, async (t) => {
+  {test(`failed selection ${failureAt} preserves retry identity and leaves no temporary files`, async (t) => {
     const f = await setup(t);
     await f.add("integrations/extra", { name: "Extra" });
     const selected = { integrations: ["extra"], automation: [] };
@@ -365,14 +365,14 @@ for (const failureAt of ["write", "publication"] as const)
     await run(
       applyPlan(
         await f.plan(empty, {
-          previous: saved!,
-          currentBundles: (await run(loadPolicy(f.policy, saved!))).bundles,
+          previous: saved,
+          currentBundles: (await run(loadPolicy(f.policy, saved))).bundles,
         }),
         { approved: true, dependencies: noInstall },
       ),
     );
     assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
-  });
+  });}
 
 test("installation failure retains all configuration and intent; matching rerun still requests recovery", async (t) => {
   const f = await setup(t);
@@ -385,13 +385,13 @@ test("installation failure retains all configuration and intent; matching rerun 
         try: async () => {
           assert.ok(await run(loadPreviousIntent(f.project)));
           for (const file of plan.files)
-            if (file.after.kind === "file")
+            {if (file.after.kind === "file")
               assert.equal(
                 (await fs.readFile(path.join(f.project, file.path))).toString("base64"),
                 file.after.base64,
-              );
+              );}
           attempts++;
-          if (attempts === 1) throw Error("install failed, lockfile may be partial");
+          if (attempts === 1) {throw Error("install failed, lockfile may be partial");}
           installed = true;
         },
         catch: (cause) => new OperationError({ detail: String(cause) }),

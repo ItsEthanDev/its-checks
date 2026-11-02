@@ -62,12 +62,12 @@ function validateAnswer(
       `Input ${input.id} requires ${input.type}`,
     );
     if (input.type === "path")
-      yield* check(
+      {yield* check(
         bundle,
         field,
         typeof value === "string" && safePath(value),
         `Input ${input.id} requires a safe target-package-relative POSIX path; existence is not required`,
-      );
+      );}
   });
 }
 
@@ -137,12 +137,12 @@ export function enumerateInputs(
         const saved = answerAt(previous?.answers, bundle.key, input.id);
         const initialValue = saved ?? input.default;
         if (initialValue !== undefined)
-          yield* validateAnswer(
+          {yield* validateAnswer(
             bundle,
             input,
             initialValue,
             `${saved !== undefined ? "saved answers" : "defaults"}.${bundle.key}.${input.id}`,
-          );
+          );}
         result.push({
           bundle: bundle.key,
           source: bundle.source,
@@ -156,11 +156,11 @@ export function enumerateInputs(
 }
 
 function bind(file: NativeFile, input: InputDeclaration, answer: Answer): NativeFile {
-  if (file.format !== "json" && file.format !== "jsonc") return file;
+  if (file.format !== "json" && file.format !== "jsonc") {return file;}
   const value = structuredClone(file.value);
   let parent = value as Record<string | number, JsonValue>;
   const keys = input.destination.field;
-  for (const key of keys.slice(0, -1)) parent = parent[key] as Record<string | number, JsonValue>;
+  for (const key of keys.slice(0, -1)) {parent = parent[key] as Record<string | number, JsonValue>;}
   parent[keys.at(-1)!] = answer;
   const content = applyEdits(
     file.content,
@@ -213,13 +213,13 @@ export function resolveInputs(
       const bundle = policy.bundles.find((bundle) => bundle.key === entry.bundle)!;
       const value = answerAt(answers, entry.bundle, entry.input.id);
       if (value === undefined)
-        return yield* Effect.fail(
+        {return yield* Effect.fail(
           error(
             bundle,
             `answers.${entry.bundle}.${entry.input.id}`,
             "Missing explicit answer; show the input dialogue even when a saved value/default exists",
           ),
-        );
+        );}
       yield* validateAnswer(
         bundle,
         entry.input,
@@ -235,7 +235,7 @@ export function resolveInputs(
             let bound = file;
             for (const input of bundle.declaration.inputs ?? []) {
               if (input.destination.file === file.path)
-                bound = bind(bound, input, answers[bundle.key]![input.id]!);
+                {bound = bind(bound, input, answers[bundle.key]![input.id]!);}
             }
             return bound;
           }),
@@ -251,7 +251,7 @@ export function resolveInputs(
     // Rebuild the answer map from declarations: no empty namespaces or stale input history.
     const intendedAnswers: Record<string, Record<string, Answer>> = {};
     for (const { bundle, input } of declared)
-      (intendedAnswers[bundle] ??= {})[input.id] = answers[bundle]![input.id]!;
+      {(intendedAnswers[bundle] ??= {})[input.id] = answers[bundle]![input.id]!;}
     const selected = (kind: "integration" | "automation") =>
       policy.bundles.filter((bundle) => bundle.kind === kind).map((bundle) => bundle.id);
     const intent: SavedIntent = {

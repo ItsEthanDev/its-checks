@@ -50,15 +50,15 @@ test("manager evidence asks on absent, malformed, conflicting declarations/locks
   let resolution = await run(resolveTargetManager(f.project));
   assert.equal(resolution.kind, "question");
   if (resolution.kind === "question")
-    assert.deepEqual(resolution.evidence, ["packageManager: npm@99.0.0", "yarn.lock"]);
+    {assert.deepEqual(resolution.evidence, ["packageManager: npm@99.0.0", "yarn.lock"]);}
   resolution = await run(resolveTargetManager(f.project, "pnpm"));
-  if (resolution.kind !== "resolved") throw Error("Expected explicit answer");
+  if (resolution.kind !== "resolved") {throw Error("Expected explicit answer");}
   const resolved = await run(
     resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {}),
   );
   const plan = await run(planProject(f.project, resolved, { scripts: resolution.target.scripts }));
   const state = plan.files.find((file) => file.path === "package.json")!.after;
-  if (state.kind !== "file") throw Error("Expected manifest");
+  if (state.kind !== "file") {throw Error("Expected manifest");}
   assert.equal(
     JSON.parse(Buffer.from(state.base64, "base64").toString()).scripts.check,
     "pnpm run its-checks:check",
@@ -73,7 +73,7 @@ test("manager evidence asks on absent, malformed, conflicting declarations/locks
 });
 
 for (const manager of managers)
-  test(`${manager}: normal install preserves approved intent, reruns, reports failures and retries without repairing native state`, async (t) => {
+  {test(`${manager}: normal install preserves approved intent, reruns, reports failures and retries without repairing native state`, async (t) => {
     const f = await fixture(t);
     await put(f.project, "package.json", {
       name: "app",
@@ -86,7 +86,7 @@ for (const manager of managers)
     const resolution = await run(resolveTargetManager(f.project));
     if (resolution.kind !== "resolved") throw Error("Expected manager");
     const plan = async () =>
-      run(
+      await run(
         planProject(
           f.project,
           await run(
@@ -218,4 +218,4 @@ for (const manager of managers)
       ),
       /another package root/,
     );
-  });
+  });}

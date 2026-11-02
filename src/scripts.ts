@@ -17,7 +17,7 @@ const group = (command: string) => `(\n${command}\n\n)`;
 function recognize(command: string, helper: string): { original?: string } | undefined {
   for (const manager of managers) {
     const invocation = runner(manager, helper);
-    if (command === invocation) return {};
+    if (command === invocation) {return {};}
     const end = `\n\n) && ${invocation}`;
     if (command.startsWith("(\n") && command.endsWith(end)) {
       return { original: command.slice(2, -end.length) };
@@ -44,7 +44,7 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
       );
       for (const bundle of selected) {
         for (const [name, command] of Object.entries(bundle.declaration.scripts ?? {})) {
-          if (typeof command !== "string") continue;
+          if (typeof command !== "string") {continue;}
           const owners = contributions.get(name) ?? new Map<string, Contribution>();
           owners.set(bundle.key, { command });
           contributions.set(name, owners);
@@ -52,14 +52,14 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
       }
       for (const bundle of selected) {
         for (const [name, replacement] of Object.entries(bundle.declaration.scripts ?? {})) {
-          if (typeof replacement === "string") continue;
+          if (typeof replacement === "string") {continue;}
           const target = contributions.get(name)?.get(replacement.replaces);
           const fail = (detail: string) =>
             Effect.fail(new PlanError({ source: bundle.source, field: `scripts.${name}`, detail }));
           if (!target)
-            return yield* fail(
+            {return yield* fail(
               `Replacement target ${replacement.replaces} does not supply an ordinary command for this script in the selected bundles.`,
-            );
+            );}
           if (target.replacementSource && target.command !== replacement.command) {
             return yield* fail(
               `Conflicting replacement for ${replacement.replaces}; another replacement is declared in ${target.replacementSource}.`,
@@ -90,7 +90,7 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
           const commands = [...new Set([...owners.values()].map(({ command }) => command))];
           const original = wrapper ? wrapper.original : command;
           if (original?.includes("\0"))
-            return yield* conflict("POSIX shell commands cannot contain NUL");
+            {return yield* conflict("POSIX shell commands cannot contain NUL");}
           scripts[helper] = commands.map(group).join(" && ");
           scripts[name] =
             original === undefined
@@ -98,8 +98,8 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
               : `${group(original)} && ${runner(manager, helper)}`;
         } else if (wrapper) {
           delete scripts[helper];
-          if (wrapper.original === undefined) delete scripts[name];
-          else scripts[name] = wrapper.original;
+          if (wrapper.original === undefined) {delete scripts[name];}
+          else {scripts[name] = wrapper.original;}
         }
       }
       return scripts;

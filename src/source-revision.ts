@@ -11,11 +11,11 @@ import { commitPattern } from "./selections.ts";
 const exec = promisify(execFile);
 const read = (file: string) =>
   fs.readFile(file, "utf8").catch((cause: NodeJS.ErrnoException) => {
-    if (cause.code === "ENOENT") return undefined;
+    if (cause.code === "ENOENT") {return undefined;}
     throw cause;
   });
 const gitCommit = (ref: unknown): string | undefined => {
-  if (typeof ref !== "string" || !/^(?:github:|git\+)/.test(ref)) return undefined;
+  if (typeof ref !== "string" || !/^(?:github:|git\+)/.test(ref)) {return undefined;}
   const hash = ref.slice(ref.lastIndexOf("#") + 1);
   return commitPattern.test(hash) ? hash : undefined;
 };
@@ -37,7 +37,7 @@ export function executingCommit(packageRoot: string): Effect.Effect<string | und
       const gitDirectory = await fs
         .lstat(path.join(root, ".git"))
         .catch((cause: NodeJS.ErrnoException) => {
-          if (cause.code === "ENOENT") return undefined;
+          if (cause.code === "ENOENT") {return undefined;}
           throw cause;
         });
       if (gitDirectory) {
@@ -50,34 +50,34 @@ export function executingCommit(packageRoot: string): Effect.Effect<string | und
         const git = async (args: string[]) =>
           (await exec("git", ["-C", root, ...args], { env, timeout: 5000 })).stdout.trim();
         if ((await fs.realpath(await git(["rev-parse", "--show-toplevel"]))) !== root)
-          return undefined;
-        if (await git(["status", "--porcelain", "--untracked-files=all"])) return undefined;
+          {return undefined;}
+        if (await git(["status", "--porcelain", "--untracked-files=all"])) {return undefined;}
         const hash = await git(["rev-parse", "HEAD"]);
         return commitPattern.test(hash) ? hash : undefined;
       }
       // npm/npx and Bunx place the unscoped CLI directly in this node_modules.
       // Do not search arbitrary ancestors, where a target's Git/lock state could live.
-      if (path.basename(path.dirname(root)) !== "node_modules") return undefined;
+      if (path.basename(path.dirname(root)) !== "node_modules") {return undefined;}
       const cache = path.dirname(path.dirname(root));
       const [npm, bun] = await Promise.all([
         read(path.join(cache, "package-lock.json")),
         read(path.join(cache, "bun.lock")),
       ]);
-      if (npm !== undefined && bun !== undefined) return undefined;
+      if (npm !== undefined && bun !== undefined) {return undefined;}
       if (npm !== undefined)
-        return gitCommit(
+        {return gitCommit(
           JSON.parse(npm).packages?.[`node_modules/${path.basename(root)}`]?.resolved,
-        );
-      if (bun === undefined) return undefined;
+        );}
+      if (bun === undefined) {return undefined;}
       const errors: ParseError[] = [];
       const lock = parse(bun, errors, { allowTrailingComma: true });
-      if (errors.length) return undefined;
+      if (errors.length) {return undefined;}
       const name = path.basename(root),
         entry = lock?.packages?.[name]?.[0];
-      if (typeof entry !== "string" || !entry.startsWith(`${name}@`)) return undefined;
+      if (typeof entry !== "string" || !entry.startsWith(`${name}@`)) {return undefined;}
       const resolved = entry.slice(name.length + 1),
         full = gitCommit(resolved);
-      if (full) return full;
+      if (full) {return full;}
       // Bun 1.4 GitHub resolutions contain only an abbreviated hash. A full
       // requested pin is usable only when origin and resolved prefix agree.
       const request = lock.workspaces?.[""]?.dependencies?.[name],

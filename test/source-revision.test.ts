@@ -85,7 +85,7 @@ test("npm provenance uses the installed package's resolved Git commit, not its r
   assert.deepEqual(await snapshot(root), before, "provenance lookup is read-only");
   for (const ref of [
     "file:../its-checks.tgz",
-    "https://registry.invalid/its-checks.tgz#" + "b".repeat(40),
+    `https://registry.invalid/its-checks.tgz#${  "b".repeat(40)}`,
     "git+https://github.com/example/fork.git#main",
   ]) {
     await put(path.join(root, "package-lock.json"), lock(ref));
@@ -118,9 +118,9 @@ test("Bunx abbreviated resolutions are omitted unless a full requested pin match
   const writeLock = (value: object) =>
     put(
       path.join(root, "bun.lock"),
-      "// Native Bun JSONC includes trailing commas\n" +
-        JSON.stringify(value, null, 2).replace(/\n}$/, ",\n}") +
-        "\n",
+      `// Native Bun JSONC includes trailing commas\n${ 
+        JSON.stringify(value, null, 2).replace(/\n}$/, ",\n}") 
+        }\n`,
     );
   await writeLock(lock("github:example/fork"));
   assert.equal(await run(executingCommit(installed)), undefined);

@@ -23,40 +23,40 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   const f = await fixture(t);
   await f.add("base", { name: "TypeScript" });
   const resolve = async (selections = empty) =>
-    run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
+    await run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
   const plan = async (
     selections = empty,
     manager: PackageManager = "npm",
     options: PlanOptions = {},
   ) =>
-    run(
+    await run(
       planProject(f.project, await resolve(selections), {
         ...options,
         scripts: createScriptPlanner(manager),
       }),
     );
   const writeScripts = async (scripts: Record<string, string>) =>
-    fs.writeFile(
+    await fs.writeFile(
       path.join(f.project, "package.json"),
       JSON.stringify({ name: "fixture", scripts }),
     );
   // Test-only materialization of planned bytes, not a production application adapter.
   const materialize = async (p: ChangePlan) => {
     for (const file of p.files)
-      if (file.after.kind === "file") {
+      {if (file.after.kind === "file") {
         await fs.mkdir(path.dirname(path.join(f.project, file.path)), { recursive: true });
         await fs.writeFile(
           path.join(f.project, file.path),
           Buffer.from(file.after.base64, "base64"),
         );
-      }
+      }}
   };
   const bin = path.join(f.root, "fake-managers");
   await fs.mkdir(bin);
   // Fake package runners ONLY: real /bin/sh execution, no installs or PM lifecycle behavior.
   // In particular, the shared fixture's "install": "exit 99" is never invoked.
   for (const manager of ["npm", "pnpm", "yarn", "bun"])
-    await fs.writeFile(
+    {await fs.writeFile(
       path.join(bin, manager),
       `#!${process.execPath}
 const fs = require('node:fs');
@@ -69,7 +69,7 @@ const result = spawnSync('/bin/sh', ['-c', command], { stdio: 'inherit' });
 process.exit(result.status ?? 90);
 `,
       { mode: 0o755 },
-    );
+    );}
   const execute = (p: ChangePlan, name: string) =>
     spawnSync("/bin/sh", ["-c", manifest(p).scripts[name]!], {
       cwd: f.project,
@@ -215,10 +215,10 @@ test("identical replacements coalesce and can target an integration contribution
   await f.add("base", { name: "Base", scripts: { check: "printf 'base\\n'" } });
   await f.add("integrations/a", { name: "A", scripts: { check: "printf 'extra\\n'" } });
   for (const id of ["b", "c"])
-    await f.add(`integrations/${id}`, {
+    {await f.add(`integrations/${id}`, {
       name: id,
       scripts: { check: { command: "printf 'replacement\\n'", replaces: "integrations/a" } },
-    });
+    });}
   const p = await f.plan({ integrations: ["c", "a", "b"], automation: [] });
   await f.materialize(p);
   const result = f.execute(p, "check");
@@ -267,7 +267,7 @@ test("opaque compound originals and contributions keep POSIX shell semantics", a
     await f.materialize(p);
     const result = f.execute(p, "check");
     assert.equal(result.status, 0, `${original}: ${result.stderr}`);
-    assert.equal(result.stdout, expected[index]! + expected[index]! + "managed-end\n");
+    assert.equal(result.stdout, `${expected[index]! + expected[index]!  }managed-end\n`);
     assert.equal(manifest(p).scripts.untouched, "echo untouched");
   }
 });

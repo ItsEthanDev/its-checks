@@ -26,7 +26,7 @@ const original = `node -e 'require("node:fs").appendFileSync("commands.log","ori
 const helper = `node -e 'require("node:fs").appendFileSync("commands.log","helper\\n")'`;
 
 for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
-  test(
+  {test(
     `${manager}: real install/update/remove/rerun/failure/retry/lifecycle/wrappers`,
     { timeout: 120_000 },
     async (t) => {
@@ -101,7 +101,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
       const plan = async () => {
         const previous = await run(loadPreviousIntent(project));
         const loaded = await run(loadPolicy(policy, empty));
-        return run(
+        return await run(
           planProject(project, await run(resolveInputs(loaded, {})), {
             scripts: resolution.target.scripts,
             ...(previous ? { previous } : {}),
@@ -110,7 +110,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
         );
       };
       const apply = async () =>
-        run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
+        await run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
       const version = async (name = "managed-dep") =>
         JSON.parse(
           await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"),
@@ -226,4 +226,4 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
       assert.equal(final.devDependencies["unrelated-dep"], "file:../keep.tgz");
       assert.equal(installs, 9);
     },
-  );
+  );}

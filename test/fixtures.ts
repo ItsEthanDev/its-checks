@@ -48,11 +48,11 @@ export async function snapshot(directory: string): Promise<Record<string, string
     for (const name of (await fs.readdir(path.join(directory, relative))).sort()) {
       const key = path.join(relative, name);
       const stat = await fs.lstat(path.join(directory, key));
-      if (stat.isDirectory()) await walk(key);
+      if (stat.isDirectory()) {await walk(key);}
       else
-        result[key] = stat.isSymbolicLink()
+        {result[key] = stat.isSymbolicLink()
           ? `link:${await fs.readlink(path.join(directory, key))}`
-          : await fs.readFile(path.join(directory, key), "utf8");
+          : await fs.readFile(path.join(directory, key), "utf8");}
     }
   }
   await walk("");

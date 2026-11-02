@@ -16,7 +16,7 @@ import { fixture } from "./fixtures.ts";
 const run = Effect.runPromise;
 
 for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
-  test(`${manager}: project version, lockfile, linker and lifecycle settings belong to the manager`, async (t) => {
+  {test(`${manager}: project version, lockfile, linker and lifecycle settings belong to the manager`, async (t) => {
     const f = await fixture(t);
     await fs.writeFile(
       path.join(f.project, "package.json"),
@@ -68,4 +68,4 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[])
     assert.equal(calls, 1);
     for (const [name, bytes] of Object.entries(files))
       assert.deepEqual(await fs.readFile(path.join(f.project, name)), Buffer.from(bytes));
-  });
+  });}

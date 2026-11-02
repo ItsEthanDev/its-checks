@@ -39,7 +39,7 @@ const state = (content: string, before: FileState, executable = false): FileStat
 function blockRange(content: string): { start: number; end: number } | undefined {
   const lines = [...content.matchAll(/[^\n]*(?:\n|$)/g)].filter((line) => line[0].length);
   const markers = lines.filter((line) => line[0].includes(begin) || line[0].includes(end));
-  if (!markers.length) return;
+  if (!markers.length) {return;}
   if (
     markers.length !== 2 ||
     markers[0]![0].replace(/\r?\n$/, "") !== begin ||
@@ -50,11 +50,11 @@ function blockRange(content: string): { start: number; end: number } | undefined
       "Malformed or duplicate its-checks block; restore exactly one ordered BEGIN/END pair on separate lines, or remove the delimiters manually and retry",
     );
   }
-  let start = markers[0]!.index!;
+  let start = markers[0]!.index;
   // The invocation block owns one preceding line separator, not any surrounding command bytes.
-  if (start > 0) start -= content.slice(0, start).endsWith("\r\n") ? 2 : 1;
+  if (start > 0) {start -= content.slice(0, start).endsWith("\r\n") ? 2 : 1;}
   const last = markers[1]!;
-  return { start, end: last.index! + last[0].replace(/\r?\n$/, "").length };
+  return { start, end: last.index + last[0].replace(/\r?\n$/, "").length };
 }
 export interface AutomationChange {
   readonly after: FileState;
@@ -71,7 +71,7 @@ export function prepareAutomation(
       const outputs = new Map<string, NativeFile>();
       const removals = new Set<string>();
       for (const bundle of selected)
-        for (const file of bundle.files.filter((file) => isAutomationPath(file.path))) {
+        {for (const file of bundle.files.filter((file) => isAutomationPath(file.path))) {
           if (file.path.startsWith(".husky/") && file.path !== dedicatedHook) {
             throw fail(
               file.source,
@@ -91,19 +91,19 @@ export function prepareAutomation(
             );
           }
           outputs.set(file.path, file);
-        }
+        }}
       for (const bundle of selected)
-        for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
+        {for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
           if (!isAutomationPath(relative)) continue;
           if (outputs.has(relative) || (relative === hook && outputs.has(dedicatedHook))) {
             throw fail(bundle.source, `Cannot remove selected automation output ${relative}`);
           }
           removals.add(relative);
-        }
+        }}
       for (const bundle of deselected)
-        for (const file of bundle.files) {
+        {for (const file of bundle.files) {
           if (isAutomationPath(file.path) && !outputs.has(file.path)) removals.add(file.path);
-        }
+        }}
       const manageHook =
         outputs.has(dedicatedHook) || removals.has(dedicatedHook) || removals.has(hook);
       const paths = [...new Set([...outputs.keys(), ...removals, ...(manageHook ? [hook] : [])])];
@@ -114,7 +114,7 @@ export function prepareAutomation(
             try: () => {
               const changes = new Map<string, AutomationChange>();
               for (const relative of paths) {
-                if (relative === hook) continue;
+                if (relative === hook) {continue;}
                 const before = snapshot.files[relative]!;
                 if (before.kind === "file" && !owned(text(relative, before))) {
                   throw fail(

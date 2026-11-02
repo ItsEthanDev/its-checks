@@ -53,12 +53,12 @@ export interface SetupOptions {
 export function setup(options: SetupOptions) {
   return Effect.gen(function* () {
     if (!options.interactive)
-      return yield* Effect.fail(
+      {return yield* Effect.fail(
         new OperationError({
           detail:
             "its-checks requires an interactive terminal (stdin and stdout). Run it directly from the target package in a terminal; unattended flags are not supported.",
         }),
-      );
+      );}
     const ui = options.presentation;
     const previous = yield* loadPreviousIntent(options.projectRoot);
     const catalog = yield* discoverPolicy(options.policyRoot);
@@ -73,11 +73,11 @@ export function setup(options: SetupOptions) {
         .map((id) => `${category}/${id}`),
     );
     if (retired.length)
-      yield* Effect.sync(() =>
+      {yield* Effect.sync(() =>
         ui.note(
           `Retired saved options: ${retired.join(", ")}. They cannot be selected; their answers will be dropped when saving. Historical setup cannot be identified: inspect and clean it up manually.`,
         ),
-      );
+      );}
     const integrations = yield* ui.choices(
       "integrations",
       catalog.integrations,
@@ -93,11 +93,11 @@ export function setup(options: SetupOptions) {
     const resolved = yield* resolveInputs(policy, answers, options.commit);
     let manager = yield* resolveTargetManager(options.projectRoot);
     if (manager.kind === "question")
-      manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));
+      {manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));}
     if (manager.kind !== "resolved")
-      return yield* Effect.fail(
+      {return yield* Effect.fail(
         new OperationError({ detail: "Choose a supported target package manager and retry." }),
-      );
+      );}
     // Current definitions of old selections identify deselection, never a historical inventory.
     const current = yield* loadPolicy(options.policyRoot, prior);
     const plan = yield* planProject(options.projectRoot, resolved, {
@@ -109,7 +109,7 @@ export function setup(options: SetupOptions) {
     // Preview installation work without invoking the package manager.
     const preview = yield* dependencies.assess(plan);
     yield* Effect.sync(() => ui.plan(plan, preview));
-    if (plan.requiresConfirmation && !(yield* ui.confirm())) return { status: "declined" as const };
+    if (plan.requiresConfirmation && !(yield* ui.confirm())) {return { status: "declined" as const };}
     yield* Effect.sync(() =>
       ui.progress("Applying approved configuration, then installing dependencies…"),
     );

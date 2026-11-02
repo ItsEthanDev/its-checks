@@ -207,7 +207,7 @@ test("accepted deselection removes only identifiable current setup and records n
   const f = await fixture(t);
   await inputPolicy(f);
   for (const integrations of [["example"], []])
-    await Effect.runPromise(
+    {await Effect.runPromise(
       setup({
         interactive: true,
         projectRoot: f.project,
@@ -215,7 +215,7 @@ test("accepted deselection removes only identifiable current setup and records n
         presentation: dialogue({ integrations }).ui,
         dependencies: () => ready,
       }),
-    );
+    );}
   const manifest = JSON.parse(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
   assert.equal(manifest.devDependencies.example, undefined);
   assert.equal(manifest.scripts.install, "exit 99");
@@ -363,7 +363,7 @@ test("noninteractive execution fails before any discovery/target reads or questi
     }).pipe(Effect.result),
   );
   assert.equal(result._tag, "Failure");
-  if (result._tag === "Failure") assert.match(String(result.failure), /interactive terminal/);
+  if (result._tag === "Failure") {assert.match(String(result.failure), /interactive terminal/);}
   assert.deepEqual(d.shown, []);
 });
 
@@ -427,7 +427,7 @@ test("invalid selected native policy and invalid typed answers fail before any m
     const f = await fixture(t);
     await inputPolicy(f);
     if (invalid === "policy")
-      await f.write("typescript/integrations/example/files/.oxfmtrc.json", "{broken");
+      {await f.write("typescript/integrations/example/files/.oxfmtrc.json", "{broken");}
     const before = await snapshot(f.project);
     const d = dialogue({
       integrations: ["example"],
@@ -444,10 +444,10 @@ test("invalid selected native policy and invalid typed answers fail before any m
     );
     assert.equal(result._tag, "Failure");
     if (result._tag === "Failure")
-      assert.match(
+      {assert.match(
         String(result.failure),
         invalid === "policy" ? /\.oxfmtrc\.json/ : /requires path/,
-      );
+      );}
     assert.equal(d.confirmations, 0);
     assert.equal(d.completion, undefined);
     assert.deepEqual(await snapshot(f.project), before);

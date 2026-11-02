@@ -131,7 +131,7 @@ test("offline saved intent is returned for preselection/prefill, changed answers
     (
       await run(
         enumerateInputs(policy, {
-          ...previous!,
+          ...previous,
           answers: { ...answers, base: { label: "", limit: 0 } },
         }),
       )
@@ -180,7 +180,7 @@ test("invalid answers fail with bundle/input context before touching the project
     [{ ...answers, base: { ...answers.base, extra: "x" } }, /not declared/],
     [{ ...answers, "bad namespace": {} }, /namespaced|excess|unexpected/i],
   ] as const)
-    await assert.rejects(run(resolveInputs(policy, bad)), pattern);
+    {await assert.rejects(run(resolveInputs(policy, bad)), pattern);}
   const previous = (await run(resolveInputs(policy, answers))).intent;
   await assert.rejects(
     run(

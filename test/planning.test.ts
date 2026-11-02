@@ -29,7 +29,7 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   const f = await fixture(t);
   await f.add("base", { name: "TypeScript", devDependencies: { oxlint: "1.0.0" } });
   const resolve = async (selections = empty) =>
-    run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
+    await run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
   const writeProject = async (relative: string, content: string | object) => {
     const destination = path.join(f.project, relative);
     await fs.mkdir(path.dirname(destination), { recursive: true });
@@ -84,7 +84,7 @@ test("native fragments compose in stable category order with atomic rules, order
     ignorePatterns: ["base"],
     overrides: [{ files: ["base/**"], options: { semi: true } }],
   });
-  for (const key of ["integrations/z", "integrations/a", "automation/ci"]) await f.add(key);
+  for (const key of ["integrations/z", "integrations/a", "automation/ci"]) {await f.add(key);}
   await f.write("typescript/integrations/a/files/.oxlintrc.json", {
     rules: { tuple: ["error", { allow: ["a"] }] },
     plugins: ["typescript", "react"],
@@ -162,7 +162,7 @@ test("explicit migration and alternate config names are proposed without executi
   const sentinel = path.join(f.project, "EXECUTED");
   const executable = `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(sentinel)}, 'bad'); throw Error('executed');`;
   for (const relative of ["prettier.config.js", "oxlint.config.ts", "oxfmt.config.mjs"])
-    await f.writeProject(relative, executable);
+    {await f.writeProject(relative, executable);}
   await f.writeProject("unlisted-legacy.js", executable);
   await f.writeProject(".oxlintrc.jsonc", "{ // not imported\n}");
   await f.writeProject("package.json", {
@@ -342,13 +342,13 @@ test("matching rerun preserves all bytes and permission bits, and needs no confi
   const first = await run(planProject(f.project, resolved));
   // Test-fixture materialization only; the production seam never applies plans.
   for (const file of first.files)
-    if (file.after.kind === "file") {
+    {if (file.after.kind === "file") {
       await fs.writeFile(
         path.join(f.project, file.path),
         Buffer.from(file.after.base64, "base64"),
         { mode: file.after.mode },
       );
-    }
+    }}
   await f.writeProject(
     "package.json",
     ' { "scripts": { "install": "exit 99" }, "devDependencies": {"oxlint":"1.0.0"}, "name":"untouched" }\n',
@@ -367,7 +367,7 @@ test("matching rerun preserves all bytes and permission bits, and needs no confi
   );
   assert.deepEqual(changed(again), []);
   assert.equal(again.requiresConfirmation, false);
-  for (const file of again.files) assert.deepEqual(file.after, file.before);
+  for (const file of again.files) {assert.deepEqual(file.after, file.before);}
   assert.deepEqual(await snapshot(f.project), before);
 });
 
@@ -445,7 +445,7 @@ test("malformed manifests fail with typed target diagnostics before mutation", a
 
 test("target symlinks, nonregular destinations, unsafe paths and case aliases fail without traversing them", async (t) => {
   for (const relative of ["package.json", ".oxlintrc.json", "oxlint.config.ts"])
-    await t.test(relative, async (t) => {
+    {await t.test(relative, async (t) => {
       const f = await setup(t);
       await fs.rm(path.join(f.project, relative), { force: true });
       await fs.symlink(path.join(f.root, "outside"), path.join(f.project, relative));
@@ -453,7 +453,7 @@ test("target symlinks, nonregular destinations, unsafe paths and case aliases fa
         run(planProject(f.project, await f.resolve())),
         /symlinks are forbidden/,
       );
-    });
+    });}
   const f = await setup(t);
   const rootLink = path.join(f.root, "project-link");
   await fs.symlink(f.project, rootLink);

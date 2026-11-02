@@ -8,17 +8,17 @@ export const isObject = (value: unknown): value is JsonObject =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 export const canonical = (value: JsonValue): string => JSON.stringify(ordered(value));
 function ordered(value: JsonValue): JsonValue {
-  if (Array.isArray(value)) return value.map(ordered);
+  if (Array.isArray(value)) {return value.map(ordered);}
   if (isObject(value))
-    return Object.fromEntries(
+    {return Object.fromEntries(
       Object.keys(value)
         .sort()
         .map((key) => [key, ordered(value[key]!)]),
-    );
+    );}
   return value;
 }
 export const jsonContent = (value: JsonValue): string =>
-  JSON.stringify(ordered(value), null, 2) + "\n";
+  `${JSON.stringify(ordered(value), null, 2)  }\n`;
 const rank = { base: 0, integration: 1, automation: 2 };
 export const orderedBundles = (bundles: readonly LoadedBundle[]): readonly LoadedBundle[] =>
   [...bundles].sort(
@@ -27,8 +27,8 @@ export const orderedBundles = (bundles: readonly LoadedBundle[]): readonly Loade
 export const configDestination = (
   relative: string,
 ): ".oxfmtrc.json" | ".oxlintrc.json" | undefined => {
-  if (relative === ".oxfmtrc.json" || relative === ".oxfmtrc.jsonc") return ".oxfmtrc.json";
-  if (relative === ".oxlintrc.json" || relative === ".oxlintrc.jsonc") return ".oxlintrc.json";
+  if (relative === ".oxfmtrc.json" || relative === ".oxfmtrc.jsonc") {return ".oxfmtrc.json";}
+  if (relative === ".oxlintrc.json" || relative === ".oxlintrc.jsonc") {return ".oxlintrc.json";}
   return undefined;
 };
 
@@ -45,38 +45,38 @@ export function composeConfigurations(
       const seen = new Set<string>();
       for (const file of bundle.files) {
         const destination = configDestination(file.path);
-        if (!destination) continue;
+        if (!destination) {continue;}
         const fail = (field: string, detail: string) =>
           Effect.fail(new PlanError({ source: file.source, field, detail }));
         if (seen.has(destination))
-          return yield* fail(
+          {return yield* fail(
             "$",
             `One bundle cannot supply both JSON and JSONC for ${destination}`,
-          );
+          );}
         seen.add(destination);
         if (!("value" in file) || !isObject(file.value))
-          return yield* fail("$", "Expected a native JSON/JSONC object");
+          {return yield* fail("$", "Expected a native JSON/JSONC object");}
         const output = outputs[destination];
         const lint = destination === ".oxlintrc.json";
         for (const [field, value] of Object.entries(file.value)) {
           if (!lint && field === "extends")
-            return yield* fail(field, "Oxfmt extends is not an installer-supported field");
+            {return yield* fail(field, "Oxfmt extends is not an installer-supported field");}
           if (
             lint &&
             ["rules", "categories", "env", "globals", "settings", "options"].includes(field)
           ) {
             if (!isObject(value))
-              return yield* fail(
+              {return yield* fail(
                 field,
                 "Expected an object; entries compose by key as whole values",
-              );
+              );}
             output[field] = { ...(output[field] as JsonObject | undefined), ...value };
           } else if (
             field === "overrides" ||
             field === "ignorePatterns" ||
             (lint && ["plugins", "jsPlugins", "extends"].includes(field))
           ) {
-            if (!Array.isArray(value)) return yield* fail(field, "Expected an array");
+            if (!Array.isArray(value)) {return yield* fail(field, "Expected an array");}
             const combined = [
               ...((output[field] as readonly JsonValue[] | undefined) ?? []),
               ...value,

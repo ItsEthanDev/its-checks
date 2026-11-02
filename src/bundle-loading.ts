@@ -104,14 +104,14 @@ export function json(ctx: Context, content: string, comments: boolean) {
           onObjectProperty: (name, offset) => {
             const keys = objects.at(-1)!;
             if (keys.has(name))
-              invalid = `Duplicate object key ${JSON.stringify(name)} at offset ${offset}`;
+              {invalid = `Duplicate object key ${JSON.stringify(name)} at offset ${offset}`;}
             // jsonc-parser assigns to ordinary objects; this key would alter their prototypes.
-            if (name === "__proto__") invalid = `Unsupported prototype key at offset ${offset}`;
+            if (name === "__proto__") {invalid = `Unsupported prototype key at offset ${offset}`;}
             keys.add(name);
           },
           onLiteralValue: (value, offset) => {
             if (typeof value === "number" && !Number.isFinite(value))
-              invalid = `Nonfinite JSON number at offset ${offset}`;
+              {invalid = `Nonfinite JSON number at offset ${offset}`;}
           },
           onObjectEnd: () => {
             objects.pop();
@@ -119,12 +119,12 @@ export function json(ctx: Context, content: string, comments: boolean) {
         },
         options,
       );
-      if (invalid) throw new Error(invalid);
+      if (invalid) {throw new Error(invalid);}
       const value: unknown = parse(content, errors, options);
       if (errors.length)
-        throw new Error(
+        {throw new Error(
           errors.map((e) => `${printParseErrorCode(e.error)} at offset ${e.offset}`).join("; "),
-        );
+        );}
       return value as JsonValue;
     },
     catch: (cause) => fail(ctx, "$", cause instanceof Error ? cause.message : String(cause)),
@@ -153,7 +153,7 @@ function directory(ctx: Context, optional = false) {
           : Effect.fail(fail(ctx, "$", cause instanceof Error ? cause.message : String(cause))),
       ),
     );
-    if (!stat) return [];
+    if (!stat) {return [];}
     yield* validate(
       ctx,
       "$",
@@ -290,7 +290,7 @@ function checkDeclaration(ctx: Context, declaration: BundleDeclaration) {
           "Default must match the declared input type",
         );
         if (input.type === "path" && typeof input.default === "string")
-          yield* checkPath(ctx, `${field}.default`, input.default);
+          {yield* checkPath(ctx, `${field}.default`, input.default);}
       }
     }
   });
@@ -438,8 +438,8 @@ function nativeFiles(info: BundleInfo) {
               try: () => {
                 const documents = parseAllDocuments(content, { uniqueKeys: true });
                 const errors = documents.flatMap((doc) => doc.errors);
-                if (errors.length) throw new Error(errors.map((error) => error.message).join("; "));
-                if (documents.length !== 1) throw new Error("Expected one YAML document");
+                if (errors.length) {throw new Error(errors.map((error) => error.message).join("; "));}
+                if (documents.length !== 1) {throw new Error("Expected one YAML document");}
               },
               catch: (cause) => fail(child, "$", String(cause)),
             });
@@ -506,14 +506,14 @@ export function loadPolicy(
       for (const id of [...selections[kind]].sort(compare)) {
         const info = catalog[kind].find((bundle) => bundle.id === id);
         if (!info)
-          return yield* Effect.fail(
+          {return yield* Effect.fail(
             fail(ctx, `selections.${kind}`, `Unknown bundle ID ${JSON.stringify(id)}`),
-          );
+          );}
         selected.push(info);
       }
     }
     const bundles = [];
-    for (const info of selected) bundles.push(yield* nativeFiles(info));
+    for (const info of selected) {bundles.push(yield* nativeFiles(info));}
     return { root: catalog.root, declaration: catalog.declaration, bundles };
   });
 }

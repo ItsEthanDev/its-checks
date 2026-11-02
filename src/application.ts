@@ -106,11 +106,11 @@ export function createNodeApplicationFileSystem(
                 await handle.close();
               }
               // Never expose partial JSON. Exclusive publication also protects an initially absent selection file.
-              if (create) await fileSystem.link(temporary, destination);
-              else await fileSystem.rename(temporary, destination);
+              if (create) {await fileSystem.link(temporary, destination);}
+              else {await fileSystem.rename(temporary, destination);}
             } finally {
               await fileSystem.unlink(temporary).catch((cause: NodeJS.ErrnoException) => {
-                if (cause.code !== "ENOENT") throw cause;
+                if (cause.code !== "ENOENT") {throw cause;}
               });
             }
           })
@@ -127,7 +127,7 @@ export function createNodeApplicationFileSystem(
             (handle) =>
               io(async () => {
                 // Truncation, writing, chmod, or close may fail after changing the file. Report observation, not rollback.
-                if (!(await handle.stat()).isFile()) throw new Error("Expected a regular file");
+                if (!(await handle.stat()).isFile()) {throw new Error("Expected a regular file");}
                 await handle.truncate(0);
                 await handle.writeFile(Buffer.from(state.base64, "base64"));
                 await handle.chmod(state.mode);
@@ -163,7 +163,7 @@ export function applyPlan(
     let incomplete = [...changes.map(operation), assess, install];
     let dependencyWork: ApplicationReport["dependencyWork"] = "not-assessed";
     if (options.approved !== true)
-      return { status: "declined", completed, incomplete, dependencyWork };
+      {return { status: "declined", completed, incomplete, dependencyWork };}
     const failure = (
       phase: ApplicationError["phase"],
       detail: string,
@@ -189,16 +189,16 @@ export function applyPlan(
         },
       });
     if (!plan.complete)
-      return yield* Effect.fail(
+      {return yield* Effect.fail(
         failure("validation", "Incomplete plan; finish deferred planning before approval"),
-      );
+      );}
     // A plan is trusted application data, but observations must cover every approved operation.
     for (const file of plan.files) {
       const before = plan.snapshot.files[file.path];
       if (!before || !same(before, file.before))
-        return yield* Effect.fail(
+        {return yield* Effect.fail(
           failure("validation", `Missing or inconsistent snapshot: ${file.path}`),
-        );
+        );}
     }
     yield* assertTargetUnchanged(plan.snapshot).pipe(
       Effect.mapError((cause) => failure("validation", cause.message)),
@@ -221,17 +221,17 @@ export function applyPlan(
               try {
                 return await fs.lstat(destination);
               } catch (cause) {
-                if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+                if ((cause as NodeJS.ErrnoException).code === "ENOENT") {return undefined;}
                 throw cause;
               }
             });
             if (stat) {
               if (!stat.isDirectory())
-                return yield* Effect.fail(
+                {return yield* Effect.fail(
                   new OperationError({
                     detail: `${relative}: Expected a directory, not a symlink`,
                   }),
-                );
+                );}
             } else {
               const mkdir: ApplicationOperation = { kind: "create-directory", path: relative };
               yield* fileSystem
@@ -249,14 +249,14 @@ export function applyPlan(
             file.after,
             file.before.kind === "absent",
           );
-        } else yield* fileSystem.removeFile(path.join(plan.snapshot.root, file.path));
+        } else {yield* fileSystem.removeFile(path.join(plan.snapshot.root, file.path));}
         const actual = yield* readTargetSnapshot(plan.snapshot.root, [file.path]);
         if (!same(actual.files[file.path]!, file.after))
-          return yield* Effect.fail(
+          {return yield* Effect.fail(
             new OperationError({
               detail: `${file.path}: Operation did not produce the approved bytes and mode`,
             }),
-          );
+          );}
       });
       yield* attempt.pipe(
         Effect.catch((cause) =>
@@ -275,9 +275,9 @@ export function applyPlan(
                   Effect.catch(() => Effect.succeed("unavailable" as const)),
                 );
             if (cause instanceof ApplicationError)
-              return yield* Effect.fail(
+              {return yield* Effect.fail(
                 new ApplicationError({ ...cause, report: { ...cause.report, observed } }),
-              );
+              );}
             return yield* Effect.fail(
               failure("filesystem", cause.message, currentOperation, observed),
             );

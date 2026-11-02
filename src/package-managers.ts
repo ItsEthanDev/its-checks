@@ -37,7 +37,7 @@ async function text(root: string, name: string): Promise<string | undefined> {
   try {
     return await fs.readFile(path.join(root, name), "utf8");
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if ((cause as NodeJS.ErrnoException).code === "ENOENT") {return undefined;}
     throw cause;
   }
 }
@@ -57,19 +57,19 @@ export function resolveTargetManager(
       const match =
         typeof manifest.packageManager === "string" &&
         /^(npm|pnpm|yarn|bun)@.+$/.exec(manifest.packageManager);
-      if (match) candidates.add(match[1] as PackageManager);
-      else invalid = true;
+      if (match) {candidates.add(match[1] as PackageManager);}
+      else {invalid = true;}
     }
     for (const [manager, names] of Object.entries(lockNames))
-      for (const name of names) {
+      {for (const name of names) {
         if ((await text(root, name)) !== undefined) {
           candidates.add(manager as PackageManager);
           evidence.push(name);
         }
-      }
+      }}
     const manager = answer ?? (!invalid && candidates.size === 1 ? [...candidates][0] : undefined);
     if (!manager)
-      return {
+      {return {
         kind: "question",
         reason: invalid
           ? "Unsupported or malformed packageManager declaration; choose the target manager."
@@ -78,7 +78,7 @@ export function resolveTargetManager(
             : "No package-manager declaration or lockfile; choose the target manager.",
         evidence,
         choices: ["npm", "pnpm", "yarn", "bun"],
-      };
+      };}
     return { kind: "resolved", target: { root, manager, scripts: createScriptPlanner(manager) } };
   });
 }
@@ -127,10 +127,10 @@ export const nodeManagerOperations: ManagerOperations = {
 };
 function approvedManifest(plan: ChangePlan, target: TargetManager): string {
   if (path.resolve(plan.snapshot.root) !== target.root)
-    throw new Error("Target manager belongs to another package root");
+    {throw new Error("Target manager belongs to another package root");}
   const state =
     plan.files.find((f) => f.path === "package.json")?.after ?? plan.snapshot.files["package.json"];
-  if (!state || state.kind !== "file") throw new Error("Approved package.json is missing");
+  if (!state || state.kind !== "file") {throw new Error("Approved package.json is missing");}
   return Buffer.from(state.base64, "base64").toString("utf8");
 }
 
@@ -148,9 +148,9 @@ export function createDependencyAdapter(
         const expected = yield* io(async () => {
           const bytes = approvedManifest(plan, target);
           if ((await text(root, "package.json")) !== bytes)
-            throw new Error(
+            {throw new Error(
               "package.json differs from the exact approved target manifest; replan before installation",
-            );
+            );}
           return bytes;
         });
         const result = yield* operations
@@ -171,11 +171,11 @@ export function createDependencyAdapter(
           ...(changed ? ["package.json no longer matches approved bytes; inspect and replan"] : []),
         ];
         if (problems.length)
-          return yield* Effect.fail(
+          {return yield* Effect.fail(
             new OperationError({
               detail: `${problems.join("\n")}\nFix the failure and rerun ${manager} install in ${root}. Configuration, lockfile changes and lifecycle effects remain; no rollback.`,
             }),
-          );
+          );}
       }),
   };
 }

@@ -171,7 +171,7 @@ test("native baseline/integration/declarations edits and a new directory reach o
     [...existingIntegrations, "strict"].sort(),
   );
   assert.equal((await setup(["tailwind", "strict"])).requiresConfirmation, true);
-  const read = async (file: string) => fs.readFile(path.join(target, file), "utf8");
+  const read = async (file: string) => await fs.readFile(path.join(target, file), "utf8");
   assert.equal(JSON.parse(await read(".oxfmtrc.json")).semi, false);
   assert.equal(
     JSON.parse(await read(".oxlintrc.json")).rules["tailwindcss/no-arbitrary-value"],

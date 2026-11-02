@@ -37,7 +37,7 @@ if (!interactive || process.argv.length > 2) {
         },
         onSuccess: (report) => {
           if (report.status === "declined")
-            clack.cancel("Plan declined. No project writes or installation.");
+            {clack.cancel("Plan declined. No project writes or installation.");}
         },
       }),
     ),

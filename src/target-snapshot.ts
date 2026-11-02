@@ -35,28 +35,28 @@ export function readTargetSnapshot(
     const root = path.resolve(projectRoot);
     const rootStat = yield* io(root, () => fs.lstat(root));
     if (!rootStat.isDirectory())
-      return yield* Effect.fail(error(root, "Expected a regular directory, not a symbolic link"));
+      {return yield* Effect.fail(error(root, "Expected a regular directory, not a symbolic link"));}
     const files: Record<string, FileState> = Object.create(null);
     const aliases = new Map<string, string>();
     const sorted = [...new Set(paths)].sort();
     for (const relative of sorted) {
       const parent = sorted.find((other) =>
-        relative.toLowerCase().startsWith(other.toLowerCase() + "/"),
+        relative.toLowerCase().startsWith(`${other.toLowerCase()  }/`),
       );
       if (parent)
-        return yield* Effect.fail(
+        {return yield* Effect.fail(
           error(relative, `Target file path also used as a parent: ${parent}`),
-        );
+        );}
     }
     for (const relative of sorted) {
       if (!safePath(relative))
-        return yield* Effect.fail(error(relative, "Unsafe target-relative path"));
+        {return yield* Effect.fail(error(relative, "Unsafe target-relative path"));}
       const parts = relative.split("/");
       for (let length = 1; length <= parts.length; length++) {
         const prefix = parts.slice(0, length).join("/");
         const alias = aliases.get(prefix.toLowerCase());
         if (alias && alias !== prefix)
-          return yield* Effect.fail(error(relative, `Case-alias target path also names ${alias}`));
+          {return yield* Effect.fail(error(relative, `Case-alias target path also names ${alias}`));}
         aliases.set(prefix.toLowerCase(), prefix);
       }
       let absent = false;
@@ -78,14 +78,14 @@ export function readTargetSnapshot(
         }
         if (index < parts.length - 1) {
           if (!stat.isDirectory())
-            return yield* Effect.fail(
+            {return yield* Effect.fail(
               error(source, "Expected a directory; target symlinks are forbidden"),
-            );
+            );}
         } else {
           if (!stat.isFile())
-            return yield* Effect.fail(
+            {return yield* Effect.fail(
               error(source, "Expected a regular file; target symlinks are forbidden"),
-            );
+            );}
           files[relative] = yield* Effect.acquireUseRelease(
             io(source, () => fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW)),
             (handle) =>
@@ -98,7 +98,7 @@ export function readTargetSnapshot(
           );
         }
       }
-      if (absent) files[relative] = { kind: "absent" };
+      if (absent) {files[relative] = { kind: "absent" };}
     }
     return { root, files };
   });

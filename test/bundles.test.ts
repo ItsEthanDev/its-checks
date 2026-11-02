@@ -62,7 +62,7 @@ test("loads baseline plus selected external JSONC, shell and YAML in stable bund
   assert.equal(native.content, jsonc);
   assert.equal(native.format, "jsonc");
   if (native.format === "jsonc")
-    assert.deepEqual(native.value, { sortTailwindcss: { stylesheet: "src/app.css" } });
+    {assert.deepEqual(native.value, { sortTailwindcss: { stylesheet: "src/app.css" } });}
   assert.equal(loaded.bundles[3]!.files[0]!.content, yaml);
   assert.equal(loaded.bundles[4]!.files[0]!.content, shell);
   assert.equal(loaded.bundles[4]!.files[0]!.executable, true);

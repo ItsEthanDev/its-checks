@@ -42,19 +42,19 @@ async function inspectInstall(plan: ChangePlan, audit: string, project: string) 
   await fs.mkdir(audit);
   const manifest = plan.files.find((file) => file.path === "package.json")!.after;
   assert.equal(manifest.kind, "file");
-  if (manifest.kind !== "file") throw Error("Missing planned manifest");
+  if (manifest.kind !== "file") {throw Error("Missing planned manifest");}
   await fs.writeFile(path.join(audit, "package.json"), Buffer.from(manifest.base64, "base64"));
   await exec("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: audit });
   const lock = JSON.parse(await fs.readFile(path.join(audit, "package-lock.json"), "utf8"));
   let count = 0;
   for (const location of Object.keys(lock.packages)) {
-    if (!location) continue;
+    if (!location) {continue;}
     let value;
     try {
       value = JSON.parse(await fs.readFile(path.join(audit, location, "package.json"), "utf8"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT" && lock.packages[location].optional)
-        continue;
+        {continue;}
       throw error;
     }
     for (const name of ["preinstall", "install", "postinstall"]) {
@@ -99,30 +99,30 @@ test(
     const formatterPolicy = path.join(policy, "typescript/base/files/.oxfmtrc.json");
     const formatter = JSON.parse(await fs.readFile(formatterPolicy, "utf8"));
     formatter.sortPackageJson = true;
-    await fs.writeFile(formatterPolicy, JSON.stringify(formatter, null, 2) + "\n");
+    await fs.writeFile(formatterPolicy, `${JSON.stringify(formatter, null, 2)  }\n`);
     // Fixed migration variation: remove direct ESLint, not the Tailwind plugin's
     // incidental peer installation. This must also no-op when ESLint was never direct.
     const declarationPath = path.join(policy, "typescript/base/bundle.json");
     const declaration = JSON.parse(await fs.readFile(declarationPath, "utf8"));
     declaration.migration.removeDevDependencies.push("eslint");
-    await fs.writeFile(declarationPath, JSON.stringify(declaration, null, 2) + "\n");
+    await fs.writeFile(declarationPath, `${JSON.stringify(declaration, null, 2)  }\n`);
     await fs.cp(path.resolve("test/fixtures/projects/typescript"), project, { recursive: true });
     // Inspectable original lifecycle: append a local sentinel; preserved ahead of Husky.
     const pkg = JSON.parse(await fs.readFile(path.join(project, "package.json"), "utf8"));
     pkg.scripts = {
       postinstall: `node -e 'require("node:fs").appendFileSync("lifecycle.log","installed\\n")'`,
     };
-    await fs.writeFile(path.join(project, "package.json"), JSON.stringify(pkg, null, 2) + "\n");
+    await fs.writeFile(path.join(project, "package.json"), `${JSON.stringify(pkg, null, 2)  }\n`);
     await exec("git", ["init", "--quiet"], { cwd: project });
     await fs.mkdir(path.join(project, ".husky"));
     await fs.writeFile(path.join(project, ".husky/pre-commit"), "echo preserved-hook\n");
     const resolution = await run(resolveTargetManager(project));
     assert.equal(resolution.kind, "resolved");
-    if (resolution.kind !== "resolved") throw Error("Expected npm target");
+    if (resolution.kind !== "resolved") {throw Error("Expected npm target");}
     let installs = 0;
     const dependencies = createDependencyAdapter(resolution.target, {
       run: (command, args, cwd) => {
-        if (args[0] === "install") installs++;
+        if (args[0] === "install") {installs++;}
         return nodeManagerOperations.run(command, args, cwd);
       },
     });
@@ -133,7 +133,7 @@ test(
         resolveInputs(loaded, selected.integrations.length ? answers : {}),
       );
       const known = previous ? (await run(loadPolicy(policy, previous))).bundles : [];
-      return run(
+      return await run(
         planProject(project, resolved, {
           scripts: resolution.target.scripts,
           ...(previous ? { previous } : {}),

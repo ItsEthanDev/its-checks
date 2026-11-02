@@ -13,8 +13,8 @@ const ask = <A>(prompt: () => Promise<A | typeof clack.CANCEL_SYMBOL>): Question
       try: prompt,
       catch: (cause) => new OperationError({ detail: String(cause) }),
     });
-    if (clack.isCancel(answer)) return yield* Effect.fail(new Cancelled());
-    return answer as A;
+    if (clack.isCancel(answer)) {return yield* Effect.fail(new Cancelled());}
+    return answer;
   });
 function parseInput(declaration: DeclaredInput, value: string): Answer {
   return declaration.input.type === "number" ? Number(value) : value;
@@ -22,17 +22,17 @@ function parseInput(declaration: DeclaredInput, value: string): Answer {
 function validate(declaration: DeclaredInput, value: string | undefined) {
   const text = value ?? "";
   if (declaration.input.type === "number" && (!text.trim() || !Number.isFinite(Number(text))))
-    return "Enter a finite number.";
+    {return "Enter a finite number.";}
   if (declaration.input.type === "path" && !safePath(text))
-    return "Enter a safe path relative to the target package (for example src/app.css).";
+    {return "Enter a safe path relative to the target package (for example src/app.css).";}
 }
 export function createClackPresentation() {
   const spinner = clack.spinner();
   let spinning = false;
   const stop = (message: string, failed = false) => {
     if (spinning) {
-      if (failed) spinner.error(message);
-      else spinner.stop(message);
+      if (failed) {spinner.error(message);}
+      else {spinner.stop(message);}
       spinning = false;
     }
   };
@@ -60,14 +60,14 @@ export function createClackPresentation() {
     input: (declaration) => {
       const message = `${declaration.input.prompt} (${declaration.bundle}/${declaration.input.id})`;
       if (declaration.input.type === "boolean")
-        return ask(() =>
+        {return ask(() =>
           clack.confirm({
             message,
             ...(declaration.initialValue === undefined
               ? {}
               : { initialValue: declaration.initialValue as boolean }),
           }),
-        );
+        );}
       return ask(() =>
         clack.text({
           message,
@@ -153,7 +153,7 @@ export function createClackPresentation() {
           ].join("\n"),
           "Partial completion / failure",
         );
-      } else clack.log.info("Stopped before application. No project writes or installation.");
+      } else {clack.log.info("Stopped before application. No project writes or installation.");}
       clack.outro("Setup failed.");
     },
   };
