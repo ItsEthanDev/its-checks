@@ -60,27 +60,7 @@ export function resolveTargetManager(
         }),
       ),
     )(await fs.readFile(path.join(packageRoot, "package.json"), "utf8"));
-    const evidence: string[] = [];
-    const candidates = new Set<PackageManager>();
-    let invalid = false;
-    if (manifest.packageManager !== undefined) {
-      const declaration = manifest.packageManager;
-      evidence.push(
-        `packageManager: ${typeof declaration === "string" ? declaration : JSON.stringify(declaration)}`,
-      );
-      const match = (["npm", "pnpm", "yarn", "bun"] as const).find(
-        (candidate) =>
-          typeof declaration === "string" &&
-          declaration.startsWith(`${candidate}@`) &&
-          declaration.length > candidate.length + 1 &&
-          !/[\r\n]/.test(declaration),
-      );
-      if (match !== undefined) {
-        candidates.add(match);
-      } else {
-        invalid = true;
-      }
-    }
+    const { evidence, candidates, invalid } = declarationEvidence(manifest.packageManager);
     for (const candidate of ["npm", "pnpm", "yarn", "bun"] as const) {
       for (const name of lockNames[candidate]) {
         if ((await text(packageRoot, name)) !== undefined) {
@@ -91,16 +71,9 @@ export function resolveTargetManager(
     }
     const manager = answer ?? (!invalid && candidates.size === 1 ? [...candidates][0] : undefined);
     if (manager === undefined) {
-      let reason = "No package-manager declaration or lockfile; choose the target manager.";
-      if (invalid) {
-        reason = "Unsupported or malformed packageManager declaration; choose the target manager.";
-      } else if (candidates.size > 0) {
-        reason =
-          "Conflicting package-manager evidence; choose the target manager (other lockfiles are preserved).";
-      }
       return {
         kind: "question",
-        reason,
+        reason: managerQuestion(invalid, candidates.size),
         evidence,
         choices: ["npm", "pnpm", "yarn", "bun"],
       };
@@ -110,6 +83,41 @@ export function resolveTargetManager(
       target: { root: packageRoot, manager, scripts: createScriptPlanner(manager) },
     };
   });
+}
+
+function declarationEvidence(declaration: unknown) {
+  const evidence: string[] = [];
+  const candidates = new Set<PackageManager>();
+  let invalid = false;
+  if (declaration !== undefined) {
+    evidence.push(
+      `packageManager: ${typeof declaration === "string" ? declaration : JSON.stringify(declaration)}`,
+    );
+    const match = (["npm", "pnpm", "yarn", "bun"] as const).find(
+      (candidate) =>
+        typeof declaration === "string" &&
+        declaration.startsWith(`${candidate}@`) &&
+        declaration.length > candidate.length + 1 &&
+        !/[\r\n]/.test(declaration),
+    );
+    if (match !== undefined) {
+      candidates.add(match);
+    } else {
+      invalid = true;
+    }
+  }
+  return { evidence, candidates, invalid };
+}
+
+function managerQuestion(invalid: boolean, candidates: number) {
+  let reason = "No package-manager declaration or lockfile; choose the target manager.";
+  if (invalid) {
+    reason = "Unsupported or malformed packageManager declaration; choose the target manager.";
+  } else if (candidates > 0) {
+    reason =
+      "Conflicting package-manager evidence; choose the target manager (other lockfiles are preserved).";
+  }
+  return reason;
 }
 
 export interface CommandResult {

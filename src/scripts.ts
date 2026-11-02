@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { Effect } from "effect";
 
+import type { LoadedBundle } from "./bundles.ts";
 import { isObject, orderedBundles } from "./composition.ts";
 import { PlanError } from "./plan-errors.ts";
 import type { PlanOptions, ScriptContext } from "./planning.ts";
@@ -43,85 +44,131 @@ export function createScriptPlanner(manager: PackageManager): NonNullable<PlanOp
           scripts[name] = command;
         }
       }
-      const selected = orderedBundles(context.selected);
-      // Keep each ordinary contribution's identity and position until replacements resolve.
-      const contributions = new Map<string, Map<string, Contribution>>();
+      const contributions = yield* scriptContributions(orderedBundles(context.selected));
       const known = new Set(
         [...context.selected, ...context.deselected].flatMap((bundle) =>
           Object.keys(bundle.declaration.scripts ?? {}),
         ),
       );
-      for (const bundle of selected) {
-        for (const [name, command] of Object.entries(bundle.declaration.scripts ?? {})) {
-          if (typeof command !== "string") {
-            continue;
-          }
-          const owners = contributions.get(name) ?? new Map<string, Contribution>();
-          owners.set(bundle.key, { command });
-          contributions.set(name, owners);
-        }
-      }
-      for (const bundle of selected) {
-        for (const [name, replacement] of Object.entries(bundle.declaration.scripts ?? {})) {
-          if (typeof replacement === "string") {
-            continue;
-          }
-          const target = contributions.get(name)?.get(replacement.replaces);
-          const fail = (detail: string) =>
-            Effect.fail(new PlanError({ source: bundle.source, field: `scripts.${name}`, detail }));
-          if (target === undefined) {
-            return yield* fail(
-              `Replacement target ${replacement.replaces} does not supply an ordinary command for this script in the selected bundles.`,
-            );
-          }
-          if (target.replacementSource !== undefined && target.command !== replacement.command) {
-            return yield* fail(
-              `Conflicting replacement for ${replacement.replaces}; another replacement is declared in ${target.replacementSource}.`,
-            );
-          }
-          target.command = replacement.command;
-          target.replacementSource ??= bundle.source;
-        }
-      }
       for (const name of [...known].toSorted()) {
-        const helper = `${prefix}${name}`;
-        const command = Object.hasOwn(scripts, name) ? scripts[name] : undefined;
-        const wrapper = command === undefined ? undefined : recognize(command, helper);
-        const conflict = (detail: string) =>
-          Effect.fail(new PlanError({ source: "package.json", field: `scripts.${name}`, detail }));
-        if (wrapper === undefined && command?.includes(helper) === true) {
-          return yield* conflict(
-            `Edited public command references ${helper} but is not an exact generated wrapper. Restore the generated wrapper, or manually remove the helper reference and rename/remove scripts.${helper}, then retry. No shell rewrite was attempted.`,
-          );
-        }
-        if (wrapper === undefined && Object.hasOwn(scripts, helper)) {
-          return yield* conflict(
-            `Reserved namespace collision at scripts.${helper}: no exact generated public wrapper identifies ownership. Rename/remove that entry (preserving any command you need), then retry.`,
-          );
-        }
-        const owners = contributions.get(name);
-        if (owners !== undefined) {
-          const commands = [
-            ...new Set([...owners.values()].map((contribution) => contribution.command)),
-          ];
-          const original = wrapper !== undefined ? wrapper.original : command;
-          if (original?.includes("\0") === true) {
-            return yield* conflict("POSIX shell commands cannot contain NUL");
-          }
-          scripts[helper] = commands.map(group).join(" && ");
-          scripts[name] =
-            original === undefined
-              ? runner(manager, helper)
-              : `${group(original)} && ${runner(manager, helper)}`;
-        } else if (wrapper !== undefined) {
-          delete scripts[helper];
-          if (wrapper.original === undefined) {
-            delete scripts[name];
-          } else {
-            scripts[name] = wrapper.original;
-          }
-        }
+        yield* updateScript(scripts, name, { manager, owners: contributions.get(name) });
       }
       return scripts;
     });
+}
+
+type Contributions = Map<string, Map<string, Contribution>>;
+
+function ordinaryContributions(selected: readonly LoadedBundle[]) {
+  // Keep each ordinary contribution's identity and position until replacements resolve.
+  const contributions: Contributions = new Map();
+  for (const bundle of selected) {
+    for (const [name, command] of Object.entries(bundle.declaration.scripts ?? {})) {
+      if (typeof command !== "string") {
+        continue;
+      }
+      const owners = contributions.get(name) ?? new Map<string, Contribution>();
+      owners.set(bundle.key, { command });
+      contributions.set(name, owners);
+    }
+  }
+  return contributions;
+}
+
+function scriptContributions(selected: readonly LoadedBundle[]) {
+  return Effect.gen(function* () {
+    const contributions = ordinaryContributions(selected);
+    for (const bundle of selected) {
+      yield* replaceContributions(bundle, contributions);
+    }
+    return contributions;
+  });
+}
+
+function replaceContributions(bundle: LoadedBundle, contributions: Contributions) {
+  return Effect.gen(function* () {
+    for (const [name, replacement] of Object.entries(bundle.declaration.scripts ?? {})) {
+      if (typeof replacement === "string") {
+        continue;
+      }
+      const target = contributions.get(name)?.get(replacement.replaces);
+      const fail = (detail: string) =>
+        Effect.fail(new PlanError({ source: bundle.source, field: `scripts.${name}`, detail }));
+      if (target === undefined) {
+        return yield* fail(
+          `Replacement target ${replacement.replaces} does not supply an ordinary command for this script in the selected bundles.`,
+        );
+      }
+      if (target.replacementSource !== undefined && target.command !== replacement.command) {
+        return yield* fail(
+          `Conflicting replacement for ${replacement.replaces}; another replacement is declared in ${target.replacementSource}.`,
+        );
+      }
+      target.command = replacement.command;
+      target.replacementSource ??= bundle.source;
+    }
+    return undefined;
+  });
+}
+
+function updateScript(
+  scripts: Record<string, string>,
+  name: string,
+  context: { manager: PackageManager; owners: Map<string, Contribution> | undefined },
+) {
+  return Effect.gen(function* () {
+    const { manager, owners } = context;
+    const helper = `${prefix}${name}`;
+    const command = Object.hasOwn(scripts, name) ? scripts[name] : undefined;
+    const wrapper = command === undefined ? undefined : recognize(command, helper);
+    const conflict = (detail: string) =>
+      Effect.fail(new PlanError({ source: "package.json", field: `scripts.${name}`, detail }));
+    yield* validateWrapper(scripts, name, { command, wrapper });
+    if (owners !== undefined) {
+      const original = wrapper !== undefined ? wrapper.original : command;
+      if (original?.includes("\0") === true) {
+        return yield* conflict("POSIX shell commands cannot contain NUL");
+      }
+      const commands = [
+        ...new Set([...owners.values()].map((contribution) => contribution.command)),
+      ];
+      scripts[helper] = commands.map(group).join(" && ");
+      scripts[name] =
+        original === undefined
+          ? runner(manager, helper)
+          : `${group(original)} && ${runner(manager, helper)}`;
+    } else if (wrapper !== undefined) {
+      delete scripts[helper];
+      if (wrapper.original === undefined) {
+        delete scripts[name];
+      } else {
+        scripts[name] = wrapper.original;
+      }
+    }
+    return undefined;
+  });
+}
+
+function validateWrapper(
+  scripts: Record<string, string>,
+  name: string,
+  context: { command: string | undefined; wrapper: { original?: string } | undefined },
+) {
+  return Effect.gen(function* () {
+    const { command, wrapper } = context;
+    const helper = `${prefix}${name}`;
+    const conflict = (detail: string) =>
+      Effect.fail(new PlanError({ source: "package.json", field: `scripts.${name}`, detail }));
+    if (wrapper === undefined && command?.includes(helper) === true) {
+      return yield* conflict(
+        `Edited public command references ${helper} but is not an exact generated wrapper. Restore the generated wrapper, or manually remove the helper reference and rename/remove scripts.${helper}, then retry. No shell rewrite was attempted.`,
+      );
+    }
+    if (wrapper === undefined && Object.hasOwn(scripts, helper)) {
+      return yield* conflict(
+        `Reserved namespace collision at scripts.${helper}: no exact generated public wrapper identifies ownership. Rename/remove that entry (preserving any command you need), then retry.`,
+      );
+    }
+    return undefined;
+  });
 }

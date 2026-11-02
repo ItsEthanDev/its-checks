@@ -9,108 +9,12 @@ import {
   ApplicationError,
   OperationError,
   type ApplicationDependencies,
-  type ApplicationReport,
 } from "../src/application.ts";
 import { createDependencyAdapter } from "../src/package-managers.ts";
-import type { ChangePlan } from "../src/planning.ts";
-import type { Answer } from "../src/selections.ts";
 import { Cancelled, setup, type SetupPresentation } from "../src/workflow.ts";
 import { json, object, manifest as parseManifest } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
-
-function dialogue(
-  choices: {
-    integrations?: readonly string[];
-    automation?: readonly string[];
-    approve?: boolean;
-    answers?: Record<string, Answer>;
-  } = {},
-) {
-  const shown: { category: string; previous: readonly string[]; options: string[] }[] = [];
-  const questions: { key: string; initial: Answer | undefined }[] = [];
-  const notes: string[] = [];
-  let plan: ChangePlan | undefined;
-  let confirmations = 0;
-  let managerQuestions = 0;
-  let completion: ApplicationReport | undefined;
-  const ui: SetupPresentation = {
-    choices: (category, options, previous) => {
-      shown.push({ category, previous, options: options.map((x) => x.id) });
-      return Effect.succeed(choices[category] ?? previous);
-    },
-    input: (declaration) => {
-      const key = `${declaration.bundle}/${declaration.input.id}`;
-      questions.push({ key, initial: declaration.initialValue });
-      return Effect.succeed(choices.answers?.[key] ?? declaration.initialValue ?? "");
-    },
-    manager: () => {
-      managerQuestions++;
-      return Effect.succeed("npm");
-    },
-    confirm: () => {
-      confirmations++;
-      return Effect.succeed(choices.approve ?? true);
-    },
-    note: (message) => {
-      notes.push(message);
-    },
-    plan: (value) => {
-      plan = value;
-    },
-    progress: () => {
-      /* empty */
-    },
-    complete: (value) => {
-      completion = value;
-    },
-  };
-  return {
-    ui,
-    shown,
-    questions,
-    notes,
-    get plan() {
-      return plan;
-    },
-    get confirmations() {
-      return confirmations;
-    },
-    get managerQuestions() {
-      return managerQuestions;
-    },
-    get completion() {
-      return completion;
-    },
-  };
-}
-const ready: ApplicationDependencies = {
-  assess: () => Effect.succeed("not-required"),
-  install: () => Effect.die("Unexpected installation"),
-};
-
-async function inputPolicy(f: Awaited<ReturnType<typeof fixture>>) {
-  await f.add("integrations/example", {
-    name: "Example",
-    inputs: [
-      {
-        id: "stylesheet",
-        prompt: "Stylesheet path?",
-        type: "path",
-        default: "src/app.css",
-        destination: { file: ".oxfmtrc.json", field: ["sortTailwindcss", "stylesheet"] },
-      },
-    ],
-    devDependencies: { example: "1.0.0" },
-  });
-  await f.write("typescript/integrations/example/files/.oxfmtrc.json", {
-    sortTailwindcss: { stylesheet: "placeholder" },
-  });
-  await f.add("automation/ci", { name: "CI" });
-  await f.write(
-    "typescript/automation/ci/files/.github/workflows/check.yml",
-    "# its-checks: managed\nname: Checks\non: push\n",
-  );
-}
+import { dialogue, ready, inputPolicy } from "./workflow-fixtures.ts";
 
 await test("first run asks explicit categories and selected inputs; rerun preselects and prefills without writes or install", async (t) => {
   const f = await fixture(t);

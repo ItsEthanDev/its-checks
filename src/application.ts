@@ -5,6 +5,7 @@ import * as path from "node:path";
 
 import { Effect, Schema } from "effect";
 
+import type { PlanError } from "./plan-errors.ts";
 import type { ChangePlan, FileChange, FileState } from "./planning.ts";
 import { selectionFilename } from "./selections.ts";
 import { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
@@ -208,107 +209,13 @@ export function applyPlan(
             "Inspect the reported partial state, fix the failure, then build and approve a fresh plan. Already applied configuration remains; no rollback was performed. Run the selected package manager's install again to retry dependency installation.",
         },
       });
-    if (!plan.complete) {
-      return yield* failure(
-        "validation",
-        "Incomplete plan; finish deferred planning before approval",
-      );
-    }
-    // A plan is trusted application data, but observations must cover every approved operation.
-    for (const file of plan.files) {
-      const before = plan.snapshot.files[file.path];
-      if (before === undefined || !same(before, file.before)) {
-        return yield* failure("validation", `Missing or inconsistent snapshot: ${file.path}`);
-      }
-    }
-    yield* assertTargetUnchanged(plan.snapshot).pipe(
-      Effect.mapError((cause) => failure("validation", cause.message)),
-    );
+    yield* validatePlan(plan, failure);
     const fileSystem = options.fileSystem ?? nodeApplicationFileSystem;
     for (const file of changes) {
       const currentOperation = operation(file);
-      const attempt = Effect.gen(function* () {
-        // Recheck root, parents, leaf, bytes, and mode immediately before each operation.
-        yield* assertTargetUnchanged({
-          root: plan.snapshot.root,
-          files: { [file.path]: file.before },
-        });
-        if (file.after.kind === "file") {
-          const parts = file.path.split("/");
-          for (let length = 1; length < parts.length; length++) {
-            const relative = parts.slice(0, length).join("/");
-            const destination = path.join(plan.snapshot.root, relative);
-            const stat = yield* io(async () => {
-              try {
-                return await fs.lstat(destination);
-              } catch (cause) {
-                if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
-                  return undefined;
-                }
-                throw cause;
-              }
-            });
-            if (stat !== undefined) {
-              if (!stat.isDirectory()) {
-                return yield* new OperationError({
-                  detail: `${relative}: Expected a directory, not a symlink`,
-                });
-              }
-            } else {
-              const mkdir: ApplicationOperation = { kind: "create-directory", path: relative };
-              yield* fileSystem
-                .createDirectory(destination)
-                .pipe(Effect.mapError((cause) => failure("filesystem", cause.message, mkdir)));
-              completed.push(mkdir);
-            }
-          }
-          yield* assertTargetUnchanged({
-            root: plan.snapshot.root,
-            files: { [file.path]: file.before },
-          });
-          yield* fileSystem.writeFile(
-            path.join(plan.snapshot.root, file.path),
-            file.after,
-            file.before.kind === "absent",
-          );
-        } else {
-          yield* fileSystem.removeFile(path.join(plan.snapshot.root, file.path));
-        }
-        const actual = yield* readTargetSnapshot(plan.snapshot.root, [file.path]);
-        const observedFile = actual.files[file.path];
-        if (observedFile === undefined || !same(observedFile, file.after)) {
-          return yield* new OperationError({
-            detail: `${file.path}: Operation did not produce the approved bytes and mode`,
-          });
-        }
-        return undefined;
-      });
-      yield* attempt.pipe(
+      yield* applyFile(file, { root: plan.snapshot.root, fileSystem, completed, failure }).pipe(
         Effect.catch((cause) =>
-          Effect.gen(function* () {
-            const failed = Schema.is(ApplicationError)(cause)
-              ? cause.report.failed
-              : currentOperation;
-            const observed = yield* failed?.kind === "create-directory"
-              ? io(async () => {
-                  const stat = await fs.lstat(path.join(plan.snapshot.root, failed.path));
-                  return stat.isDirectory()
-                    ? { kind: "directory" as const, mode: stat.mode & 0o777 }
-                    : ("unavailable" as const);
-                }).pipe(Effect.orElseSucceed(() => "unavailable" as const))
-              : readTargetSnapshot(plan.snapshot.root, [file.path]).pipe(
-                  Effect.map((snapshot) => snapshot.files[file.path] ?? ("unavailable" as const)),
-                  Effect.orElseSucceed(() => "unavailable" as const),
-                );
-            if (Schema.is(ApplicationError)(cause)) {
-              return yield* new ApplicationError({
-                phase: cause.phase,
-                detail: cause.detail,
-                report: { ...cause.report, observed },
-              });
-            }
-            return yield* failure("filesystem", cause.message, currentOperation, observed);
-          }),
+          reportFileFailure(cause, file, { root: plan.snapshot.root, failure }),
         ),
       );
       completed.push(currentOperation);
@@ -329,5 +236,137 @@ export function applyPlan(
     }
     incomplete = [];
     return { status: "completed", completed, incomplete, dependencyWork };
+  });
+}
+
+type Failure = (
+  phase: ApplicationError["phase"],
+  detail: string,
+  failed?: ApplicationOperation,
+  observed?: ApplicationReport["observed"],
+) => ApplicationError;
+
+function validatePlan(plan: ChangePlan, failure: Failure) {
+  return Effect.gen(function* () {
+    if (!plan.complete) {
+      return yield* failure(
+        "validation",
+        "Incomplete plan; finish deferred planning before approval",
+      );
+    }
+    // A plan is trusted application data, but observations must cover every approved operation.
+    for (const file of plan.files) {
+      const before = plan.snapshot.files[file.path];
+      if (before === undefined || !same(before, file.before)) {
+        return yield* failure("validation", `Missing or inconsistent snapshot: ${file.path}`);
+      }
+    }
+    yield* assertTargetUnchanged(plan.snapshot).pipe(
+      Effect.mapError((cause) => failure("validation", cause.message)),
+    );
+    return undefined;
+  });
+}
+
+type FileApplication = {
+  root: string;
+  fileSystem: ApplicationFileSystem;
+  completed: ApplicationOperation[];
+  failure: Failure;
+};
+function createParents(relativePath: string, context: FileApplication) {
+  return Effect.gen(function* () {
+    const { root, fileSystem, completed, failure } = context;
+    const parts = relativePath.split("/");
+    for (let length = 1; length < parts.length; length++) {
+      const relative = parts.slice(0, length).join("/");
+      const destination = path.join(root, relative);
+      const stat = yield* io(async () => {
+        try {
+          return await fs.lstat(destination);
+        } catch (cause) {
+          if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+            return undefined;
+          }
+          throw cause;
+        }
+      });
+      if (stat !== undefined) {
+        if (!stat.isDirectory()) {
+          return yield* new OperationError({
+            detail: `${relative}: Expected a directory, not a symlink`,
+          });
+        }
+        continue;
+      }
+      const mkdir: ApplicationOperation = { kind: "create-directory", path: relative };
+      yield* fileSystem
+        .createDirectory(destination)
+        .pipe(Effect.mapError((cause) => failure("filesystem", cause.message, mkdir)));
+      completed.push(mkdir);
+    }
+    return undefined;
+  });
+}
+
+function applyFile(file: FileChange, context: FileApplication) {
+  return Effect.gen(function* () {
+    const { root, fileSystem } = context;
+    const snapshot = { root, files: { [file.path]: file.before } };
+    // Recheck root, parents, leaf, bytes, and mode immediately before each operation.
+    yield* assertTargetUnchanged(snapshot);
+    if (file.after.kind === "file") {
+      yield* createParents(file.path, context);
+      yield* assertTargetUnchanged(snapshot);
+      yield* fileSystem.writeFile(
+        path.join(root, file.path),
+        file.after,
+        file.before.kind === "absent",
+      );
+    } else {
+      yield* fileSystem.removeFile(path.join(root, file.path));
+    }
+    const actual = yield* readTargetSnapshot(root, [file.path]);
+    const observedFile = actual.files[file.path];
+    if (observedFile === undefined || !same(observedFile, file.after)) {
+      return yield* new OperationError({
+        detail: `${file.path}: Operation did not produce the approved bytes and mode`,
+      });
+    }
+    return undefined;
+  });
+}
+
+function observeFailure(root: string, failed: ApplicationOperation | undefined, file: FileChange) {
+  if (failed?.kind === "create-directory") {
+    return io(async () => {
+      const stat = await fs.lstat(path.join(root, failed.path));
+      return stat.isDirectory()
+        ? { kind: "directory" as const, mode: stat.mode & 0o777 }
+        : ("unavailable" as const);
+    }).pipe(Effect.orElseSucceed(() => "unavailable" as const));
+  }
+  return readTargetSnapshot(root, [file.path]).pipe(
+    Effect.map((snapshot) => snapshot.files[file.path] ?? ("unavailable" as const)),
+    Effect.orElseSucceed(() => "unavailable" as const),
+  );
+}
+
+function reportFileFailure(
+  cause: OperationError | ApplicationError | PlanError,
+  file: FileChange,
+  context: Pick<FileApplication, "root" | "failure">,
+) {
+  return Effect.gen(function* () {
+    const failed = Schema.is(ApplicationError)(cause) ? cause.report.failed : operation(file);
+    const observed = yield* observeFailure(context.root, failed, file);
+    if (Schema.is(ApplicationError)(cause)) {
+      return yield* new ApplicationError({
+        phase: cause.phase,
+        detail: cause.detail,
+        report: { ...cause.report, observed },
+      });
+    }
+    return yield* context.failure("filesystem", cause.message, operation(file), observed);
   });
 }

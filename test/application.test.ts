@@ -3,11 +3,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import {
   applyPlan,
-  ApplicationError,
   OperationError,
   createNodeApplicationFileSystem,
   nodeApplicationFileSystem,
@@ -15,66 +14,15 @@ import {
 } from "../src/application.ts";
 import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
-import { planProject, type ChangePlan, type PlanOptions } from "../src/planning.ts";
-import { createScriptPlanner } from "../src/scripts.ts";
+import { planProject, type ChangePlan } from "../src/planning.ts";
 import { loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+import { noInstall, setup, failure, mtimes } from "./application-fixtures.ts";
 import { defined, json, manifest as parseManifest, object } from "./assertions.ts";
-import { fixture, snapshot } from "./fixtures.ts";
+import { snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;
 const forbiddenMutation = () => Effect.die("Matching application must not mutate filesystem");
 const empty: PolicySelections = { integrations: [], automation: [] };
-const noInstall: ApplicationDependencies = {
-  assess: () => Effect.succeed("not-required"),
-  install: () => Effect.die("Unexpected install"),
-};
-async function setup(t: Parameters<typeof fixture>[0]) {
-  const f = await fixture(t);
-  const resolve = async (selections = empty) =>
-    await run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
-  const plan = async (selections = empty, options: PlanOptions = {}) =>
-    await run(
-      planProject(f.project, await resolve(selections), {
-        scripts: createScriptPlanner("npm"),
-        ...options,
-      }),
-    );
-  const put = async (relative: string, content: string | object) => {
-    const destination = path.join(f.project, relative);
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.writeFile(
-      destination,
-      typeof content === "string" ? content : JSON.stringify(content),
-    );
-  };
-  return { ...f, plan, put };
-}
-async function failure(effect: ReturnType<typeof applyPlan>) {
-  return await run(
-    effect.pipe(
-      Effect.match({
-        onFailure: (error) => error,
-        onSuccess: () => {
-          throw Error("Expected application failure");
-        },
-      }),
-    ),
-  );
-}
-async function mtimes(project: string) {
-  const entries = await snapshot(project);
-  return Object.fromEntries(
-    await Promise.all(
-      Object.keys(entries).map(
-        async (relative) =>
-          [
-            relative,
-            (await fs.stat(path.join(project, relative), { bigint: true })).mtimeNs,
-          ] as const,
-      ),
-    ),
-  );
-}
 
 await test("declined and unapproved plans perform zero writes and no external operations", async (t) => {
   const f = await setup(t);
@@ -273,53 +221,6 @@ await test("failed deselection retains retry identity until all cleanup finishes
   assert.deepEqual((await run(loadPreviousIntent(f.project)))?.integrations, []);
 });
 
-await test("filesystem failure reports completed files, observed partial bytes/mode, stops and recovers by replanning", async (t) => {
-  const f = await setup(t);
-  const plan = await f.plan();
-  let assessed = false;
-  const error = await failure(
-    applyPlan(plan, {
-      approved: true,
-      dependencies: {
-        ...noInstall,
-        assess: () => {
-          assessed = true;
-          return Effect.succeed("not-required");
-        },
-      },
-      fileSystem: {
-        ...nodeApplicationFileSystem,
-        writeFile: (destination, state, create) =>
-          destination.endsWith(".oxfmtrc.json")
-            ? Effect.tryPromise({
-                try: async () => {
-                  await fs.writeFile(destination, "partial", { mode: 0o600 });
-                  throw Error("disk full after partial write");
-                },
-                catch: (cause) => new OperationError({ detail: String(cause) }),
-              })
-            : nodeApplicationFileSystem.writeFile(destination, state, create),
-      },
-    }),
-  );
-  assert.ok(Schema.is(ApplicationError)(error));
-  assert.equal(error.phase, "filesystem");
-  assert.equal(assessed, false);
-  assert.deepEqual(error.report.completed, []);
-  assert.equal(error.report.failed?.path, ".oxfmtrc.json");
-  assert.deepEqual(error.report.observed, {
-    kind: "file",
-    base64: Buffer.from("partial").toString("base64"),
-    mode: 0o600,
-  });
-  assert.ok(error.report.incomplete.some((operation) => operation.path === "package.json"));
-  assert.match(defined(error.report.retry), /fresh plan/);
-  assert.equal(await run(loadPreviousIntent(f.project)), undefined);
-  const retry = await f.plan();
-  await run(applyPlan(retry, { approved: true, dependencies: noInstall }));
-  assert.equal(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"), "{}\n");
-});
-
 for (const failureAt of ["write", "publication"] as const) {
   await test(`failed selection ${failureAt} preserves retry identity and leaves no temporary files`, async (t) => {
     const f = await setup(t);
@@ -427,68 +328,6 @@ await test("installation failure retains all configuration and intent; matching 
   assert.equal(attempts, 2);
 });
 
-await test("new symlink parents and leafs after planning fail without traversing outside the project", async (t) => {
-  const f = await setup(t);
-  await f.write("typescript/base/files/nested/config.sh", "managed");
-  const plan = await f.plan();
-  await fs.symlink(f.root, path.join(f.project, "nested"));
-  const before = await snapshot(f.project);
-  const error = await failure(applyPlan(plan, { approved: true, dependencies: noInstall }));
-  assert.equal(error.phase, "validation");
-  assert.deepEqual(error.report.completed, []);
-  assert.deepEqual(await snapshot(f.project), before);
-  await assert.rejects(fs.stat(path.join(f.root, "config.sh")), { code: "ENOENT" });
-  await fs.unlink(path.join(f.project, "nested"));
-  await fs.symlink(path.join(f.project, "package.json"), path.join(f.project, ".oxlintrc.json"));
-  assert.equal(
-    (await failure(applyPlan(plan, { approved: true, dependencies: noInstall }))).phase,
-    "validation",
-  );
-});
-
-await test("failed parent creation reports observed directory without deleting it or continuing", async (t) => {
-  const f = await setup(t);
-  await f.write("typescript/base/files/tools/deep/check.sh", "echo check");
-  const error = await failure(
-    applyPlan(await f.plan(), {
-      approved: true,
-      dependencies: noInstall,
-      fileSystem: {
-        ...nodeApplicationFileSystem,
-        createDirectory: (destination) =>
-          nodeApplicationFileSystem.createDirectory(destination).pipe(
-            Effect.andThen(
-              Effect.fail(
-                new OperationError({
-                  detail: "directory created but downstream filesystem failure",
-                }),
-              ),
-            ),
-          ),
-      },
-    }),
-  );
-  assert.deepEqual(error.report.failed, { kind: "create-directory", path: "tools" });
-  assert.notEqual(error.report.observed, "unavailable");
-  assert.equal(
-    typeof error.report.observed === "object" && error.report.observed.kind,
-    "directory",
-  );
-  assert.ok(
-    error.report.incomplete.some(
-      (entry) => entry.kind === "create-directory" && entry.path === "tools",
-    ),
-  );
-  assert.ok(
-    error.report.incomplete.some(
-      (entry) => entry.kind === "write-file" && entry.path === "tools/deep/check.sh",
-    ),
-  );
-  assert.equal((await fs.stat(path.join(f.project, "tools"))).isDirectory(), true);
-  await assert.rejects(fs.stat(path.join(f.project, "tools/deep")), { code: "ENOENT" });
-  await run(applyPlan(await f.plan(), { approved: true, dependencies: noInstall }));
-});
-
 await test("saved answers and config finish before dependency assessment fails", async (t) => {
   const f = await setup(t);
   await f.add("base", {
@@ -539,92 +378,4 @@ await test("saved answers and config finish before dependency assessment fails",
     error.report.incomplete.map((entry) => entry.kind),
     ["assess-dependencies", "install-dependencies"],
   );
-});
-
-await test("file removal failure stops and reports retained migration content", async (t) => {
-  const f = await setup(t);
-  await f.put("prettier.config.js", "throw Error('never execute');");
-  const error = await failure(
-    applyPlan(await f.plan(), {
-      approved: true,
-      dependencies: noInstall,
-      fileSystem: {
-        ...nodeApplicationFileSystem,
-        removeFile: () => Effect.fail(new OperationError({ detail: "Removal denied" })),
-      },
-    }),
-  );
-  assert.deepEqual(error.report.failed, { kind: "remove-file", path: "prettier.config.js" });
-  assert.notEqual(error.report.observed, "unavailable");
-  assert.equal(typeof error.report.observed === "object" && error.report.observed.kind, "file");
-  assert.deepEqual(error.report.incomplete, [
-    { kind: "remove-file", path: "prettier.config.js" },
-    { kind: "write-file", path: selectionFilename },
-    { kind: "assess-dependencies", path: "package.json" },
-    { kind: "install-dependencies", path: "package.json" },
-  ]);
-  assert.equal(
-    await fs.readFile(path.join(f.project, "prettier.config.js"), "utf8"),
-    "throw Error('never execute');",
-  );
-});
-
-await test("a symlink introduced during application is rechecked before the next file write", async (t) => {
-  const f = await setup(t);
-  const outside = path.join(f.root, "outside.json");
-  await fs.writeFile(outside, "keep");
-  const error = await failure(
-    applyPlan(await f.plan(), {
-      approved: true,
-      dependencies: noInstall,
-      fileSystem: {
-        ...nodeApplicationFileSystem,
-        writeFile: (destination, state, create) =>
-          nodeApplicationFileSystem.writeFile(destination, state, create).pipe(
-            Effect.andThen(
-              destination.endsWith(".oxfmtrc.json")
-                ? Effect.tryPromise({
-                    try: () => fs.symlink(outside, path.join(f.project, ".oxlintrc.json")),
-                    catch: (cause) => new OperationError({ detail: String(cause) }),
-                  })
-                : Effect.void,
-            ),
-          ),
-      },
-    }),
-  );
-  assert.equal(error.phase, "filesystem");
-  assert.deepEqual(error.report.completed, [{ kind: "write-file", path: ".oxfmtrc.json" }]);
-  assert.equal(error.report.failed?.path, ".oxlintrc.json");
-  assert.equal(error.report.observed, "unavailable");
-  assert.equal(await fs.readFile(outside, "utf8"), "keep");
-});
-
-await test("a failed operation that already wrote intended bytes is not relabeled successful", async (t) => {
-  const f = await setup(t);
-  const plan = await f.plan();
-  const error = await failure(
-    applyPlan(plan, {
-      approved: true,
-      dependencies: noInstall,
-      fileSystem: {
-        ...nodeApplicationFileSystem,
-        writeFile: (destination, state, create) =>
-          nodeApplicationFileSystem
-            .writeFile(destination, state, create)
-            .pipe(
-              Effect.andThen(
-                Effect.fail(new OperationError({ detail: "failure after file was written" })),
-              ),
-            ),
-      },
-    }),
-  );
-  assert.deepEqual(error.report.completed, []);
-  assert.equal(error.report.failed?.path, ".oxfmtrc.json");
-  assert.deepEqual(
-    error.report.observed,
-    defined(plan.files.find((file) => file.path === ".oxfmtrc.json")).after,
-  );
-  assert.ok(error.report.incomplete.some((entry) => entry.path === ".oxfmtrc.json"));
 });

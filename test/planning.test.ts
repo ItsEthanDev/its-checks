@@ -7,40 +7,13 @@ import { Effect } from "effect";
 
 import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
-import {
-  planProject,
-  assertTargetUnchanged,
-  readTargetSnapshot,
-  type ChangePlan,
-} from "../src/planning.ts";
-import { defined, json, strings } from "./assertions.ts";
+import { planProject, assertTargetUnchanged, readTargetSnapshot } from "../src/planning.ts";
+import { defined, strings } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
+import { output, value, changed, setup } from "./planning-fixtures.ts";
 
 const run = Effect.runPromise;
 const empty: PolicySelections = { integrations: [], automation: [] };
-const output = (plan: ChangePlan, relative: string) => {
-  const file = defined(plan.files.find((candidate) => candidate.path === relative));
-  assert.equal(file.after.kind, "file");
-  return Buffer.from(file.after.base64, "base64").toString("utf8");
-};
-const value = (plan: ChangePlan, relative: string) => json(output(plan, relative));
-const changed = (plan: ChangePlan) =>
-  plan.files.filter((file) => file.kind !== "noop").map((file) => [file.path, file.kind]);
-async function setup(t: Parameters<typeof fixture>[0]) {
-  const f = await fixture(t);
-  await f.add("base", { name: "TypeScript", devDependencies: { oxlint: "1.0.0" } });
-  const resolve = async (selections = empty) =>
-    await run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
-  const writeProject = async (relative: string, content: string | object) => {
-    const destination = path.join(f.project, relative);
-    await fs.mkdir(path.dirname(destination), { recursive: true });
-    await fs.writeFile(
-      destination,
-      typeof content === "string" ? content : JSON.stringify(content),
-    );
-  };
-  return { ...f, resolve, writeProject };
-}
 
 await test("fresh package gets a complete read-only plan with exact creations, additions, and stale observations", async (t) => {
   const f = await setup(t);
@@ -66,82 +39,6 @@ await test("fresh package gets a complete read-only plan with exact creations, a
   await run(assertTargetUnchanged(plan.snapshot));
   await f.writeProject("oxlint.config.ts", "throw Error('never execute');");
   await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed since planning/);
-});
-
-await test("native fragments compose in stable category order with atomic rules, ordered deduplication and overrides", async (t) => {
-  const f = await setup(t);
-  await f.write("typescript/base/files/.oxlintrc.json", {
-    rules: { tuple: ["warn", { allow: ["base"], nested: { base: true } }], baseline: "error" },
-    plugins: ["typescript"],
-    jsPlugins: [{ name: "p", specifier: "package" }],
-    extends: ["./node_modules/preset/base.json"],
-    overrides: [{ files: ["base/**"], rules: { tuple: "off" } }],
-    settings: { plugin: { baseline: true }, retained: 1 },
-    options: { typeAware: true },
-    ignorePatterns: ["base"],
-  });
-  await f.write("typescript/base/files/.oxfmtrc.jsonc", {
-    sortImports: { groups: ["base"], newlinesBetween: 1 },
-    ignorePatterns: ["base"],
-    overrides: [{ files: ["base/**"], options: { semi: true } }],
-  });
-  for (const key of ["integrations/z", "integrations/a", "automation/ci"]) {
-    await f.add(key);
-  }
-  await f.write("typescript/integrations/a/files/.oxlintrc.json", {
-    rules: { tuple: ["error", { allow: ["a"] }] },
-    plugins: ["typescript", "react"],
-    jsPlugins: [{ specifier: "package", name: "p" }, "other"],
-    extends: ["./node_modules/preset/base.json", "./node_modules/preset/a.json"],
-    settings: { plugin: { replaced: true } },
-    options: { typeAware: false },
-    ignorePatterns: ["base", "a", "a"],
-    overrides: [{ files: ["a/**"], rules: { tuple: ["warn", {}] } }],
-  });
-  await f.write("typescript/integrations/z/files/.oxlintrc.jsonc", {
-    rules: { tuple: ["error", { allow: ["z"] }] },
-    overrides: [{ files: ["z/**"] }],
-  });
-  await f.write("typescript/automation/ci/files/.oxlintrc.json", {
-    globals: { window: "readonly" },
-    overrides: [{ files: ["ci/**"] }],
-  });
-  await f.write("typescript/integrations/a/files/.oxfmtrc.json", {
-    sortImports: { groups: ["a"] },
-    ignorePatterns: ["base", "a", "a"],
-    overrides: [{ files: ["a/**"], options: { semi: false } }],
-  });
-  const first = await run(
-    planProject(f.project, await f.resolve({ integrations: ["z", "a"], automation: ["ci"] })),
-  );
-  const second = await run(
-    planProject(f.project, await f.resolve({ integrations: ["a", "z"], automation: ["ci"] })),
-  );
-  assert.deepEqual(first, second);
-  assert.deepEqual(value(first, ".oxlintrc.json"), {
-    rules: { baseline: "error", tuple: ["error", { allow: ["z"] }] },
-    plugins: ["typescript", "react"],
-    jsPlugins: [{ name: "p", specifier: "package" }, "other"],
-    extends: ["./node_modules/preset/base.json", "./node_modules/preset/a.json"],
-    settings: { plugin: { replaced: true }, retained: 1 },
-    options: { typeAware: false },
-    ignorePatterns: ["base", "a"],
-    globals: { window: "readonly" },
-    overrides: [
-      { files: ["base/**"], rules: { tuple: "off" } },
-      { files: ["a/**"], rules: { tuple: ["warn", {}] } },
-      { files: ["z/**"] },
-      { files: ["ci/**"] },
-    ],
-  });
-  assert.deepEqual(value(first, ".oxfmtrc.json"), {
-    sortImports: { groups: ["a"] },
-    ignorePatterns: ["base", "a"],
-    overrides: [
-      { files: ["base/**"], options: { semi: true } },
-      { files: ["a/**"], options: { semi: false } },
-    ],
-  });
 });
 
 await test("existing dedicated configuration is replaced, never inherited; matching JSON preserves exact bytes", async (t) => {

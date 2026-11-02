@@ -62,51 +62,53 @@ export function readTargetSnapshot(
         }
         aliases.set(prefix.toLowerCase(), prefix);
       }
-      let absent = false;
-      for (let index = 0; index < parts.length; index++) {
-        const source = path.join(root, ...parts.slice(0, index + 1));
-        const stat = yield* Effect.tryPromise({
-          try: async () => {
-            try {
-              return await fs.lstat(source);
-            } catch (cause) {
-              if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
-                return undefined;
-              }
-              throw cause;
-            }
-          },
-          catch: (cause) => error(source, String(cause)),
-        });
-        if (stat === undefined) {
-          absent = true;
-          break;
-        }
-        if (index < parts.length - 1) {
-          if (!stat.isDirectory()) {
-            return yield* error(source, "Expected a directory; target symlinks are forbidden");
-          }
-        } else {
-          if (!stat.isFile()) {
-            return yield* error(source, "Expected a regular file; target symlinks are forbidden");
-          }
-          files[relative] = yield* Effect.acquireUseRelease(
-            io(source, () => fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW)),
-            (handle) =>
-              io(source, async () => ({
-                kind: "file" as const,
-                base64: (await handle.readFile()).toString("base64"),
-                mode: (await handle.stat()).mode & 0o777,
-              })),
-            (handle) => io(source, () => handle.close()),
-          );
-        }
-      }
-      if (absent) {
-        files[relative] = { kind: "absent" };
-      }
+      files[relative] = yield* readTargetFile(root, parts);
     }
     return { root, files };
+  });
+}
+
+function readTargetFile(root: string, parts: readonly string[]) {
+  return Effect.gen(function* () {
+    for (let index = 0; index < parts.length; index++) {
+      const source = path.join(root, ...parts.slice(0, index + 1));
+      const stat = yield* Effect.tryPromise({
+        try: async () => {
+          try {
+            return await fs.lstat(source);
+          } catch (cause) {
+            if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
+              return undefined;
+            }
+            throw cause;
+          }
+        },
+        catch: (cause) => error(source, String(cause)),
+      });
+      if (stat === undefined) {
+        return { kind: "absent" as const };
+      }
+      if (index < parts.length - 1) {
+        if (!stat.isDirectory()) {
+          return yield* error(source, "Expected a directory; target symlinks are forbidden");
+        }
+        continue;
+      }
+      if (!stat.isFile()) {
+        return yield* error(source, "Expected a regular file; target symlinks are forbidden");
+      }
+      return yield* Effect.acquireUseRelease(
+        io(source, () => fs.open(source, constants.O_RDONLY | constants.O_NOFOLLOW)),
+        (handle) =>
+          io(source, async () => ({
+            kind: "file" as const,
+            base64: (await handle.readFile()).toString("base64"),
+            mode: (await handle.stat()).mode & 0o777,
+          })),
+        (handle) => io(source, () => handle.close()),
+      );
+    }
+    return { kind: "absent" as const };
   });
 }
 

@@ -6,7 +6,7 @@ import { test } from "node:test";
 
 import { Effect, Schema } from "effect";
 
-import { applyPlan, ApplicationError } from "../src/application.ts";
+import { applyPlan, ApplicationError, type ApplicationDependencies } from "../src/application.ts";
 import { loadPolicy } from "../src/bundles.ts";
 import { resolveInputs } from "../src/inputs.ts";
 import {
@@ -14,7 +14,7 @@ import {
   resolveTargetManager,
   nodeManagerOperations,
 } from "../src/package-managers.ts";
-import { planProject } from "../src/planning.ts";
+import { planProject, type ChangePlan } from "../src/planning.ts";
 import type { PackageManager } from "../src/scripts.ts";
 import { loadPreviousIntent } from "../src/selections.ts";
 import { json, object, manifest as parseManifest } from "./assertions.ts";
@@ -74,13 +74,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         devDependencies: { "unrelated-dep": "file:../keep.tgz" },
         custom: { preserved: true },
       });
-      // Keep integration fixtures offline; these are test isolation settings, not product requirements.
-      if (manager === "npm") {
-        await put(path.join(project, ".npmrc"), "offline=true\naudit=false\nfund=false\n");
-      }
-      if (manager === "yarn") {
-        await put(path.join(project, ".yarnrc"), "disable-self-update-check true\noffline true\n");
-      }
+      await isolateManager(project, manager);
       await put(path.join(policy, "bundle.json"), {
         schemaVersion: 1,
         source: {
@@ -131,24 +125,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         await fs.readFile(path.join(project, "commands.log"), "utf8"),
         "original\nhelper\n",
       );
-      // A matching or reformatted configuration still delegates installation; no native-state audit.
-      for (const layout of ["whitespace", "key-order"]) {
-        const file = path.join(project, "package.json");
-        const manifest = json(await fs.readFile(file, "utf8"));
-        const bytes =
-          layout === "whitespace"
-            ? `${JSON.stringify(manifest, null, 4)}\n\n`
-            : `${JSON.stringify(Object.fromEntries(Object.entries(manifest).toReversed()))}\n`;
-        await fs.writeFile(file, bytes);
-        const matching = await plan();
-        assert.ok(matching.files.every((entry) => entry.kind === "noop"));
-        assert.equal(
-          (await run(applyPlan(matching, { approved: true, dependencies: adapter })))
-            .dependencyWork,
-          "completed",
-        );
-        assert.equal(await fs.readFile(file, "utf8"), bytes);
-      }
+      await checkMatchingReruns(project, plan, adapter);
       assert.equal(installs, 3);
       // Managers may cache lifecycle execution on unchanged installs (pnpm does).
       assert.match(
@@ -238,4 +215,38 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       assert.equal(installs, 9);
     },
   );
+}
+
+async function isolateManager(project: string, manager: PackageManager) {
+  // Keep integration fixtures offline; these are test isolation settings, not product requirements.
+  if (manager === "npm") {
+    await put(path.join(project, ".npmrc"), "offline=true\naudit=false\nfund=false\n");
+  }
+  if (manager === "yarn") {
+    await put(path.join(project, ".yarnrc"), "disable-self-update-check true\noffline true\n");
+  }
+}
+
+async function checkMatchingReruns(
+  project: string,
+  plan: () => Promise<ChangePlan>,
+  adapter: ApplicationDependencies,
+) {
+  // A matching or reformatted configuration still delegates installation; no native-state audit.
+  for (const layout of ["whitespace", "key-order"]) {
+    const file = path.join(project, "package.json");
+    const manifest = json(await fs.readFile(file, "utf8"));
+    const bytes =
+      layout === "whitespace"
+        ? `${JSON.stringify(manifest, null, 4)}\n\n`
+        : `${JSON.stringify(Object.fromEntries(Object.entries(manifest).toReversed()))}\n`;
+    await fs.writeFile(file, bytes);
+    const matching = await plan();
+    assert.ok(matching.files.every((entry) => entry.kind === "noop"));
+    assert.equal(
+      (await run(applyPlan(matching, { approved: true, dependencies: adapter }))).dependencyWork,
+      "completed",
+    );
+    assert.equal(await fs.readFile(file, "utf8"), bytes);
+  }
 }

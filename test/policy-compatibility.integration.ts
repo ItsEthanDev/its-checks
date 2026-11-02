@@ -51,6 +51,15 @@ async function inspectInstall(plan: ChangePlan, audit: string, project: string) 
   const packages = object(
     json(await fs.readFile(path.join(audit, "package-lock.json"), "utf8")).packages,
   );
+  const count = await inspectPackages(audit, packages);
+  // Husky 9.1.7 bin/index/husky were inspected: local git config + .husky/_ writes,
+  // no init command (which would overwrite package.json/pre-commit), no network.
+  // Oxc native binaries are platform optional packages, not install-time downloads.
+  await fs.copyFile(path.join(audit, "package-lock.json"), path.join(project, "package-lock.json"));
+  return count;
+}
+
+async function inspectPackages(audit: string, packages: ReturnType<typeof object>) {
   let count = 0;
   for (const [location, metadata] of Object.entries(packages)) {
     if (location.length === 0) {
@@ -90,10 +99,6 @@ async function inspectInstall(plan: ChangePlan, audit: string, project: string) 
     );
     count++;
   }
-  // Husky 9.1.7 bin/index/husky were inspected: local git config + .husky/_ writes,
-  // no init command (which would overwrite package.json/pre-commit), no network.
-  // Oxc native binaries are platform optional packages, not install-time downloads.
-  await fs.copyFile(path.join(audit, "package-lock.json"), path.join(project, "package-lock.json"));
   return count;
 }
 

@@ -85,21 +85,9 @@ export function prepareAutomation(
   return Effect.try({
     try: () => {
       const outputs = new Map<string, NativeFile>();
-      const removals = new Set<string>();
       for (const bundle of selected) {
         for (const file of bundle.files.filter((candidate) => isAutomationPath(candidate.path))) {
-          if (file.path.startsWith(".husky/") && file.path !== dedicatedHook) {
-            throw fail(
-              file.source,
-              `Author the hook commands in ${dedicatedHook}; ${hook} is shared and only its invocation block is managed`,
-            );
-          }
-          if (!owned(file.content)) {
-            throw fail(
-              file.source,
-              `Dedicated automation requires ${ownership} as the first line (or immediately after a shell shebang)`,
-            );
-          }
+          validateAutomationFile(file);
           const prior = outputs.get(file.path);
           if (
             prior !== undefined &&
@@ -113,24 +101,7 @@ export function prepareAutomation(
           outputs.set(file.path, file);
         }
       }
-      for (const bundle of selected) {
-        for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
-          if (!isAutomationPath(relative)) {
-            continue;
-          }
-          if (outputs.has(relative) || (relative === hook && outputs.has(dedicatedHook))) {
-            throw fail(bundle.source, `Cannot remove selected automation output ${relative}`);
-          }
-          removals.add(relative);
-        }
-      }
-      for (const bundle of deselected) {
-        for (const file of bundle.files) {
-          if (isAutomationPath(file.path) && !outputs.has(file.path)) {
-            removals.add(file.path);
-          }
-        }
-      }
+      const removals = automationRemovals(selected, deselected, outputs);
       const manageHook =
         outputs.has(dedicatedHook) || removals.has(dedicatedHook) || removals.has(hook);
       const paths = [...new Set([...outputs.keys(), ...removals, ...(manageHook ? [hook] : [])])];
@@ -138,66 +109,131 @@ export function prepareAutomation(
         paths,
         plan: (snapshot: TargetSnapshot) =>
           Effect.try({
-            try: () => {
-              const changes = new Map<string, AutomationChange>();
-              for (const relative of paths) {
-                if (relative === hook) {
-                  continue;
-                }
-                const before = snapshot.files[relative];
-                if (before === undefined) {
-                  throw fail(relative, "Missing target snapshot");
-                }
-                if (before.kind === "file" && !owned(text(relative, before))) {
-                  throw fail(
-                    relative,
-                    `Unrelated content at dedicated automation destination. Move or rename it, or choose another policy destination, then retry; confirmation cannot authorize replacement or removal`,
-                  );
-                }
-                const output = outputs.get(relative);
-                changes.set(relative, {
-                  after:
-                    output !== undefined
-                      ? state(output.content, before, output.executable)
-                      : { kind: "absent" },
-                  reasons: [
-                    output !== undefined
-                      ? `native automation: ${output.source}`
-                      : "identifiable automation cleanup",
-                  ],
-                });
-              }
-              if (manageHook) {
-                const before = snapshot.files[hook];
-                if (before === undefined) {
-                  throw fail(hook, "Missing target snapshot");
-                }
-                const content = text(hook, before);
-                const range = blockRange(content);
-                const newline = content.includes("\r\n") ? "\r\n" : "\n";
-                const invocation = `${begin}${newline}sh ${dedicatedHook}${newline}${end}`;
-                const replacement = outputs.has(dedicatedHook)
-                  ? `${range?.start === 0 || content.length === 0 ? "" : newline}${invocation}`
-                  : "";
-                let after = content;
-                if (range !== undefined) {
-                  after = content.slice(0, range.start) + replacement + content.slice(range.end);
-                } else if (outputs.has(dedicatedHook)) {
-                  after = content + replacement;
-                }
-                changes.set(hook, {
-                  after:
-                    before.kind === "absent" && after === "" ? before : state(after, before, true),
-                  reasons: ["managed pre-commit invocation block; surrounding bytes preserved"],
-                });
-              }
-              return changes;
-            },
-            catch: (cause) =>
-              Schema.is(PlanError)(cause) ? cause : fail("automation", String(cause)),
+            try: () => automationChanges(snapshot, { outputs, paths, manageHook }),
+            catch: automationError,
           }),
       };
     },
-    catch: (cause) => (Schema.is(PlanError)(cause) ? cause : fail("automation", String(cause))),
+    catch: automationError,
   });
+}
+
+const automationError = (cause: unknown) =>
+  Schema.is(PlanError)(cause) ? cause : fail("automation", String(cause));
+
+function automationRemovals(
+  selected: readonly LoadedBundle[],
+  deselected: readonly LoadedBundle[],
+  outputs: ReadonlyMap<string, NativeFile>,
+) {
+  const removals = new Set<string>();
+  for (const bundle of selected) {
+    addMigrationRemovals(bundle, outputs, removals);
+  }
+  for (const bundle of deselected) {
+    for (const file of bundle.files) {
+      if (isAutomationPath(file.path) && !outputs.has(file.path)) {
+        removals.add(file.path);
+      }
+    }
+  }
+  return removals;
+}
+
+function automationChanges(
+  snapshot: TargetSnapshot,
+  context: {
+    outputs: ReadonlyMap<string, NativeFile>;
+    paths: readonly string[];
+    manageHook: boolean;
+  },
+) {
+  const { outputs, paths, manageHook } = context;
+  const changes = new Map<string, AutomationChange>();
+  for (const relative of paths) {
+    if (relative === hook) {
+      continue;
+    }
+    const before = snapshot.files[relative];
+    if (before === undefined) {
+      throw fail(relative, "Missing target snapshot");
+    }
+    if (before.kind === "file" && !owned(text(relative, before))) {
+      throw fail(
+        relative,
+        `Unrelated content at dedicated automation destination. Move or rename it, or choose another policy destination, then retry; confirmation cannot authorize replacement or removal`,
+      );
+    }
+    const output = outputs.get(relative);
+    changes.set(relative, {
+      after:
+        output !== undefined
+          ? state(output.content, before, output.executable)
+          : { kind: "absent" },
+      reasons: [
+        output !== undefined
+          ? `native automation: ${output.source}`
+          : "identifiable automation cleanup",
+      ],
+    });
+  }
+  if (manageHook) {
+    changes.set(hook, hookChange(snapshot, outputs.has(dedicatedHook)));
+  }
+  return changes;
+}
+
+function validateAutomationFile(file: NativeFile) {
+  if (file.path.startsWith(".husky/") && file.path !== dedicatedHook) {
+    throw fail(
+      file.source,
+      `Author the hook commands in ${dedicatedHook}; ${hook} is shared and only its invocation block is managed`,
+    );
+  }
+  if (!owned(file.content)) {
+    throw fail(
+      file.source,
+      `Dedicated automation requires ${ownership} as the first line (or immediately after a shell shebang)`,
+    );
+  }
+}
+function addMigrationRemovals(
+  bundle: LoadedBundle,
+  outputs: ReadonlyMap<string, NativeFile>,
+  removals: Set<string>,
+) {
+  for (const relative of bundle.declaration.migration?.removeFiles ?? []) {
+    if (!isAutomationPath(relative)) {
+      continue;
+    }
+    if (outputs.has(relative) || (relative === hook && outputs.has(dedicatedHook))) {
+      throw fail(bundle.source, `Cannot remove selected automation output ${relative}`);
+    }
+    removals.add(relative);
+  }
+}
+function hookInvocation(content: string, range: ReturnType<typeof blockRange>, enabled: boolean) {
+  const newline = content.includes("\r\n") ? "\r\n" : "\n";
+  const invocation = `${begin}${newline}sh ${dedicatedHook}${newline}${end}`;
+  return enabled ? `${range?.start === 0 || content.length === 0 ? "" : newline}${invocation}` : "";
+}
+
+function hookChange(snapshot: TargetSnapshot, enabled: boolean): AutomationChange {
+  const before = snapshot.files[hook];
+  if (before === undefined) {
+    throw fail(hook, "Missing target snapshot");
+  }
+  const content = text(hook, before);
+  const range = blockRange(content);
+  const replacement = hookInvocation(content, range, enabled);
+  let after = content;
+  if (range !== undefined) {
+    after = content.slice(0, range.start) + replacement + content.slice(range.end);
+  } else if (enabled) {
+    after = content + replacement;
+  }
+  return {
+    after: before.kind === "absent" && after === "" ? before : state(after, before, true),
+    reasons: ["managed pre-commit invocation block; surrounding bytes preserved"],
+  };
 }

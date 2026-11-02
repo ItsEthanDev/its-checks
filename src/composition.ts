@@ -81,49 +81,71 @@ export function composeConfigurations(
         if (!("value" in file) || !isObject(file.value)) {
           return yield* fail("$", "Expected a native JSON/JSONC object");
         }
-        const output = outputs[destination];
-        const lint = destination === ".oxlintrc.json";
-        for (const [field, value] of Object.entries(file.value)) {
-          if (!lint && field === "extends") {
-            return yield* fail(field, "Oxfmt extends is not an installer-supported field");
-          }
-          if (
-            lint &&
-            ["rules", "categories", "env", "globals", "settings", "options"].includes(field)
-          ) {
-            if (!isObject(value)) {
-              return yield* fail(
-                field,
-                "Expected an object; entries compose by key as whole values",
-              );
-            }
-            const previous = output[field];
-            output[field] = { ...(isObject(previous) ? previous : {}), ...value };
-          } else if (
-            field === "overrides" ||
-            field === "ignorePatterns" ||
-            (lint && ["plugins", "jsPlugins", "extends"].includes(field))
-          ) {
-            if (!isArray(value)) {
-              return yield* fail(field, "Expected an array");
-            }
-            const previous = output[field];
-            const combined = [...(isArray(previous) ? previous : []), ...value];
-            output[field] =
-              field === "overrides"
-                ? combined
-                : combined.filter(
-                    (entry, index) =>
-                      combined.findIndex((other) => canonical(other) === canonical(entry)) ===
-                      index,
-                  );
-          } else {
-            // Every other top-level field is atomic, including formatter option objects and arrays.
-            output[field] = value;
-          }
-        }
+        yield* mergeConfiguration(outputs[destination], file.value, {
+          lint: destination === ".oxlintrc.json",
+          source: file.source,
+        });
       }
     }
     return outputs;
   });
+}
+
+function mergeConfiguration(
+  output: Record<string, JsonValue>,
+  fragment: JsonObject,
+  context: { lint: boolean; source: string },
+) {
+  return Effect.gen(function* () {
+    const { lint, source } = context;
+    const fail = (field: string, detail: string) =>
+      Effect.fail(new PlanError({ source, field, detail }));
+    for (const [field, value] of Object.entries(fragment)) {
+      const mode = compositionMode(field, lint);
+      if (mode === "unsupported") {
+        return yield* fail(field, "Oxfmt extends is not an installer-supported field");
+      }
+      if (mode === "object") {
+        if (!isObject(value)) {
+          return yield* fail(field, "Expected an object; entries compose by key as whole values");
+        }
+        const previous = output[field];
+        output[field] = { ...(isObject(previous) ? previous : {}), ...value };
+      } else if (mode === "array") {
+        if (!isArray(value)) {
+          return yield* fail(field, "Expected an array");
+        }
+        const previous = output[field];
+        const combined = [...(isArray(previous) ? previous : []), ...value];
+        output[field] =
+          field === "overrides"
+            ? combined
+            : combined.filter(
+                (entry, index) =>
+                  combined.findIndex((other) => canonical(other) === canonical(entry)) === index,
+              );
+      } else {
+        // Every other top-level field is atomic, including formatter option objects and arrays.
+        output[field] = value;
+      }
+    }
+    return undefined;
+  });
+}
+
+function compositionMode(field: string, lint: boolean) {
+  if (!lint && field === "extends") {
+    return "unsupported";
+  }
+  if (lint && ["rules", "categories", "env", "globals", "settings", "options"].includes(field)) {
+    return "object";
+  }
+  if (
+    field === "overrides" ||
+    field === "ignorePatterns" ||
+    (lint && ["plugins", "jsPlugins", "extends"].includes(field))
+  ) {
+    return "array";
+  }
+  return "atomic";
 }

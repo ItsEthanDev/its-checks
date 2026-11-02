@@ -141,146 +141,184 @@ export function headless(
     const { values, positionals } = parsed;
     const [command, planFile] = positionals;
     const policyRoot = path.join(packageRoot, "policy");
-    if (
-      command === "options" &&
-      positionals.length === 1 &&
-      values.config === undefined &&
-      values.out === undefined
-    ) {
-      const catalog = yield* discoverPolicy(policyRoot);
-      const describe = (bundle: typeof catalog.baseline) => ({
-        id: bundle.id,
-        key: bundle.key,
-        name: bundle.declaration.name,
-        ...(bundle.declaration.description === undefined
-          ? {}
-          : { description: bundle.declaration.description }),
-        inputs: bundle.declaration.inputs ?? [],
-      });
-      const result = {
-        base: describe(catalog.baseline),
-        integrations: catalog.integrations.map(describe),
-        automation: catalog.automation.map(describe),
-      };
-      return { json: values.json === true, result };
-    }
-    if (
-      command === "plan" &&
-      positionals.length === 1 &&
-      values.config !== undefined &&
-      values.out !== undefined
-    ) {
-      const config = yield* readJson(path.resolve(projectRoot, values.config), Config);
-      const previous = yield* loadPreviousIntent(projectRoot);
-      const catalog = yield* discoverPolicy(policyRoot);
-      const policy = yield* loadPolicy(policyRoot, config);
-      const resolution = yield* resolveTargetManager(projectRoot, config.packageManager);
-      if (resolution.kind === "question") {
-        return yield* fail(
-          `${resolution.reason} Set packageManager in the config to one of: ${resolution.choices.join(", ")}. Evidence: ${resolution.evidence.length === 0 ? "none" : resolution.evidence.join(", ")}`,
-        );
-      }
-      const commit = yield* executingCommit(packageRoot);
-      const plan = yield* prepareSetupPlan({
-        projectRoot,
-        policy,
-        answers: config.answers,
-        target: resolution.target,
-        previous,
-        prior: knownSelections(catalog, previous),
-        ...(commit === undefined ? {} : { commit }),
-      });
-      const evidence = yield* readTargetSnapshot(projectRoot, managerLockfiles);
-      const saved: typeof SavedPlan.Type = {
-        schemaVersion: 1,
-        generator: yield* fingerprint(packageRoot),
-        manager: resolution.target.manager,
-        plan: {
-          ...plan,
-          snapshot: {
-            root: plan.snapshot.root,
-            files: { ...evidence.files, ...plan.snapshot.files },
-          },
-        },
-      };
-      const requested = path.resolve(projectRoot, values.out);
-      const output = path.join(
-        yield* io(() => fs.realpath(path.dirname(requested))),
-        path.basename(requested),
-      );
-      if (
-        Object.keys(saved.plan.snapshot.files).some((relative) => {
-          const target = path.join(saved.plan.snapshot.root, relative);
-          return (
-            output === target ||
-            output.startsWith(`${target}${path.sep}`) ||
-            target.startsWith(`${output}${path.sep}`)
-          );
-        })
-      ) {
-        return yield* fail(
-          "Plan output must not overlap a target configuration or package-manager file",
-        );
-      }
-      yield* assertTargetUnchanged(saved.plan.snapshot);
-      // Never truncate an existing config, project file, or previously approved plan.
-      yield* io(() =>
-        fs.writeFile(output, `${JSON.stringify(saved, null, 2)}\n`, { flag: "wx", mode: 0o600 }),
-      );
-      return {
-        json: values.json === true,
-        result: saved,
-        text: [
-          `Target: ${plan.snapshot.root}`,
-          `Package manager: ${saved.manager}`,
-          ...plan.files
-            .filter((file) => file.kind !== "noop")
-            .map((file) => `${file.kind}: ${file.path}${file.conflict ? " [conflict]" : ""}`),
-          ...plan.packageEntries
-            .filter((entry) => entry.kind !== "noop")
-            .map(
-              (entry) =>
-                `${entry.kind}: ${entry.section}.${entry.name}: ${JSON.stringify(entry.before)} → ${JSON.stringify(entry.after)}`,
-            ),
-          `After applying: ${saved.manager} install (including lifecycle scripts)`,
-          `Plan saved: ${output}`,
-          "No project configuration changed; no installation performed.",
-        ].join("\n"),
-      };
-    }
-    if (
-      command === "apply" &&
-      positionals.length === 2 &&
-      planFile !== undefined &&
-      values.config === undefined &&
-      values.out === undefined
-    ) {
-      const saved = yield* readJson(path.resolve(projectRoot, planFile), SavedPlan);
-      if (!path.isAbsolute(saved.plan.snapshot.root)) {
-        return yield* fail("Plan target must be an absolute path");
-      }
-      if (saved.generator !== (yield* fingerprint(packageRoot))) {
-        return yield* fail(
-          "Generator changed since planning; use the same generator or build a fresh plan",
-        );
-      }
-      yield* assertTargetUnchanged(saved.plan.snapshot);
-      const resolution = yield* resolveTargetManager(saved.plan.snapshot.root, saved.manager);
-      if (resolution.kind !== "resolved") {
-        return yield* fail("Cannot resolve saved package manager");
-      }
-      const report = yield* applyPlan(saved.plan, {
-        approved: true,
-        dependencies: createDependencyAdapter(resolution.target),
-      });
-      return {
-        json: values.json === true,
-        result: report,
-        text: `Completed: ${report.completed.length} operations; dependencies ${report.dependencyWork}.`,
-      };
+    switch (command) {
+      case "options":
+        if (positionals.length === 1 && withoutPlanOptions(values)) {
+          return { json: values.json === true, result: yield* describeOptions(policyRoot) };
+        }
+        break;
+      case "plan":
+        if (positionals.length === 1 && values.config !== undefined && values.out !== undefined) {
+          const result = yield* savePlan({
+            projectRoot,
+            packageRoot,
+            configFile: values.config,
+            out: values.out,
+          });
+          return { json: values.json === true, ...result };
+        }
+        break;
+      case "apply":
+        if (positionals.length === 2 && planFile !== undefined && withoutPlanOptions(values)) {
+          const report = yield* applySavedPlan(path.resolve(projectRoot, planFile), packageRoot);
+          return {
+            json: values.json === true,
+            result: report,
+            text: `Completed: ${report.completed.length} operations; dependencies ${report.dependencyWork}.`,
+          };
+        }
+        break;
+      case undefined:
+      default:
+        break;
     }
     return yield* fail(
       "Usage: its-checks options [--json] | plan --config <file> --out <new-file> [--json] | apply <plan-file> [--json]",
     );
+  });
+}
+
+function withoutPlanOptions(values: { config?: string; out?: string }) {
+  return values.config === undefined && values.out === undefined;
+}
+
+function describeOptions(policyRoot: string) {
+  return Effect.gen(function* () {
+    const catalog = yield* discoverPolicy(policyRoot);
+    const describe = (bundle: typeof catalog.baseline) => ({
+      id: bundle.id,
+      key: bundle.key,
+      name: bundle.declaration.name,
+      ...(bundle.declaration.description === undefined
+        ? {}
+        : { description: bundle.declaration.description }),
+      inputs: bundle.declaration.inputs ?? [],
+    });
+    const result = {
+      base: describe(catalog.baseline),
+      integrations: catalog.integrations.map(describe),
+      automation: catalog.automation.map(describe),
+    };
+    return result;
+  });
+}
+
+function savePlan(options: {
+  projectRoot: string;
+  packageRoot: string;
+  configFile: string;
+  out: string;
+}) {
+  return Effect.gen(function* () {
+    const { projectRoot, packageRoot } = options;
+    const policyRoot = path.join(packageRoot, "policy");
+    const config = yield* readJson(path.resolve(projectRoot, options.configFile), Config);
+    const previous = yield* loadPreviousIntent(projectRoot);
+    const catalog = yield* discoverPolicy(policyRoot);
+    const policy = yield* loadPolicy(policyRoot, config);
+    const resolution = yield* resolveTargetManager(projectRoot, config.packageManager);
+    if (resolution.kind === "question") {
+      return yield* fail(
+        `${resolution.reason} Set packageManager in the config to one of: ${resolution.choices.join(", ")}. Evidence: ${resolution.evidence.length === 0 ? "none" : resolution.evidence.join(", ")}`,
+      );
+    }
+    const commit = yield* executingCommit(packageRoot);
+    const plan = yield* prepareSetupPlan({
+      projectRoot,
+      policy,
+      answers: config.answers,
+      target: resolution.target,
+      previous,
+      prior: knownSelections(catalog, previous),
+      ...(commit === undefined ? {} : { commit }),
+    });
+    const evidence = yield* readTargetSnapshot(projectRoot, managerLockfiles);
+    const saved: typeof SavedPlan.Type = {
+      schemaVersion: 1,
+      generator: yield* fingerprint(packageRoot),
+      manager: resolution.target.manager,
+      plan: {
+        ...plan,
+        snapshot: {
+          root: plan.snapshot.root,
+          files: { ...evidence.files, ...plan.snapshot.files },
+        },
+      },
+    };
+    const output = yield* writeSavedPlan(saved, path.resolve(projectRoot, options.out));
+    return { result: saved, text: describePlan(saved, output) };
+  });
+}
+
+function writeSavedPlan(saved: typeof SavedPlan.Type, requested: string) {
+  return Effect.gen(function* () {
+    const output = path.join(
+      yield* io(() => fs.realpath(path.dirname(requested))),
+      path.basename(requested),
+    );
+    if (
+      Object.keys(saved.plan.snapshot.files).some((relative) => {
+        const target = path.join(saved.plan.snapshot.root, relative);
+        return (
+          output === target ||
+          output.startsWith(`${target}${path.sep}`) ||
+          target.startsWith(`${output}${path.sep}`)
+        );
+      })
+    ) {
+      return yield* fail(
+        "Plan output must not overlap a target configuration or package-manager file",
+      );
+    }
+    yield* assertTargetUnchanged(saved.plan.snapshot);
+    // Never truncate an existing config, project file, or previously approved plan.
+    yield* io(() =>
+      fs.writeFile(output, `${JSON.stringify(saved, null, 2)}\n`, { flag: "wx", mode: 0o600 }),
+    );
+    return output;
+  });
+}
+
+function describePlan(saved: typeof SavedPlan.Type, output: string) {
+  const { plan } = saved;
+  return [
+    `Target: ${plan.snapshot.root}`,
+    `Package manager: ${saved.manager}`,
+    ...plan.files
+      .filter((file) => file.kind !== "noop")
+      .map((file) => `${file.kind}: ${file.path}${file.conflict ? " [conflict]" : ""}`),
+    ...plan.packageEntries
+      .filter((entry) => entry.kind !== "noop")
+      .map(
+        (entry) =>
+          `${entry.kind}: ${entry.section}.${entry.name}: ${JSON.stringify(entry.before)} → ${JSON.stringify(entry.after)}`,
+      ),
+    `After applying: ${saved.manager} install (including lifecycle scripts)`,
+    `Plan saved: ${output}`,
+    "No project configuration changed; no installation performed.",
+  ].join("\n");
+}
+
+function applySavedPlan(planFile: string, packageRoot: string) {
+  return Effect.gen(function* () {
+    const saved = yield* readJson(planFile, SavedPlan);
+    if (!path.isAbsolute(saved.plan.snapshot.root)) {
+      return yield* fail("Plan target must be an absolute path");
+    }
+    if (saved.generator !== (yield* fingerprint(packageRoot))) {
+      return yield* fail(
+        "Generator changed since planning; use the same generator or build a fresh plan",
+      );
+    }
+    yield* assertTargetUnchanged(saved.plan.snapshot);
+    const resolution = yield* resolveTargetManager(saved.plan.snapshot.root, saved.manager);
+    if (resolution.kind !== "resolved") {
+      return yield* fail("Cannot resolve saved package manager");
+    }
+    const report = yield* applyPlan(saved.plan, {
+      approved: true,
+      dependencies: createDependencyAdapter(resolution.target),
+    });
+    return report;
   });
 }

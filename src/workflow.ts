@@ -85,6 +85,21 @@ export function prepareSetupPlan(options: {
   });
 }
 
+function chooseTargetManager(projectRoot: string, ui: SetupPresentation) {
+  return Effect.gen(function* () {
+    let manager = yield* resolveTargetManager(projectRoot);
+    if (manager.kind === "question") {
+      manager = yield* resolveTargetManager(projectRoot, yield* ui.manager(manager));
+    }
+    if (manager.kind !== "resolved") {
+      return yield* new OperationError({
+        detail: "Choose a supported target package manager and retry.",
+      });
+    }
+    return manager.target;
+  });
+}
+
 /** All discovery, questions and previews finish before applying the exact displayed plan. */
 export function setup(
   options: SetupOptions,
@@ -127,25 +142,17 @@ export function setup(
     for (const declaration of declarations) {
       (answers[declaration.bundle] ??= {})[declaration.input.id] = yield* ui.input(declaration);
     }
-    let manager = yield* resolveTargetManager(options.projectRoot);
-    if (manager.kind === "question") {
-      manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));
-    }
-    if (manager.kind !== "resolved") {
-      return yield* new OperationError({
-        detail: "Choose a supported target package manager and retry.",
-      });
-    }
+    const target = yield* chooseTargetManager(options.projectRoot, ui);
     const plan = yield* prepareSetupPlan({
       projectRoot: options.projectRoot,
       policy,
       answers,
-      target: manager.target,
+      target,
       previous,
       prior,
       ...(options.commit === undefined ? {} : { commit: options.commit }),
     });
-    const dependencies = (options.dependencies ?? createDependencyAdapter)(manager.target);
+    const dependencies = (options.dependencies ?? createDependencyAdapter)(target);
     // Preview installation work without invoking the package manager.
     const preview = yield* dependencies.assess(plan);
     yield* Effect.sync(() => ui.plan(plan, preview));

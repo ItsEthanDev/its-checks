@@ -93,18 +93,13 @@ function destination(bundle: LoadedBundle, input: InputDeclaration) {
       yield* check(
         bundle,
         field,
-        typeof key === "number"
-          ? Number.isInteger(key) && key >= 0
-          : !["__proto__", "prototype", "constructor"].includes(key),
+        validDestinationKey(key),
         `Invalid destination key in ${file.source}`,
       );
       yield* check(
         bundle,
         field,
-        value !== null &&
-          typeof value === "object" &&
-          (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
-          Object.hasOwn(value, key),
+        hasDestinationKey(value, key),
         `Destination field ${canonical(keys)} must exist with object keys/array indexes in ${file.source}`,
       );
       if (isArray(value) && typeof key === "number") {
@@ -115,6 +110,26 @@ function destination(bundle: LoadedBundle, input: InputDeclaration) {
     }
     return file;
   });
+}
+
+function validDestinationKey(key: string | number) {
+  return typeof key === "number"
+    ? Number.isInteger(key) && key >= 0
+    : !["__proto__", "prototype", "constructor"].includes(key);
+}
+function hasDestinationKey(value: JsonValue | undefined, key: string | number) {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
+    Object.hasOwn(value, key)
+  );
+}
+function overlapping(a: InputDeclaration["destination"], b: InputDeclaration["destination"]) {
+  return (
+    a.file === b.file &&
+    a.field.slice(0, Math.min(a.field.length, b.field.length)).every((key, i) => key === b.field[i])
+  );
 }
 
 /** Enumerate only declarations, including baseline and automation; never infer questions. */
@@ -130,13 +145,7 @@ export function enumerateInputs(
         yield* destination(bundle, input);
         // Ancestor/descendant bindings are ambiguous even when the authored fields both exist.
         for (const other of inputs.slice(0, index)) {
-          const a = input.destination;
-          const b = other.destination;
-          const overlaps =
-            a.file === b.file &&
-            a.field
-              .slice(0, Math.min(a.field.length, b.field.length))
-              .every((key, i) => key === b.field[i]);
+          const overlaps = overlapping(input.destination, other.destination);
           yield* check(
             bundle,
             `inputs.${input.id}.destination`,
@@ -197,6 +206,40 @@ export function resolveInputs(
       Effect.mapError((cause) => new BundleError({ ...ctx, detail: cause.message })),
     );
     const declared = yield* enumerateInputs(policy);
+    yield* validateSuppliedAnswers(policy, answers, declared);
+    const bundles = yield* Effect.forEach(policy.bundles, (bundle) => bindBundle(bundle, answers));
+    // Rebuild the answer map from declarations: no empty namespaces or stale input history.
+    const intendedAnswers: Record<string, Record<string, Answer>> = {};
+    for (const { bundle, input } of declared) {
+      const answer = answerAt(answers, bundle, input.id);
+      assert(answer !== undefined);
+      (intendedAnswers[bundle] ??= {})[input.id] = answer;
+    }
+    const selected = (kind: "integration" | "automation") =>
+      policy.bundles.filter((bundle) => bundle.kind === kind).map((bundle) => bundle.id);
+    const intent: SavedIntent = {
+      $schema: yield* selectionSchemaUrl(policy.declaration.source),
+      source: policy.declaration.source.repository,
+      ...(commit === undefined ? {} : { commit }),
+      integrations: selected("integration"),
+      automation: selected("automation"),
+      answers: intendedAnswers,
+    };
+    return {
+      policy: { ...policy, bundles },
+      intent,
+      selectionFile: { path: selectionFilename, content: yield* selectionContent(intent) },
+    };
+  });
+}
+
+function validateSuppliedAnswers(
+  policy: LoadedPolicy,
+  answers: Answers,
+  declared: readonly DeclaredInput[],
+) {
+  return Effect.gen(function* () {
+    const ctx = { bundle: "inputs", source: policy.root, field: "answers" };
     for (const [key, values] of Object.entries(answers)) {
       for (const id of Object.keys(values)) {
         if (!declared.some((entry) => entry.bundle === key && entry.input.id === id)) {
@@ -234,51 +277,27 @@ export function resolveInputs(
         `answers.${entry.bundle}.${entry.input.id}`,
       );
     }
-    const bundles = yield* Effect.forEach(policy.bundles, (bundle) =>
-      Effect.try({
-        try: () => ({
-          ...bundle,
-          files: bundle.files.map((file) => {
-            let bound = file;
-            for (const input of bundle.declaration.inputs ?? []) {
-              if (input.destination.file === file.path) {
-                const answer = answerAt(answers, bundle.key, input.id);
-                assert(answer !== undefined);
-                bound = bind(bound, input, answer);
-              }
-            }
-            return bound;
-          }),
-        }),
-        catch: (cause) =>
-          error(
-            bundle,
-            "inputs.destination",
-            cause instanceof Error ? cause.message : String(cause),
-          ),
+    return undefined;
+  });
+}
+
+function bindBundle(bundle: LoadedBundle, answers: Answers) {
+  return Effect.try({
+    try: () => ({
+      ...bundle,
+      files: bundle.files.map((file) => {
+        let bound = file;
+        for (const input of bundle.declaration.inputs ?? []) {
+          if (input.destination.file === file.path) {
+            const answer = answerAt(answers, bundle.key, input.id);
+            assert(answer !== undefined);
+            bound = bind(bound, input, answer);
+          }
+        }
+        return bound;
       }),
-    );
-    // Rebuild the answer map from declarations: no empty namespaces or stale input history.
-    const intendedAnswers: Record<string, Record<string, Answer>> = {};
-    for (const { bundle, input } of declared) {
-      const answer = answerAt(answers, bundle, input.id);
-      assert(answer !== undefined);
-      (intendedAnswers[bundle] ??= {})[input.id] = answer;
-    }
-    const selected = (kind: "integration" | "automation") =>
-      policy.bundles.filter((bundle) => bundle.kind === kind).map((bundle) => bundle.id);
-    const intent: SavedIntent = {
-      $schema: yield* selectionSchemaUrl(policy.declaration.source),
-      source: policy.declaration.source.repository,
-      ...(commit === undefined ? {} : { commit }),
-      integrations: selected("integration"),
-      automation: selected("automation"),
-      answers: intendedAnswers,
-    };
-    return {
-      policy: { ...policy, bundles },
-      intent,
-      selectionFile: { path: selectionFilename, content: yield* selectionContent(intent) },
-    };
+    }),
+    catch: (cause) =>
+      error(bundle, "inputs.destination", cause instanceof Error ? cause.message : String(cause)),
   });
 }
