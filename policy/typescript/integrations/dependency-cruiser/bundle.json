@@ -1,0 +1,12 @@
+{
+  "name": "Dependency Cruiser",
+  "description": "Public module entry points, public-interface tests, and dependency hygiene",
+  "devDependencies": {
+    "dependency-cruiser": "18.7.2",
+    "typescript": "6.0.2"
+  },
+  "scripts": {
+    "lint": "depcruise .",
+    "lint:fix": "depcruise ."
+  }
+}

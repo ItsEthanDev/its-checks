@@ -1,0 +1,104 @@
+{
+  "forbidden": [
+    {
+      "name": "module-entrypoints-from-app",
+      "comment": "Outside callers may import module root files, never subfolder implementation.",
+      "severity": "error",
+      "from": { "pathNot": "^src/modules/" },
+      "to": { "path": "^src/modules/[^/]+/[^/]+/" }
+    },
+    {
+      "name": "module-entrypoints-across-modules",
+      "comment": "Implementation may import freely within its own module, not another's internals.",
+      "severity": "error",
+      "from": { "path": "^src/modules/([^/]+)/" },
+      "to": {
+        "path": "^src/modules/[^/]+/[^/]+/",
+        "pathNot": "^src/modules/$1/"
+      }
+    },
+    {
+      "name": "tests-through-entrypoints",
+      "comment": "Module tests use public entry points and their own tests/ helpers, not implementation.",
+      "severity": "error",
+      "from": {
+        "path": "^(?=.*(?:(?:^|/)(?:tests?|__tests__|__mocks__|__fixtures__)/|\\.(?:test|spec)\\.[cm]?[jt]sx?$))src/modules/([^/]+)/"
+      },
+      "to": {
+        "path": "^src/modules/[^/]+/[^/]+/",
+        "pathNot": "^src/modules/$1/tests/"
+      }
+    },
+    {
+      "name": "no-production-to-tests",
+      "comment": "Tests and their helpers are not production dependencies.",
+      "severity": "error",
+      "from": {
+        "pathNot": [
+          "(?:^|/)(?:tests?|__tests__|__mocks__|__fixtures__)/|\\.(?:test|spec)\\.[cm]?[jt]sx?$",
+          "^(?:scripts|tools|e2e|benchmarks?)/",
+          "(?:^|/)[^/]*\\.config\\.[cm]?[jt]sx?$",
+          "(?:^|/)\\.[^/]+\\.[cm]?[jt]s$",
+          "\\.stories\\.[jt]sx?$"
+        ]
+      },
+      "to": {
+        "path": "(?:^|/)(?:tests?|__tests__|__mocks__|__fixtures__)/|\\.(?:test|spec)\\.[cm]?[jt]sx?$"
+      }
+    },
+    {
+      "name": "no-circular",
+      "comment": "Reject cycles, including those involving type-only imports.",
+      "severity": "error",
+      "from": {},
+      "to": { "circular": true }
+    },
+    {
+      "name": "no-undeclared-runtime-dependencies",
+      "comment": "External runtime dependencies must be declared in the consuming package.",
+      "severity": "error",
+      "from": {},
+      "to": {
+        "dependencyTypes": ["npm-no-pkg", "npm-unknown"],
+        "dependencyTypesNot": ["type-only"]
+      }
+    },
+    {
+      "name": "no-production-dev-dependencies",
+      "comment": "Only tests, tooling, and type-only imports may rely on development dependencies.",
+      "severity": "error",
+      "from": {
+        "pathNot": [
+          "(?:^|/)(?:tests?|__tests__|__mocks__|__fixtures__)/|\\.(?:test|spec)\\.[cm]?[jt]sx?$",
+          "^(?:scripts|tools|e2e|benchmarks?)/",
+          "(?:^|/)[^/]*\\.config\\.[cm]?[jt]sx?$",
+          "(?:^|/)\\.[^/]+\\.[cm]?[jt]s$",
+          "\\.stories\\.[jt]sx?$"
+        ]
+      },
+      "to": {
+        "dependencyTypes": ["npm-dev"],
+        "dependencyTypesNot": ["npm", "npm-peer", "npm-optional", "type-only"]
+      }
+    },
+    {
+      "name": "no-unresolved",
+      "comment": "Resolve all imports using the project's TypeScript configuration.",
+      "severity": "error",
+      "from": {},
+      "to": { "couldNotResolve": true }
+    }
+  ],
+  "options": {
+    "doNotFollow": { "path": "(?:^|/)node_modules/" },
+    "exclude": {
+      "path": [
+        "(?:^|/)(?:\\.git|\\.husky|\\.next|\\.output|\\.tanstack|dist|build|coverage)/",
+        "\\.(?:generated|gen)\\.[cm]?[jt]sx?$",
+        "(?:^|/)convex/_generated/"
+      ]
+    },
+    "tsConfig": { "fileName": "tsconfig.json" },
+    "tsPreCompilationDeps": true
+  }
+}
