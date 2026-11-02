@@ -21,7 +21,6 @@
     "its-checks:fmt:check": "(\noxfmt --check .\n\n)",
     "its-checks:lint": "(\neffect-tsgo oxlint --deny-warnings .\n\n)",
     "its-checks:lint:fix": "(\neffect-tsgo oxlint --fix --deny-warnings .\n\n)",
-    "its-checks:postinstall": "(\nhusky\n\n)",
     "lint": "bun run its-checks:lint",
     "lint:fix": "bun run its-checks:lint:fix",
     "test": "bun test ./test/*.test.ts",
