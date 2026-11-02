@@ -1,6 +1,6 @@
 # its-checks
 
-Interactive CLI that sets up formatting and linting in TypeScript projects, with optional integrations and automation.
+CLI that sets up formatting and linting in TypeScript projects, with optional integrations and automation.
 
 ## Requirements
 
@@ -29,6 +29,8 @@ node /absolute/path/to/its-checks/bin/its-checks.js
 Review the generated package scripts for the commands supplied by your selected policy.
 
 Setup generates `.its-checks.json` in the target project to save your selections, answers, and source identity. Keep it for reruns: setup uses it to prefill choices and clean up deselected integrations and automation.
+
+For agents and unattended setup, see [headless usage](docs/headless.md).
 
 ## Customize
 

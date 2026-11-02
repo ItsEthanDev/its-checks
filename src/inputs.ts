@@ -224,7 +224,7 @@ export function resolveInputs(
         return yield* error(
           bundle,
           `answers.${entry.bundle}.${entry.input.id}`,
-          "Missing explicit answer; show the input dialogue even when a saved value/default exists",
+          "Missing explicit answer; supply this input even when a saved value/default exists",
         );
       }
       yield* validateAnswer(

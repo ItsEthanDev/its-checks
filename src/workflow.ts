@@ -8,7 +8,7 @@ import {
   OperationError,
 } from "./application.ts";
 import type { BundleError } from "./bundle-errors.ts";
-import type { BundleInfo } from "./bundle-types.ts";
+import type { BundleInfo, LoadedPolicy, PolicyCatalog, PolicySelections } from "./bundle-types.ts";
 import { discoverPolicy, loadPolicy } from "./bundles.ts";
 import { enumerateInputs, resolveInputs, type DeclaredInput } from "./inputs.ts";
 import {
@@ -20,7 +20,7 @@ import {
 import type { PlanError } from "./plan-errors.ts";
 import { planProject, type ChangePlan } from "./planning.ts";
 import type { PackageManager } from "./scripts.ts";
-import { loadPreviousIntent, type Answer } from "./selections.ts";
+import { loadPreviousIntent, type Answer, type SavedIntent } from "./selections.ts";
 
 export class Cancelled extends Schema.TaggedError<Cancelled, { readonly brand: unique symbol }>()(
   "Cancelled",
@@ -55,6 +55,36 @@ export interface SetupOptions {
   readonly dependencies?: (target: TargetManager) => ApplicationDependencies;
 }
 
+/** Current policy definitions identify deselection, never a historical inventory. */
+export function knownSelections(catalog: PolicyCatalog, previous?: SavedIntent): PolicySelections {
+  const known = (category: "integrations" | "automation") =>
+    (previous?.[category] ?? []).filter((id) =>
+      catalog[category].some((bundle) => bundle.id === id),
+    );
+  return { integrations: known("integrations"), automation: known("automation") };
+}
+
+/** Shared planning path for terminal answers and explicit headless configuration. */
+export function prepareSetupPlan(options: {
+  readonly projectRoot: string;
+  readonly policy: LoadedPolicy;
+  readonly answers: unknown;
+  readonly target: TargetManager;
+  readonly previous: SavedIntent | undefined;
+  readonly prior: ReturnType<typeof knownSelections>;
+  readonly commit?: string;
+}): Effect.Effect<ChangePlan, BundleError | PlanError> {
+  return Effect.gen(function* () {
+    const resolved = yield* resolveInputs(options.policy, options.answers, options.commit);
+    const current = yield* loadPolicy(options.policy.root, options.prior);
+    return yield* planProject(options.projectRoot, resolved, {
+      ...(options.previous === undefined ? {} : { previous: options.previous }),
+      currentBundles: current.bundles,
+      scripts: options.target.scripts,
+    });
+  });
+}
+
 /** All discovery, questions and previews finish before applying the exact displayed plan. */
 export function setup(
   options: SetupOptions,
@@ -66,17 +96,13 @@ export function setup(
     if (!options.interactive) {
       return yield* new OperationError({
         detail:
-          "its-checks requires an interactive terminal (stdin and stdout). Run it directly from the target package in a terminal; unattended flags are not supported.",
+          "its-checks requires an interactive terminal (stdin and stdout). For headless usage, use options, plan, or apply.",
       });
     }
     const ui = options.presentation;
     const previous = yield* loadPreviousIntent(options.projectRoot);
     const catalog = yield* discoverPolicy(options.policyRoot);
-    const known = (category: "integrations" | "automation") =>
-      (previous?.[category] ?? []).filter((id) =>
-        catalog[category].some((bundle) => bundle.id === id),
-      );
-    const prior = { integrations: known("integrations"), automation: known("automation") };
+    const prior = knownSelections(catalog, previous);
     const retired = (["integrations", "automation"] as const).flatMap((category) =>
       (previous?.[category] ?? [])
         .filter((id) => !prior[category].includes(id))
@@ -101,7 +127,6 @@ export function setup(
     for (const declaration of declarations) {
       (answers[declaration.bundle] ??= {})[declaration.input.id] = yield* ui.input(declaration);
     }
-    const resolved = yield* resolveInputs(policy, answers, options.commit);
     let manager = yield* resolveTargetManager(options.projectRoot);
     if (manager.kind === "question") {
       manager = yield* resolveTargetManager(options.projectRoot, yield* ui.manager(manager));
@@ -111,12 +136,14 @@ export function setup(
         detail: "Choose a supported target package manager and retry.",
       });
     }
-    // Current definitions of old selections identify deselection, never a historical inventory.
-    const current = yield* loadPolicy(options.policyRoot, prior);
-    const plan = yield* planProject(options.projectRoot, resolved, {
-      ...(previous === undefined ? {} : { previous }),
-      currentBundles: current.bundles,
-      scripts: manager.target.scripts,
+    const plan = yield* prepareSetupPlan({
+      projectRoot: options.projectRoot,
+      policy,
+      answers,
+      target: manager.target,
+      previous,
+      prior,
+      ...(options.commit === undefined ? {} : { commit: options.commit }),
     });
     const dependencies = (options.dependencies ?? createDependencyAdapter)(manager.target);
     // Preview installation work without invoking the package manager.

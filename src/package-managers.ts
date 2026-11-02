@@ -14,6 +14,9 @@ const lockNames: Record<PackageManager, readonly string[]> = {
   yarn: ["yarn.lock"],
   bun: ["bun.lock", "bun.lockb"],
 };
+/** Files whose presence can affect target manager selection. */
+export const managerLockfiles: readonly string[] = Object.values(lockNames).flat();
+
 export interface TargetManager {
   readonly root: string;
   readonly manager: PackageManager;

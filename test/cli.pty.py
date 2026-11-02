@@ -328,6 +328,160 @@ class CliChecks(unittest.TestCase):
                 self.assertNotIn("Completed:", text)
                 self.assertEqual(self.state(), before)
 
+    def headless(self, *args, cwd=None):
+        return subprocess.run([*self.command, *map(str, args)], cwd=cwd or self.project,
+                              input="", capture_output=True, text=True, timeout=20)
+
+    def headless_config(self):
+        return {"integrations": ["example"], "automation": ["ci"], "answers": {
+            "base": {"count": 2, "enabled": False, "label": "headless"},
+            "integrations/example": {"stylesheet": "styles/site.css"}}}
+
+    def make_plan(self, config=None):
+        config_file = self.root / "setup.json"
+        plan_file = self.root / "setup.plan.json"
+        self.write(config_file, self.headless_config() if config is None else config)
+        result = self.headless("plan", "--config", config_file, "--out", plan_file, "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), json.loads(plan_file.read_text()))
+        self.assertEqual(result.stderr, "")
+        return plan_file
+
+    def test_headless_options_discovers_inputs_without_a_target_manifest(self):
+        (self.project / "package.json").unlink()
+        before = self.state()
+        result = self.headless("options", "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        options = json.loads(result.stdout)
+        self.assertEqual(options["base"]["inputs"][0]["id"], "count")
+        self.assertEqual(options["integrations"][0]["id"], "example")
+        self.assertEqual(options["automation"][0]["id"], "ci")
+        self.assertEqual(self.state(), before)
+
+    def test_headless_plan_is_read_only_and_apply_uses_saved_target_from_another_directory(self):
+        before = self.state()
+        plan_file = self.make_plan()
+        self.assertEqual(self.state(), before)
+        self.assertEqual(plan_file.stat().st_mode & 0o777, 0o600)
+        plan = json.loads(plan_file.read_text())
+        self.assertEqual(plan["plan"]["snapshot"]["root"], str(self.project))
+        self.write(self.root / "setup.json", "not read again during apply")
+        result = self.headless("apply", plan_file, "--json", cwd=self.root)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "completed")
+        self.assertEqual(report["dependencyWork"], "completed")
+        self.assertEqual(json.loads((self.project / ".oxlintrc.json").read_text())["fixtureCount"], 2)
+        self.assertEqual(json.loads((self.project / ".oxfmtrc.json").read_text())["stylesheet"], "styles/site.css")
+        self.assertTrue((self.project / ".github/workflows/check.yml").is_file())
+        # Reuse saved intent as input, with paths relative to cwd, then explicitly deselect automation.
+        config = json.loads((self.project / ".its-checks.json").read_text())
+        config["automation"] = []
+        self.write(self.project / "setup.json", config)
+        result = self.headless("plan", "--config", "setup.json", "--out", "local.plan.json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("removal: .github/workflows/check.yml", result.stdout)
+        self.assertIn("including lifecycle scripts", result.stdout)
+        result = self.headless("apply", "local.plan.json", "--json")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.project / ".github/workflows/check.yml").exists())
+
+    def test_headless_missing_invalid_and_ambiguous_inputs_fail_without_writes(self):
+        invalid_configs = [
+            ({"integrations": [], "automation": []}, "answers"),
+            ({"integrations": [], "automation": [], "answers": {}}, "Missing explicit answer"),
+            ({"integrations": ["unknown"], "automation": [], "answers": {}}, "Unknown bundle ID"),
+        ]
+        for config, message in invalid_configs:
+            with self.subTest(message=message):
+                self.write(self.root / "setup.json", config)
+                before = self.state()
+                result = self.headless("plan", "--config", self.root / "setup.json",
+                                       "--out", self.root / "bad.plan.json", "--json")
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(result.stdout, "")
+                self.assertIn(message, json.loads(result.stderr)["error"]["message"])
+                self.assertFalse((self.root / "bad.plan.json").exists())
+                self.assertEqual(self.state(), before)
+        self.write(self.project / "yarn.lock", "# conflicting evidence\n")
+        self.write(self.root / "setup.json", self.headless_config())
+        before = self.state()
+        result = self.headless("plan", "--config", self.root / "setup.json",
+                               "--out", self.root / "bad.plan.json", "--json")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("packageManager", json.loads(result.stderr)["error"]["message"])
+        self.assertEqual(self.state(), before)
+        config = self.headless_config()
+        config["packageManager"] = "npm"
+        self.make_plan(config)
+        self.assertEqual(self.state(), before)
+
+    def test_headless_stale_target_or_manager_evidence_is_rejected_without_writes(self):
+        for relative in [".oxlintrc.json", "yarn.lock"]:
+            with self.subTest(relative=relative):
+                plan_file = self.make_plan()
+                self.write(self.project / relative, "changed after planning\n")
+                before = self.state()
+                result = self.headless("apply", plan_file, "--json")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("Target changed since planning", json.loads(result.stderr)["error"]["message"])
+                self.assertEqual(self.state(), before)
+                (self.project / relative).unlink()
+                plan_file.unlink()
+
+    def test_headless_changed_generator_is_rejected_without_writes(self):
+        plan_file = self.make_plan()
+        # Detect both policy changes and implementation-only changes, even without Git metadata.
+        for changed in [self.policy / "typescript/base/files/.oxlintrc.json",
+                        self.policy.parent / "src/inputs.ts"]:
+            original = changed.read_bytes()
+            changed.write_bytes(original + b"\n")
+            before = self.state()
+            result = self.headless("apply", plan_file, "--json")
+            self.assertEqual(result.returncode, 1)
+            self.assertIn("Generator changed", json.loads(result.stderr)["error"]["message"])
+            self.assertEqual(self.state(), before)
+            changed.write_bytes(original)
+
+    def test_headless_invalid_command_and_plan_fail_without_writes(self):
+        self.write(self.root / "malformed.plan.json", {"schemaVersion": 99})
+        before = self.state()
+        for args in [("plan",), ("apply",), ("options", "--unknown"),
+                     ("apply", self.root / "malformed.plan.json")]:
+            result = self.headless(*args, "--json")
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(result.stdout, "")
+            self.assertEqual(json.loads(result.stderr)["error"]["code"], "OperationError")
+            self.assertEqual(self.state(), before)
+
+    def test_headless_output_never_overwrites_files_or_occupies_a_planned_destination(self):
+        plan_file = self.make_plan()
+        original = plan_file.read_bytes()
+        before = self.state()
+        alias = self.root / "target-alias"
+        alias.symlink_to(self.project, target_is_directory=True)
+        for output in [plan_file, self.project / "package.json", self.project / ".oxlintrc.json",
+                       alias / ".oxlintrc.json"]:
+            result = self.headless("plan", "--config", self.root / "setup.json", "--out", output, "--json")
+            self.assertEqual(result.returncode, 1, result.stdout)
+            json.loads(result.stderr)
+            self.assertEqual(self.state(), before)
+            self.assertEqual(plan_file.read_bytes(), original)
+
+    def test_headless_install_failure_reports_partial_work_and_retains_configuration(self):
+        self.write(self.project / "package.json", {"name": "fixture", "scripts": {"install": "exit 23"}})
+        plan_file = self.make_plan()
+        result = self.headless("apply", plan_file, "--json")
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        error = json.loads(result.stderr)["error"]
+        self.assertEqual(error["code"], "ApplicationError")
+        self.assertEqual(error["details"]["phase"], "dependencies")
+        self.assertEqual(error["details"]["report"]["status"], "failed")
+        self.assertIn("install-dependencies", [op["kind"] for op in error["details"]["report"]["incomplete"]])
+        self.assertTrue((self.project / ".its-checks.json").is_file())
+        self.assertTrue((self.project / ".oxlintrc.json").is_file())
+
     def test_noninteractive_rejected_before_missing_policy_or_project_reads(self):
         shutil.rmtree(self.policy)
         (self.project / "package.json").unlink()

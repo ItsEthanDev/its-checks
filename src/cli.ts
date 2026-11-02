@@ -3,17 +3,46 @@ import { fileURLToPath } from "node:url";
 import * as clack from "@clack/prompts";
 import { Effect, Schema } from "effect";
 
+import { headless } from "./headless.ts";
 import { createClackPresentation } from "./presentation.ts";
 import { executingCommit } from "./source-revision.ts";
 import { Cancelled, setup } from "./workflow.ts";
 
 // Policy belongs to the executed package/checkout, never the target cwd.
 const interactive = process.stdin.isTTY && process.stdout.isTTY;
-if (!interactive || process.argv.length > 2) {
+if (process.argv.length > 2) {
+  await Effect.runPromise(
+    headless(
+      process.argv.slice(2),
+      process.cwd(),
+      fileURLToPath(new URL("../", import.meta.url)),
+    ).pipe(
+      Effect.match({
+        onFailure: (error) => {
+          const { _tag: code } = error;
+          if (process.argv.includes("--json")) {
+            console.error(
+              Schema.encodeSync(Schema.fromJsonString(Schema.Unknown))({
+                error: { code, message: error.message, details: error },
+              }),
+            );
+          } else {
+            console.error(error.message);
+          }
+          process.exitCode = 1;
+        },
+        onSuccess: (output) =>
+          console.log(
+            output.json
+              ? JSON.stringify(output.result)
+              : (output.text ?? JSON.stringify(output.result, null, 2)),
+          ),
+      }),
+    ),
+  );
+} else if (!interactive) {
   console.error(
-    !interactive
-      ? "its-checks requires an interactive terminal (stdin and stdout). Run it directly from the target package in a terminal; unattended flags are not supported."
-      : "its-checks accepts no arguments or unattended flags. Run it from the target package directory.",
+    "its-checks requires an interactive terminal (stdin and stdout). For headless usage, use options, plan, or apply.",
   );
   process.exitCode = 1;
 } else {
