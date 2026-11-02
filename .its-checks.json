@@ -1,0 +1,11 @@
+{
+  "$schema": "https://github.com/ItsEthanDev/its-checks/raw/main/schemas/its-checks.schema.json",
+  "source": "https://github.com/ItsEthanDev/its-checks",
+  "integrations": [
+    "effect"
+  ],
+  "automation": [
+    "husky"
+  ],
+  "answers": {}
+}
