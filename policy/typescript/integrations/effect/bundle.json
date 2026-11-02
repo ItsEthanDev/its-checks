@@ -1,0 +1,17 @@
+{
+  "name": "Effect",
+  "description": "Typed failures, service requirements, and idiomatic Effect code",
+  "devDependencies": {
+    "@effect/tsgo": "0.63.0"
+  },
+  "scripts": {
+    "lint": {
+      "command": "effect-tsgo oxlint --deny-warnings .",
+      "replaces": "base"
+    },
+    "lint:fix": {
+      "command": "effect-tsgo oxlint --fix --deny-warnings .",
+      "replaces": "base"
+    }
+  }
+}

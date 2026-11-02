@@ -28,6 +28,8 @@ node /absolute/path/to/its-checks/bin/its-checks.js
 
 After setup: `node --run fmt` to format; `node --run check` to check formatting and lint.
 
+For the Effect integration's runner, policy exceptions, and Neovim setup, see [Effect](docs/effect.md).
+
 Setup generates `.its-checks.json` in the target project to save your selections, answers, and source identity. Keep it for reruns: setup uses it to prefill choices and clean up deselected integrations and automation.
 
 ## Customize

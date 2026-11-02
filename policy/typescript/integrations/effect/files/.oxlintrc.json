@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+  "plugins": ["effecttsgo"],
+  "extends": ["./node_modules/@effect/tsgo/oxlint-presets/strict.json"],
+  "rules": {
+    "effecttsgo/strict-effect-provide": "off",
+    "effecttsgo/unstable-api-usage": "off",
+    "unicorn/throw-new-error": "off",
+    "effecttsgo/global-date-in-effect": "error",
+    "effecttsgo/global-random-in-effect": "error",
+    "effecttsgo/global-timers-in-effect": "error",
+    "effecttsgo/crypto-random-uuid-in-effect": "error",
+    "effecttsgo/global-fetch-in-effect": "error",
+    "effecttsgo/global-console-in-effect": "error",
+    "effecttsgo/process-env-in-effect": "error",
+    "effecttsgo/prefer-schema-over-json": "error",
+    "effecttsgo/prefer-schema-tagged-error": "error",
+    "effecttsgo/instance-of-schema": "error",
+    "effecttsgo/nested-effect-gen-yield": "error"
+  }
+}
