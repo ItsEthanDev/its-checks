@@ -5,12 +5,21 @@
   "options": { "typeAware": true, "reportUnusedDisableDirectives": "error" },
   "rules": {
     "array-callback-return": "error",
+    "complexity": ["error", { "max": 10, "variant": "modified" }],
     "curly": "error",
     "default-case-last": "error",
     "default-param-last": "error",
     "eqeqeq": "error",
     "import/no-cycle": "error",
     "import/no-mutable-exports": "error",
+    "max-depth": ["error", 3],
+    "max-lines": ["error", { "max": 400, "skipBlankLines": true, "skipComments": true }],
+    "max-lines-per-function": [
+      "error",
+      { "max": 80, "skipBlankLines": true, "skipComments": true, "IIFEs": true }
+    ],
+    "max-nested-callbacks": ["error", 3],
+    "max-params": ["error", 4],
     "no-case-declarations": "error",
     "no-constructor-return": "error",
     "no-else-return": "error",
@@ -95,5 +104,19 @@
     "unicorn/prefer-regexp-test": "error",
     "unicorn/throw-new-error": "error"
   },
-  "ignorePatterns": ["**/node_modules/**", "dist/**", "coverage/**", ".husky/_/**", "./agents/**"]
+  "overrides": [
+    {
+      "files": ["**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}", "**/__tests__/**"],
+      "rules": { "max-lines-per-function": "off" }
+    }
+  ],
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "dist/**",
+    "coverage/**",
+    ".husky/_/**",
+    "./agents/**",
+    "**/*.generated.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+    "**/*.gen.{js,jsx,ts,tsx,mjs,cjs,mts,cts}"
+  ]
 }
