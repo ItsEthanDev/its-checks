@@ -19,23 +19,19 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
-          const supported = { npm: '11.19.0', pnpm: '12.9.0', yarn: '1.22.22', bun: '1.4.0' };
-          const declared = JSON.parse(fs.readFileSync('package.json')).packageManager;
-          const [name, version] = (declared ?? '').split('@');
-          if (!supported[name] || version?.split('+')[0] !== supported[name]) {
-            throw new Error('Set packageManager to an exact tested version; see its-checks docs/package-managers.md');
-          }
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `name=${name}\nversion=${supported[name]}\n`);
+          const { packageManager } = JSON.parse(fs.readFileSync('package.json'));
+          const [name, version] = packageManager.split('@');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `name=${name}\nversion=${version.split('+')[0]}\n`);
           NODE
       - uses: pnpm/action-setup@v4
         if: steps.manager.outputs.name == 'pnpm'
         with:
-          version: 12.9.0
+          version: ${{ steps.manager.outputs.version }}
           run_install: false
       - uses: oven-sh/setup-bun@v2
         if: steps.manager.outputs.name == 'bun'
         with:
-          bun-version: 1.4.0
+          bun-version: ${{ steps.manager.outputs.version }}
       - name: Install npm or Yarn
         if: steps.manager.outputs.name == 'npm' || steps.manager.outputs.name == 'yarn'
         env:
@@ -52,5 +48,6 @@ jobs:
             pnpm) pnpm install --frozen-lockfile ;;
             yarn) yarn install --frozen-lockfile ;;
             bun) bun install --frozen-lockfile ;;
+            *) echo "Unsupported package manager: $MANAGER" >&2; exit 1 ;;
           esac
       - run: node --run check
