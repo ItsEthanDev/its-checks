@@ -1,6 +1,6 @@
 {
   "name": "Convex",
-  "description": "Catch common mistakes in your convex directory",
+  "description": "Access control, bounded queries, and Convex best practices",
   "devDependencies": {
     "@convex-dev/eslint-plugin": "5.0.1"
   }

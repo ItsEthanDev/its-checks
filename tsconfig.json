@@ -13,5 +13,5 @@
     "types": ["node"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["test/fixtures/base-policy/**"]
+  "exclude": ["test/fixtures/base-policy/**", "test/fixtures/integration-policy/**"]
 }

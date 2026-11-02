@@ -1,6 +1,6 @@
 {
   "name": "Tailwind CSS v4",
-  "description": "Native class sorting and contradictory-class lint checks (Tailwind 4.3.3)",
+  "description": "Native class sorting and compiler-backed class checks (Tailwind 4.3.3)",
   "devDependencies": {
     "tailwindcss": "4.3.3",
     "eslint-plugin-tailwindcss": "4.4.0"
