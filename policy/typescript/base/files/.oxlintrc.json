@@ -106,7 +106,12 @@
   },
   "overrides": [
     {
-      "files": ["**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}", "**/__tests__/**"],
+      "files": [
+        "**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}",
+        "**/__tests__/**",
+        "**/test/**",
+        "**/tests/**"
+      ],
       "rules": { "max-lines-per-function": "off" }
     }
   ],
