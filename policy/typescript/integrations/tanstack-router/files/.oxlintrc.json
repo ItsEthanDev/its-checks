@@ -1,0 +1,7 @@
+{
+  "jsPlugins": ["@tanstack/eslint-plugin-router"],
+  "rules": {
+    "@tanstack/router/create-route-property-order": "error"
+  },
+  "ignorePatterns": ["**/routeTree.gen.ts", "**/.tanstack/**", "**/.output/**"]
+}

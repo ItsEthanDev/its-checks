@@ -1,0 +1,17 @@
+{
+  "overrides": [
+    {
+      "files": ["**/*.{test,spec}.{js,jsx,ts,tsx,mjs,cjs,mts,cts}", "**/__tests__/**"],
+      "plugins": ["vitest"],
+      "rules": {
+        "vitest/no-focused-tests": "error",
+        "vitest/valid-expect": "error",
+        "vitest/valid-describe-callback": "error",
+        "vitest/no-identical-title": "error",
+        "vitest/no-disabled-tests": "off",
+        "vitest/warn-todo": "off",
+        "vitest/expect-expect": "off"
+      }
+    }
+  ]
+}
