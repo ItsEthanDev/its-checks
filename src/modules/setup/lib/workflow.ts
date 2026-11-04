@@ -61,7 +61,7 @@ export interface SetupPresentation {
   ) => Question<PackageManager>;
   readonly confirm: (message: string) => Question<boolean>;
   readonly note: (message: string) => void;
-  readonly plan: (plan: ChangePlan, dependencies: "required" | "not-required") => void;
+  readonly plan: (plan: ChangePlan) => void;
   readonly progress: (message: string) => void;
   readonly complete: (report: ApplicationReport) => void;
 }
@@ -317,7 +317,7 @@ export function setup(options: SetupOptions): Effect.Effect<
       sources: store,
     });
     const dependencies = (options.dependencies ?? createDependencyAdapter)(target);
-    ui.plan(plan, yield* dependencies.assess(plan));
+    ui.plan(plan);
     if (
       !(yield* ui.confirm(
         "Apply this plan, then run the package manager's install (including lifecycle scripts)?",

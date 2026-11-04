@@ -212,18 +212,10 @@ await test(
         baseRerun.files.some((file) => file.conflict),
         false,
       );
-      assert.equal(
-        await run(dependencies.assess(baseRerun)),
-        "required",
-        "matching configuration still delegates installation",
-      );
       const report = await run(applyPlan(baseRerun, { approved: true, dependencies }));
       assert.equal(report.dependencyWork, "completed");
       assert.ok(
-        report.completed.every(
-          (operation) =>
-            operation.kind === "assess-dependencies" || operation.kind === "install-dependencies",
-        ),
+        report.completed.every((operation) => operation.kind === "install-dependencies"),
         "no configuration writes",
       );
       assert.equal(installs, cycle + 2);

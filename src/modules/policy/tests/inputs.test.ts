@@ -5,7 +5,13 @@ import { Effect } from "effect";
 
 import { object } from "../../../../test/shared/assertions.ts";
 import { fixture, revision } from "../../../../test/shared/fixtures.ts";
-import { enumerateInputs, loadPolicy, qualifiedAnswers, resolveInputs } from "../index.ts";
+import {
+  discoverPolicy,
+  enumerateInputs,
+  loadPolicy,
+  qualifiedAnswers,
+  resolveInputs,
+} from "../index.ts";
 const run = Effect.runPromise;
 const input = {
   id: "stylesheet",
@@ -84,12 +90,65 @@ await test("same bundle and input IDs in different sources remain independent", 
   assert.equal(resolved.intent.sources[0]?.answers.extra?.stylesheet, "a.css");
   assert.equal(resolved.intent.sources[1]?.answers.extra?.stylesheet, "b.css");
 });
+for (const format of ["json", "jsonc"] as const) {
+  await test(`input destinations use declared ${format} format, not filename extensions`, async (t) => {
+    const f = await fixture(t);
+    await f.write(
+      "base/files/settings",
+      `${format === "jsonc" ? "// Settings\n" : ""}{"items":[{"label":"authored"}]}`,
+    );
+    await f.add("base", {
+      name: "Base",
+      files: [{ source: "files/settings", target: "settings", operation: "compose", format }],
+      inputs: [
+        {
+          ...input,
+          type: "string",
+          default: "default",
+          destination: { file: "settings", field: ["items", 0, "label"] },
+        },
+      ],
+    });
+    const resolved = await run(
+      resolveInputs(await f.load(), { "example/fork:base": { stylesheet: "chosen" } }),
+    );
+    const file = resolved.policy.bundles[0]?.files[0];
+    assert.ok(file !== undefined && file.format !== "text");
+    assert.deepEqual(file.value, { items: [{ label: "chosen" }] });
+  });
+}
 await test("input fields must exist and overlapping bindings fail", async (t) => {
   const f = await setup(t);
   await f.add("extra", { inputs: [input, { ...input, id: "other" }] });
-  await assert.rejects(f.load(["extra"]), /Duplicate input destination/);
+  await assert.rejects(f.load(["extra"]), /Overlapping input destinations/);
   await f.add("extra", {
     inputs: [{ ...input, destination: { file: "config.json", field: ["missing"] } }],
   });
-  await assert.rejects(run(enumerateInputs(await f.load(["extra"]))), /must exist/);
+  await assert.rejects(f.load(["extra"]), /must exist/);
+});
+await test("selected input destinations reject ancestor bindings and invalid array traversal", async (t) => {
+  const f = await setup(t);
+  await f.write("extra/files/config.json", { items: [{ label: "authored" }] });
+  await f.add("extra", {
+    inputs: [
+      { ...input, destination: { file: "config.json", field: ["items"] } },
+      { ...input, id: "label", destination: { file: "config.json", field: ["items", 0, "label"] } },
+    ],
+  });
+  await assert.rejects(f.load(["extra"]), /Overlapping input destinations/);
+  for (const field of [
+    ["items", "0", "label"],
+    ["items", 1],
+  ]) {
+    await f.add("extra", { inputs: [{ ...input, destination: { file: "config.json", field } }] });
+    await assert.rejects(f.load(["extra"]), /must exist/);
+  }
+});
+await test("discovery and unselected bundles do not read input destination content", async (t) => {
+  const f = await setup(t);
+  await f.write("extra/files/config.json", "invalid JSON");
+  const catalog = await run(discoverPolicy(f.policy, revision.repository));
+  assert.equal(catalog.bundles.length, 2);
+  assert.equal((await f.load()).bundles.length, 1);
+  await assert.rejects(f.load(["extra"]));
 });

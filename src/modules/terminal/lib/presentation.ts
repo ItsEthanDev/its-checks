@@ -121,9 +121,7 @@ export function createClackPresentation(): {
         (operation) => operation.kind === "write-file" || operation.kind === "remove-file",
       );
       clack.outro(
-        files.length === 0 && report.dependencyWork === "not-required"
-          ? "Already up to date. No writes or installation."
-          : `Completed: ${files.length} file changes; dependencies ${report.dependencyWork}.`,
+        `Completed: ${files.length} file changes; dependencies ${report.dependencyWork}.`,
       );
     },
   };
@@ -136,7 +134,7 @@ export function createClackPresentation(): {
   };
 }
 
-const showPlan: SetupPresentation["plan"] = (plan, dependencies) => {
+const showPlan: SetupPresentation["plan"] = (plan) => {
   const files = plan.files.filter((file) => file.kind !== "noop");
   const entries = plan.packageEntries.filter((entry) => entry.kind !== "noop");
   clack.note(
@@ -155,7 +153,7 @@ const showPlan: SetupPresentation["plan"] = (plan, dependencies) => {
           `${entry.kind}: ${entry.section}.${entry.name}: ${JSON.stringify(entry.before)} → ${JSON.stringify(entry.after)}`,
       ),
       files.length > 0 ? "" : "Configuration already matches; no file writes.",
-      `Dependencies: ${dependencies === "required" ? "run the selected package manager's install after configuration" : "installation skipped"}.`,
+      "Dependencies: run the selected package manager's install after configuration.",
       "Normal installation uses project settings and may run lifecycle scripts; setup does not audit the installed tree.",
     ]
       .filter(Boolean)

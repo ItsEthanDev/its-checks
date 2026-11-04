@@ -52,4 +52,4 @@ Application writes configuration and cleanup, runs normal package-manager instal
 
 For headless updates, discover new commits and replace the intended source commits in the config. Preserve or explicitly revise bundle selections; removed or dependency-only selected IDs fail rather than silently disappear. To remove a source, omit it from the config; cleanup uses the previous saved source revisions. Never delete seeded project content as part of this cleanup.
 
-Add `--json` to commands for JSON results on stdout and structured errors on stderr. Exit codes are 0 for success and 1 for failure. Interactive add/update/remove operations require a terminal.
+Add `--json` to commands for JSON results on stdout and structured errors on stderr. Application reports list completed and incomplete operations, including `install-dependencies`. The `dependencyWork` field is `not-started` before installation, `started` when installation fails, or `completed` after success; installation is never skipped after successful configuration. Exit codes are 0 for success and 1 for failure. Interactive add/update/remove operations require a terminal.

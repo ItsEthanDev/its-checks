@@ -125,7 +125,6 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       const version = async (name = "managed-dep") =>
         json(await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"))
           .version;
-      assert.equal(await run(adapter.assess(await plan())), "required");
       assert.equal(installs, 0);
       assert.equal((await apply()).dependencyWork, "completed");
       assert.equal(await version(), "1.0.0");

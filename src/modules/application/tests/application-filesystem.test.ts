@@ -17,16 +17,15 @@ const run = Effect.runPromise;
 await test("filesystem failure reports completed files, observed partial bytes/mode, stops and recovers by replanning", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();
-  let assessed = false;
+  let installed = false;
   const error = await failure(
     applyPlan(plan, {
       approved: true,
       dependencies: {
-        ...noInstall,
-        assess: () => {
-          assessed = true;
-          return Effect.succeed("not-required");
-        },
+        install: () =>
+          Effect.sync(() => {
+            installed = true;
+          }),
       },
       fileSystem: {
         ...nodeApplicationFileSystem,
@@ -45,7 +44,8 @@ await test("filesystem failure reports completed files, observed partial bytes/m
   );
   assert.ok(Schema.is(ApplicationError)(error));
   assert.equal(error.phase, "filesystem");
-  assert.equal(assessed, false);
+  assert.equal(installed, false);
+  assert.equal(error.report.dependencyWork, "not-started");
   assert.deepEqual(error.report.completed, []);
   assert.equal(error.report.failed?.path, ".oxfmtrc.json");
   assert.deepEqual(error.report.observed, {
@@ -144,7 +144,6 @@ await test("file removal failure stops and reports retained departing contributi
   assert.equal(typeof error.report.observed === "object" && error.report.observed.kind, "file");
   assert.deepEqual(error.report.incomplete, [
     { kind: "remove-file", path: "prettier.config.js" },
-    { kind: "assess-dependencies", path: "package.json" },
     { kind: "install-dependencies", path: "package.json" },
     { kind: "write-file", path: selectionFilename },
   ]);

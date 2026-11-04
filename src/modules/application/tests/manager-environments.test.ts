@@ -63,7 +63,6 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         { manager: resolution.target.manager },
       ),
     );
-    assert.equal(await run(adapter.assess(plan)), "required");
     assert.equal(calls, 0);
     assert.equal(
       (await run(applyPlan(plan, { approved: true, dependencies: adapter }))).dependencyWork,

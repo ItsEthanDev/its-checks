@@ -22,8 +22,7 @@ const answers = {
   },
 };
 const dependencies = {
-  assess: () => Effect.succeed("not-required" as const),
-  install: () => Effect.die("unexpected install"),
+  install: () => Effect.void,
 };
 await test("fixed reference policy composes, applies, reruns, and cleans up without changing unrelated application data", async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-"));

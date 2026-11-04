@@ -9,9 +9,9 @@ import { fixture, snapshot } from "../../../../test/shared/fixtures.ts";
 import { planProject, type PlanOptions, type ChangePlan } from "../../planning/index.ts";
 import { loadPolicy, resolveInputs, type PolicySelections } from "../../policy/index.ts";
 import type { applyPlan, ApplicationDependencies, ApplicationError } from "../index.ts";
+/** Successful installation adapter without subprocess effects. */
 export const noInstall: ApplicationDependencies = {
-  assess: () => Effect.succeed("not-required"),
-  install: () => Effect.die("Unexpected install"),
+  install: () => Effect.void,
 };
 const empty: PolicySelections = ["base"];
 export async function setup(t: Parameters<typeof fixture>[0]): Promise<

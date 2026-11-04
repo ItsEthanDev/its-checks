@@ -5,35 +5,32 @@ import { createClackPresentation } from "../index.ts";
 const ui = createClackPresentation();
 switch (process.argv[2]) {
   case "preview":
-    ui.presentation.plan(
-      {
-        snapshot: { root: "/fixture", files: {} },
-        files: [
-          {
-            path: "config.json",
-            before: { kind: "absent" },
-            after: { kind: "absent" },
-            kind: "replacement",
-            conflict: true,
-            reasons: ["selected configuration"],
-          },
-        ],
-        packageEntries: [
-          {
-            section: "scripts",
-            name: "check",
-            before: "old",
-            after: "new",
-            kind: "replacement",
-            conflict: true,
-          },
-        ],
-        requiresConfirmation: true,
-        complete: true,
-        deferred: [],
-      },
-      "required",
-    );
+    ui.presentation.plan({
+      snapshot: { root: "/fixture", files: {} },
+      files: [
+        {
+          path: "config.json",
+          before: { kind: "absent" },
+          after: { kind: "absent" },
+          kind: "replacement",
+          conflict: true,
+          reasons: ["selected configuration"],
+        },
+      ],
+      packageEntries: [
+        {
+          section: "scripts",
+          name: "check",
+          before: "old",
+          after: "new",
+          kind: "replacement",
+          conflict: true,
+        },
+      ],
+      requiresConfirmation: true,
+      complete: true,
+      deferred: [],
+    });
     ui.presentation.complete({
       status: "completed",
       completed: [{ kind: "write-file", path: "config.json" }],
@@ -50,7 +47,7 @@ switch (process.argv[2]) {
           status: "failed",
           completed: [{ kind: "write-file", path: "config.json" }],
           incomplete: [{ kind: "install-dependencies", path: "package.json" }],
-          dependencyWork: "required",
+          dependencyWork: "started",
           retry: "Fix installation and retry.",
         },
       }),

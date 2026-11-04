@@ -13,8 +13,7 @@ import { loadPolicy, resolveInputs, type LoadedPolicy } from "../../policy/index
 import { planProject, type ChangePlan } from "../index.ts";
 const run = Effect.runPromise;
 const dependencies = {
-  assess: () => Effect.succeed("not-required" as const),
-  install: () => Effect.die("unexpected install"),
+  install: () => Effect.void,
 };
 const content = (artifact: ChangePlan, relative: string) => {
   const file = artifact.files.find((candidate) => candidate.path === relative)?.after;

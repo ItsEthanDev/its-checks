@@ -15,19 +15,19 @@ import {
   type PolicySelections,
 } from "../../policy/index.ts";
 import { applyPlan, OperationError, type ApplicationDependencies } from "../index.ts";
-import { noInstall, setup, failure, mtimes } from "./application-fixtures.ts";
+import { setup, failure, mtimes } from "./application-fixtures.ts";
 const run = Effect.runPromise;
 const empty: PolicySelections = ["base"];
 await test("installation failure retains configuration but does not advance intent; retry completes intent", async (t) => {
   const f = await setup(t);
-  let installed = false;
   let attempts = 0;
   const dependencies: ApplicationDependencies = {
-    assess: () => Effect.succeed(installed ? "not-required" : "required"),
     install: (plan: ChangePlan) =>
       Effect.tryPromise({
         try: async () => {
-          assert.equal(await run(loadPreviousIntent(f.project)), undefined);
+          if (attempts < 2) {
+            assert.equal(await run(loadPreviousIntent(f.project)), undefined);
+          }
           for (const file of plan.files) {
             if (file.after.kind === "file" && file.path !== selectionFilename) {
               assert.equal(
@@ -40,14 +40,13 @@ await test("installation failure retains configuration but does not advance inte
           if (attempts === 1) {
             throw Error("install failed, lockfile may be partial");
           }
-          installed = true;
         },
         catch: (cause) => new OperationError({ detail: String(cause) }),
       }),
   };
   const error = await failure(applyPlan(await f.plan(), { approved: true, dependencies }));
   assert.equal(error.phase, "dependencies");
-  assert.equal(error.report.dependencyWork, "required");
+  assert.equal(error.report.dependencyWork, "started");
   assert.deepEqual(error.report.incomplete, [
     { kind: "install-dependencies", path: "package.json" },
     { kind: "write-file", path: selectionFilename },
@@ -66,9 +65,9 @@ await test("installation failure retains configuration but does not advance inte
   delete after[selectionFilename];
   assert.deepEqual(after, times);
   await run(applyPlan(await f.plan(), { approved: true, dependencies }));
-  assert.equal(attempts, 2);
+  assert.equal(attempts, 3);
 });
-await test("configuration finishes but answers are not saved when dependency assessment fails", async (t) => {
+await test("configuration finishes but answers are not saved when installation fails", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
@@ -95,8 +94,7 @@ await test("configuration finishes but answers are not saved when dependency ass
     applyPlan(plan, {
       approved: true,
       dependencies: {
-        ...noInstall,
-        assess: () =>
+        install: () =>
           Effect.tryPromise({
             try: async () => {
               const intent = await run(loadPreviousIntent(f.project));
@@ -108,7 +106,7 @@ await test("configuration finishes but answers are not saved when dependency ass
                 ).stylesheet,
                 "src/app.css",
               );
-              throw Error("Cannot inspect installed state");
+              throw Error("Installation failed");
             },
             catch: (cause) => new OperationError({ detail: String(cause) }),
           }),
@@ -116,10 +114,10 @@ await test("configuration finishes but answers are not saved when dependency ass
     }),
   );
   assert.equal(error.phase, "dependencies");
-  assert.equal(error.report.dependencyWork, "not-assessed");
-  assert.deepEqual(error.report.failed, { kind: "assess-dependencies", path: "package.json" });
+  assert.equal(error.report.dependencyWork, "started");
+  assert.deepEqual(error.report.failed, { kind: "install-dependencies", path: "package.json" });
   assert.deepEqual(
     error.report.incomplete.map((entry) => entry.kind),
-    ["assess-dependencies", "install-dependencies", "write-file"],
+    ["install-dependencies", "write-file"],
   );
 });

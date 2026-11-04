@@ -137,8 +137,6 @@ export function createDependencyAdapter(
 ): ApplicationDependencies {
   const { root, manager } = target;
   return {
-    // An unchanged manifest is not evidence of an installed tree. Always delegate to the manager.
-    assess: () => Effect.succeed("required"),
     install: (plan) =>
       Effect.gen(function* () {
         const expected = yield* io(async () => {

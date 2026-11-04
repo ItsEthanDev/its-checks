@@ -4,8 +4,7 @@ import type { ApplicationDependencies } from "../../application/index.ts";
 import type { Answer } from "../../policy/index.ts";
 import type { SetupPresentation } from "../index.ts";
 export const ready: ApplicationDependencies = {
-  assess: () => Effect.succeed("not-required"),
-  install: () => Effect.die("Unexpected install"),
+  install: () => Effect.void,
 };
 export function dialogue(
   options: {

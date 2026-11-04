@@ -28,7 +28,6 @@ await test("declined and unapproved plans perform zero writes and no external op
   const before = await snapshot(f.project);
   const times = await mtimes(f.project);
   const forbidden: ApplicationDependencies = {
-    assess: () => Effect.die("Must not assess"),
     install: () => Effect.die("Must not install"),
   };
   for (const approved of [false, undefined]) {
@@ -115,17 +114,23 @@ await test("applies approved replacements exactly, preserving unrelated dependen
   assert.equal(await fs.readFile(path.join(f.project, "unlisted.config.js"), "utf8"), "keep");
   assert.equal((await fs.stat(path.join(f.project, "tools/nested/check.sh"))).mode & 0o777, 0o755);
 });
-await test("matching rerun has zero filesystem mutations and unchanged mtimes", async (t) => {
+await test("matching rerun installs without filesystem mutations or changed mtimes", async (t) => {
   const f = await setup(t);
   await run(applyPlan(await f.plan(), { approved: true, dependencies: noInstall }));
   const plan = await f.plan();
   assert.ok(plan.files.every((file) => file.kind === "noop"));
   const before = await snapshot(f.project);
   const times = await mtimes(f.project);
+  let installations = 0;
   const report = await run(
     applyPlan(plan, {
       approved: true,
-      dependencies: noInstall,
+      dependencies: {
+        install: () =>
+          Effect.sync(() => {
+            installations++;
+          }),
+      },
       fileSystem: {
         createDirectory: forbiddenMutation,
         writeFile: forbiddenMutation,
@@ -133,8 +138,9 @@ await test("matching rerun has zero filesystem mutations and unchanged mtimes", 
       },
     }),
   );
-  assert.equal(report.dependencyWork, "not-required");
-  assert.deepEqual(report.completed, [{ kind: "assess-dependencies", path: "package.json" }]);
+  assert.equal(installations, 1);
+  assert.equal(report.dependencyWork, "completed");
+  assert.deepEqual(report.completed, [{ kind: "install-dependencies", path: "package.json" }]);
   assert.deepEqual(await snapshot(f.project), before);
   assert.deepEqual(await mtimes(f.project), times);
 });
@@ -280,7 +286,7 @@ for (const failureAt of ["write", "publication"] as const) {
     assert.equal(error.report.failed?.path, selectionFilename);
     assert.deepEqual(error.report.incomplete, [{ kind: "write-file", path: selectionFilename }]);
     assert.deepEqual(error.report.completed, [
-      { kind: "assess-dependencies", path: "package.json" },
+      { kind: "install-dependencies", path: "package.json" },
     ]);
     assert.deepEqual(
       error.report.observed,

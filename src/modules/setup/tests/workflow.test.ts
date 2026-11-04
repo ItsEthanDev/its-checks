@@ -156,7 +156,6 @@ await test("a failed install leaves saved revisions unchanged", async (t) => {
         command: "update",
         sources: store,
         dependencies: () => ({
-          assess: () => Effect.succeed("required"),
           install: () => Effect.fail(new OperationError({ detail: "install failed" })),
         }),
       }),

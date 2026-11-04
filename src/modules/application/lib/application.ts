@@ -14,10 +14,8 @@ import {
 import { selectionFilename } from "../../policy/index.ts";
 import { nodeApplicationFileSystem } from "../adapters.ts";
 import { OperationError, type ApplicationFileSystem } from "../operations.ts";
-/** assess is a read-only installation decision, not an audit of the installed tree.
- * install delegates the approved manifest to the package manager without changing its requirements. */
+/** Install the approved manifest on every application, without changing its requirements. */
 export interface ApplicationDependencies {
-  readonly assess: (plan: ChangePlan) => Effect.Effect<"required" | "not-required", OperationError>;
   readonly install: (plan: ChangePlan) => Effect.Effect<void, OperationError>;
 }
 export interface ApplicationOptions {
@@ -26,13 +24,7 @@ export interface ApplicationOptions {
   readonly fileSystem?: ApplicationFileSystem;
 }
 const Operation = Schema.Struct({
-  kind: Schema.Literals([
-    "create-directory",
-    "write-file",
-    "remove-file",
-    "assess-dependencies",
-    "install-dependencies",
-  ]),
+  kind: Schema.Literals(["create-directory", "write-file", "remove-file", "install-dependencies"]),
   path: Schema.String,
 });
 const Observed = Schema.Union([
@@ -45,7 +37,7 @@ const Report = Schema.Struct({
   status: Schema.Literals(["declined", "completed", "failed"]),
   completed: Schema.Array(Operation),
   incomplete: Schema.Array(Operation),
-  dependencyWork: Schema.Literals(["not-assessed", "required", "not-required", "completed"]),
+  dependencyWork: Schema.Literals(["not-started", "started", "completed"]),
   failed: Schema.optionalKey(Operation),
   /** State observed after a failed file operation; unavailable means inspection also failed. */
   observed: Schema.optionalKey(Observed),
@@ -89,13 +81,12 @@ export function applyPlan(
   return Effect.gen(function* () {
     // Keep prior pins until configuration, cleanup, and dependency installation succeed.
     const changed = plan.files.filter((file) => !same(file.before, file.after));
-    const assess: ApplicationOperation = { kind: "assess-dependencies", path: "package.json" };
     const install: ApplicationOperation = { kind: "install-dependencies", path: "package.json" };
     const completed: ApplicationOperation[] = [];
     const configuration = changed.filter((file) => file.path !== selectionFilename);
     const intent = changed.filter((file) => file.path === selectionFilename);
-    let incomplete = [...configuration.map(operation), assess, install, ...intent.map(operation)];
-    let dependencyWork: ApplicationReport["dependencyWork"] = "not-assessed";
+    let incomplete = [...configuration.map(operation), install, ...intent.map(operation)];
+    let dependencyWork: ApplicationReport["dependencyWork"] = "not-started";
     if (options.approved !== true) {
       return { status: "declined", completed, incomplete, dependencyWork };
     }
@@ -133,19 +124,12 @@ export function applyPlan(
       completed.push(currentOperation);
       incomplete = incomplete.slice(1);
     }
-    const required = yield* options.dependencies
-      .assess(plan)
-      .pipe(Effect.mapError((cause) => failure("dependencies", cause.message, assess)));
-    completed.push(assess);
-    incomplete = [install, ...intent.map(operation)];
-    dependencyWork = required;
-    if (required === "required") {
-      yield* options.dependencies
-        .install(plan)
-        .pipe(Effect.mapError((cause) => failure("dependencies", cause.message, install)));
-      dependencyWork = "completed";
-      completed.push(install);
-    }
+    dependencyWork = "started";
+    yield* options.dependencies
+      .install(plan)
+      .pipe(Effect.mapError((cause) => failure("dependencies", cause.message, install)));
+    dependencyWork = "completed";
+    completed.push(install);
     incomplete = intent.map(operation);
     // Advance source pins only after configuration and dependency installation succeed.
     for (const file of intent) {

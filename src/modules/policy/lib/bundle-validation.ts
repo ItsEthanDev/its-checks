@@ -66,12 +66,6 @@ function checkInput(ctx: Context, input: Input, index: number) {
     yield* checkPath(ctx, `${field}.destination.file`, input.destination.file);
     yield* validate(
       ctx,
-      `${field}.destination.file`,
-      /\.jsonc?$/i.test(input.destination.file),
-      "Input destinations must be JSON/JSONC files",
-    );
-    yield* validate(
-      ctx,
       `${field}.destination.field`,
       input.destination.field.length > 0 &&
         input.destination.field.every(
@@ -135,15 +129,6 @@ export function checkDeclaration(
       ctx,
       "inputs.id",
       inputs.map((input) => input.id),
-    );
-    const destinations = inputs.map((input) =>
-      JSON.stringify([input.destination.file, input.destination.field]),
-    );
-    yield* validate(
-      ctx,
-      "inputs.destination",
-      new Set(destinations).size === destinations.length,
-      "Duplicate input destination",
     );
     for (const [index, input] of inputs.entries()) {
       yield* checkInput(ctx, input, index);

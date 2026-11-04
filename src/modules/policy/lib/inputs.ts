@@ -3,16 +3,9 @@ import assert from "node:assert/strict";
 import { Effect, Schema } from "effect";
 import { applyEdits, modify, parse } from "jsonc-parser";
 
-import { canonical, isArray, isObject } from "../documents.ts";
 import { BundleError } from "./bundle-errors.ts";
 import { safePath, compare } from "./bundle-io.ts";
-import type {
-  BundleDeclaration,
-  JsonValue,
-  LoadedBundle,
-  LoadedPolicy,
-  NativeFile,
-} from "./bundle-types.ts";
+import type { BundleDeclaration, LoadedBundle, LoadedPolicy, NativeFile } from "./bundle-types.ts";
 import {
   Answers,
   selectionContent,
@@ -75,55 +68,6 @@ function validateAnswer(
   });
 }
 
-function destination(bundle: LoadedBundle, input: InputDeclaration) {
-  return Effect.gen(function* () {
-    const field = `inputs.${input.id}.destination`;
-    const file = bundle.files.find((candidate) => candidate.path === input.destination.file);
-    if (file === undefined || (file.format !== "json" && file.format !== "jsonc")) {
-      return yield* error(
-        bundle,
-        field,
-        `Expected this bundle's JSON/JSONC file: ${input.destination.file}`,
-      );
-    }
-    const keys = input.destination.field;
-    yield* check(bundle, field, keys.length > 0, "Destination field must not be empty");
-    let value: JsonValue | undefined = file.value;
-    for (const key of keys) {
-      yield* check(
-        bundle,
-        field,
-        typeof key === "number"
-          ? Number.isInteger(key) && key >= 0
-          : !["__proto__", "prototype", "constructor"].includes(key),
-        `Invalid destination key in ${file.source}`,
-      );
-      yield* check(
-        bundle,
-        field,
-        value !== null &&
-          typeof value === "object" &&
-          (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
-          Object.hasOwn(value, key),
-        `Destination field ${canonical(keys)} must exist with object keys/array indexes in ${file.source}`,
-      );
-      if (isArray(value) && typeof key === "number") {
-        value = value[key];
-      } else if (isObject(value) && typeof key === "string") {
-        value = value[key];
-      }
-    }
-    return file;
-  });
-}
-
-function overlapping(a: InputDeclaration["destination"], b: InputDeclaration["destination"]) {
-  return (
-    a.file === b.file &&
-    a.field.slice(0, Math.min(a.field.length, b.field.length)).every((key, i) => key === b.field[i])
-  );
-}
-
 /** Enumerate selected bundles and dependencies; defaults and saved values are suggestions only. */
 export function enumerateInputs(
   policy: LoadedPolicy,
@@ -133,18 +77,7 @@ export function enumerateInputs(
     const result: DeclaredInput[] = [];
     for (const bundle of policy.bundles) {
       const inputs = bundle.declaration.inputs ?? [];
-      for (const [index, input] of inputs.entries()) {
-        yield* destination(bundle, input);
-        // Ancestor/descendant bindings are ambiguous even when the authored fields both exist.
-        for (const other of inputs.slice(0, index)) {
-          const overlaps = overlapping(input.destination, other.destination);
-          yield* check(
-            bundle,
-            `inputs.${input.id}.destination`,
-            !overlaps,
-            `Overlapping input destinations: ${other.id} and ${input.id}`,
-          );
-        }
+      for (const input of inputs) {
         const saved = answerAt(
           previous === undefined ? undefined : qualifiedAnswers(previous.sources),
           bundle.key,

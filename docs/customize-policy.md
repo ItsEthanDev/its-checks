@@ -143,6 +143,6 @@ The selected target must supply an ordinary string for that script. Replacement 
 }
 ```
 
-Types are `string`, `number`, `boolean`, and `path`. Paths are safe project-relative POSIX paths; existence is not required. Destinations must already exist in this bundle's declared JSON/JSONC contribution. Field paths use object keys and nonnegative array indexes. Overlapping destinations are unsupported.
+Types are `string`, `number`, `boolean`, and `path`. Paths are safe project-relative POSIX paths; existence is not required. Destinations must already exist in this bundle's declared JSON/JSONC contribution; the declared format, not the filename, determines eligibility. Loading selected bundles validates destination fields and rejects overlaps before input enumeration or answer binding. Field paths use object keys and nonnegative array indexes. Discovery reads declarations only, not native file content.
 
 Answers are scoped by repository, bundle ID, and input ID. Interactive mode offers valid saved answers or defaults; headless callers supply explicit answers even when defaults exist. Do not request secrets: answers are saved and appear in plans. Global inputs and cross-bundle answer references are unsupported.

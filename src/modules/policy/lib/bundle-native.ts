@@ -2,7 +2,7 @@ import * as path from "node:path";
 
 import { Effect } from "effect";
 
-import { isObject } from "../documents.ts";
+import { canonical, isArray, isObject } from "../documents.ts";
 import type { BundleError } from "./bundle-errors.ts";
 import { directory, json, readText, validate, type Context } from "./bundle-io.ts";
 import type {
@@ -64,20 +64,64 @@ function readFile(info: BundleInfo, declaration: FileDeclaration) {
     return { ...common, format: declaration.format, value };
   });
 }
-/** Load explicitly declared UTF-8 contributions, never code or filename conventions. */
+type Input = NonNullable<BundleInfo["declaration"]["inputs"]>[number];
+function checkDestination(info: BundleInfo, files: readonly NativeFile[], input: Input) {
+  return Effect.gen(function* () {
+    const ctx = { bundle: info.key, source: info.source };
+    const field = `inputs.${input.id}.destination`;
+    const file = files.find((candidate) => candidate.path === input.destination.file);
+    if (file === undefined || file.format === "text") {
+      return yield* validate(
+        ctx,
+        field,
+        false,
+        `Expected this bundle's JSON/JSONC file: ${input.destination.file}`,
+      );
+    }
+    let value: JsonValue | undefined = file.value;
+    for (const key of input.destination.field) {
+      yield* validate(
+        ctx,
+        field,
+        value !== null &&
+          typeof value === "object" &&
+          (Array.isArray(value) ? typeof key === "number" : typeof key === "string") &&
+          Object.hasOwn(value, key),
+        `Destination field ${canonical(input.destination.field)} must exist with object keys/array indexes in ${file.source}`,
+      );
+      if (isArray(value) && typeof key === "number") {
+        value = value[key];
+      } else if (isObject(value) && typeof key === "string") {
+        value = value[key];
+      }
+    }
+    return undefined;
+  });
+}
+/** Load explicitly declared UTF-8 contributions and validate their input destinations. */
 export function nativeFiles(info: BundleInfo): Effect.Effect<LoadedBundle, BundleError> {
   return Effect.gen(function* () {
     const files: NativeFile[] = yield* Effect.forEach(info.declaration.files ?? [], (declaration) =>
       readFile(info, declaration),
     );
-    for (const input of info.declaration.inputs ?? []) {
-      const file = files.find((candidate) => candidate.path === input.destination.file);
-      yield* validate(
-        { bundle: info.key, source: info.source },
-        "inputs.destination",
-        file !== undefined && file.format !== "text",
-        "Input destinations must name a declared JSON/JSONC contribution",
-      );
+    const inputs = info.declaration.inputs ?? [];
+    for (const [index, input] of inputs.entries()) {
+      yield* checkDestination(info, files, input);
+      for (const other of inputs.slice(0, index)) {
+        const a = input.destination;
+        const b = other.destination;
+        const overlaps =
+          a.file === b.file &&
+          a.field
+            .slice(0, Math.min(a.field.length, b.field.length))
+            .every((key, i) => key === b.field[i]);
+        yield* validate(
+          { bundle: info.key, source: info.source },
+          `inputs.${input.id}.destination`,
+          !overlaps,
+          `Overlapping input destinations: ${other.id} and ${input.id}`,
+        );
+      }
     }
     return { ...info, files };
   });

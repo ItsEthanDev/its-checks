@@ -140,7 +140,6 @@ for (const manager of managers) {
       },
     });
     const initial = await plan();
-    assert.equal(await run(adapter.assess(initial)), "required");
     assert.equal(calls.length, 0, "preview never invokes a manager");
     assert.equal(
       (await run(applyPlan(initial, { approved: false, dependencies: adapter }))).status,
@@ -162,11 +161,6 @@ for (const manager of managers) {
     await assert.rejects(fs.stat(path.join(f.project, "node_modules")), { code: "ENOENT" });
     const matching = await plan();
     assert.ok(matching.files.every((file) => file.kind === "noop"));
-    assert.equal(
-      await run(adapter.assess(matching)),
-      "required",
-      "matching config does not prove dependencies are installed",
-    );
     await run(applyPlan(matching, { approved: true, dependencies: adapter }));
     assert.equal(calls.length, 2);
     await put(f.project, "node_modules/.package-lock.json", "native metadata");
