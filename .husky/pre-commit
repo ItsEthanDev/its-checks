@@ -1,3 +1,2 @@
-# BEGIN its-checks
-sh .husky/its-checks-pre-commit
-# END its-checks
+# its-checks: managed
+node --run check
