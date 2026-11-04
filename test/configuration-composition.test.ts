@@ -3,7 +3,7 @@ import { test } from "node:test";
 
 import { Effect } from "effect";
 
-import { planProject } from "../src/planning.ts";
+import { planProject } from "../src/modules/planning/index.ts";
 import { setup, value } from "./planning-fixtures.ts";
 
 const run = Effect.runPromise;

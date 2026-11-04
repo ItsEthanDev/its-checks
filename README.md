@@ -59,4 +59,15 @@ Bun is this repository's development package manager. Install dependencies with 
 
 Edit the executed checkout's `policy/` declarations and native files, then rerun setup; no build is needed. Generated target configuration can be replaced on rerun. Implementation is in [`src/`](src/); the Node launcher uses `tsx` to run it directly.
 
+`src/cli.ts` is the executable entry point. Implementation lives in `src/modules/`:
+
+- `policy`: bundle loading, validation, inputs, and saved intent.
+- `planning`: configuration composition, scripts, automation, and target snapshots.
+- `application`: approved-plan application and package-manager operations.
+- `setup`: shared workflow coordination and source revision detection.
+- `terminal`: interactive prompts and presentation.
+- `headless`: noninteractive commands and saved-plan validation.
+
+Cross-module imports use each module's `index.ts`; other files are internal implementation. The authored `policy/` and `schemas/` remain separate runtime assets.
+
 Follow the [project standards](STANDARDS.md) and [testing guidance](docs/testing.md).

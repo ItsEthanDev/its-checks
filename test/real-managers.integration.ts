@@ -6,17 +6,20 @@ import { test } from "node:test";
 
 import { Effect, Schema } from "effect";
 
-import { applyPlan, ApplicationError, type ApplicationDependencies } from "../src/application.ts";
-import { loadPolicy } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
 import {
+  applyPlan,
+  ApplicationError,
   createDependencyAdapter,
   resolveTargetManager,
   nodeManagerOperations,
-} from "../src/package-managers.ts";
-import { planProject, type ChangePlan } from "../src/planning.ts";
-import type { PackageManager } from "../src/scripts.ts";
-import { loadPreviousIntent } from "../src/selections.ts";
+  type ApplicationDependencies,
+} from "../src/modules/application/index.ts";
+import {
+  planProject,
+  type ChangePlan,
+  type PackageManager,
+} from "../src/modules/planning/index.ts";
+import { loadPolicy, resolveInputs, loadPreviousIntent } from "../src/modules/policy/index.ts";
 import { json, object, manifest as parseManifest } from "./assertions.ts";
 
 const run = Effect.runPromise;

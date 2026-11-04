@@ -11,11 +11,15 @@ import {
   createNodeApplicationFileSystem,
   nodeApplicationFileSystem,
   type ApplicationDependencies,
-} from "../src/application.ts";
-import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
-import { planProject, type ChangePlan } from "../src/planning.ts";
-import { loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+} from "../src/modules/application/index.ts";
+import { planProject, type ChangePlan } from "../src/modules/planning/index.ts";
+import {
+  loadPolicy,
+  resolveInputs,
+  loadPreviousIntent,
+  selectionFilename,
+  type PolicySelections,
+} from "../src/modules/policy/index.ts";
 import { noInstall, setup, failure, mtimes } from "./application-fixtures.ts";
 import { defined, json, manifest as parseManifest, object } from "./assertions.ts";
 import { snapshot } from "./fixtures.ts";

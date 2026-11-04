@@ -5,7 +5,7 @@ import { test } from "node:test";
 
 import { Effect, Result, Schema } from "effect";
 
-import { BundleError, discoverPolicy, loadPolicy } from "../src/bundles.ts";
+import { BundleError, discoverPolicy, loadPolicy } from "../src/modules/policy/index.ts";
 import { defined } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 import { invalidDeclarations } from "./invalid-declarations.ts";

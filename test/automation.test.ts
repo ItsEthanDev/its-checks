@@ -5,11 +5,13 @@ import { test } from "node:test";
 
 import { Effect } from "effect";
 
-import { applyPlan, type ApplicationDependencies } from "../src/application.ts";
-import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
-import { planProject, type PlanOptions } from "../src/planning.ts";
-import { createScriptPlanner } from "../src/scripts.ts";
+import { applyPlan, type ApplicationDependencies } from "../src/modules/application/index.ts";
+import {
+  planProject,
+  createScriptPlanner,
+  type PlanOptions,
+} from "../src/modules/planning/index.ts";
+import { loadPolicy, resolveInputs, type PolicySelections } from "../src/modules/policy/index.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 const run = Effect.runPromise;

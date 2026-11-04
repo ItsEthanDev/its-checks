@@ -5,12 +5,15 @@ import { test } from "node:test";
 
 import { Effect, Schema } from "effect";
 
-import { applyPlan, ApplicationError, OperationError } from "../src/application.ts";
-import { loadPolicy } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
-import { resolveTargetManager, createDependencyAdapter } from "../src/package-managers.ts";
-import { planProject } from "../src/planning.ts";
-import type { PackageManager } from "../src/scripts.ts";
+import {
+  applyPlan,
+  ApplicationError,
+  OperationError,
+  resolveTargetManager,
+  createDependencyAdapter,
+} from "../src/modules/application/index.ts";
+import { planProject, type PackageManager } from "../src/modules/planning/index.ts";
+import { loadPolicy, resolveInputs } from "../src/modules/policy/index.ts";
 import { defined, manifest as parseManifest } from "./assertions.ts";
 import { fixture } from "./fixtures.ts";
 

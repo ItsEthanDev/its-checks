@@ -4,9 +4,13 @@ import * as path from "node:path";
 
 import { Effect } from "effect";
 
-import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
-import { resolveInputs, type ResolvedInputs } from "../src/inputs.ts";
-import type { ChangePlan } from "../src/planning.ts";
+import type { ChangePlan } from "../src/modules/planning/index.ts";
+import {
+  loadPolicy,
+  resolveInputs,
+  type PolicySelections,
+  type ResolvedInputs,
+} from "../src/modules/policy/index.ts";
 import { defined, json } from "./assertions.ts";
 import { fixture } from "./fixtures.ts";
 

@@ -5,9 +5,12 @@ import { test } from "node:test";
 
 import { Effect } from "effect";
 
-import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
-import { planProject, assertTargetUnchanged, readTargetSnapshot } from "../src/planning.ts";
+import {
+  planProject,
+  assertTargetUnchanged,
+  readTargetSnapshot,
+} from "../src/modules/planning/index.ts";
+import { loadPolicy, resolveInputs, type PolicySelections } from "../src/modules/policy/index.ts";
 import { defined, strings } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 import { output, value, changed, setup } from "./planning-fixtures.ts";

@@ -1,34 +1,16 @@
 import { Effect } from "effect";
 
-import type { JsonValue, LoadedBundle, LoadedPolicy } from "./bundles.ts";
+import {
+  canonical,
+  isArray,
+  isObject,
+  type JsonObject,
+  type JsonValue,
+  type LoadedBundle,
+  type LoadedPolicy,
+} from "../policy/index.ts";
 import { PlanError } from "./plan-errors.ts";
 
-export type JsonObject = { readonly [key: string]: JsonValue };
-export const isObject = (value: unknown): value is JsonObject =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-export const isArray = (value: JsonValue | undefined): value is readonly JsonValue[] =>
-  Array.isArray(value);
-export const canonical = (value: JsonValue): string => JSON.stringify(ordered(value));
-function ordered(value: JsonValue): JsonValue {
-  if (isArray(value)) {
-    return value.map(ordered);
-  }
-  if (isObject(value)) {
-    return Object.fromEntries(
-      Object.entries(value)
-        .toSorted(([a], [b]) => {
-          if (a === b) {
-            return 0;
-          }
-          return a < b ? -1 : 1;
-        })
-        .map(([key, entry]) => [key, ordered(entry)]),
-    );
-  }
-  return value;
-}
-export const jsonContent = (value: JsonValue): string =>
-  `${JSON.stringify(ordered(value), null, 2)}\n`;
 const rank = { base: 0, integration: 1, automation: 2 };
 export const orderedBundles = (bundles: readonly LoadedBundle[]): readonly LoadedBundle[] =>
   bundles.toSorted((a, b) => {

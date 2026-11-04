@@ -1,26 +1,37 @@
 import { Effect, Schema } from "effect";
 
-import type { ApplicationError } from "./application.ts";
 import {
   applyPlan,
+  type ApplicationError,
   type ApplicationDependencies,
   type ApplicationReport,
   OperationError,
-} from "./application.ts";
-import type { BundleError } from "./bundle-errors.ts";
-import type { BundleInfo, LoadedPolicy, PolicyCatalog, PolicySelections } from "./bundle-types.ts";
-import { discoverPolicy, loadPolicy } from "./bundles.ts";
-import { enumerateInputs, resolveInputs, type DeclaredInput } from "./inputs.ts";
-import {
   createDependencyAdapter,
   resolveTargetManager,
   type ManagerResolution,
   type TargetManager,
-} from "./package-managers.ts";
-import type { PlanError } from "./plan-errors.ts";
-import { planProject, type ChangePlan } from "./planning.ts";
-import type { PackageManager } from "./scripts.ts";
-import { loadPreviousIntent, type Answer, type SavedIntent } from "./selections.ts";
+} from "../application/index.ts";
+import {
+  planProject,
+  type ChangePlan,
+  type PlanError,
+  type PackageManager,
+} from "../planning/index.ts";
+import {
+  discoverPolicy,
+  loadPolicy,
+  enumerateInputs,
+  resolveInputs,
+  loadPreviousIntent,
+  type BundleError,
+  type BundleInfo,
+  type LoadedPolicy,
+  type PolicyCatalog,
+  type PolicySelections,
+  type DeclaredInput,
+  type Answer,
+  type SavedIntent,
+} from "../policy/index.ts";
 
 export class Cancelled extends Schema.TaggedError<Cancelled, { readonly brand: unique symbol }>()(
   "Cancelled",

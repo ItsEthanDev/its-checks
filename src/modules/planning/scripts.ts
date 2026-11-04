@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 
 import { Effect } from "effect";
 
-import type { LoadedBundle } from "./bundles.ts";
-import { isObject, orderedBundles } from "./composition.ts";
+import { isObject, type LoadedBundle } from "../policy/index.ts";
+import { orderedBundles } from "./composition.ts";
 import { PlanError } from "./plan-errors.ts";
 import type { PlanOptions, ScriptContext } from "./planning.ts";
 

@@ -6,12 +6,14 @@ import { test } from "node:test";
 
 import { Effect } from "effect";
 
-import { applyPlan } from "../src/application.ts";
-import { discoverPolicy, loadPolicy } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
-import { planProject } from "../src/planning.ts";
-import { createScriptPlanner } from "../src/scripts.ts";
-import { loadPreviousIntent } from "../src/selections.ts";
+import { applyPlan } from "../src/modules/application/index.ts";
+import { planProject, createScriptPlanner } from "../src/modules/planning/index.ts";
+import {
+  discoverPolicy,
+  loadPolicy,
+  resolveInputs,
+  loadPreviousIntent,
+} from "../src/modules/policy/index.ts";
 import { defined, json, object, strings, manifest as parseManifest } from "./assertions.ts";
 
 const run = Effect.runPromise;

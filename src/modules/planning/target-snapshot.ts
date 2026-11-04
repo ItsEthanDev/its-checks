@@ -4,7 +4,7 @@ import * as path from "node:path";
 
 import { Effect } from "effect";
 
-import { safePath } from "./bundle-loading.ts";
+import { safePath } from "../policy/index.ts";
 import { PlanError } from "./plan-errors.ts";
 
 /** Exact bytes and permission bits, not a decoded/reformatted approximation. */

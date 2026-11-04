@@ -1,7 +1,12 @@
 import { Effect } from "effect";
 
-import type { JsonValue, LoadedBundle } from "./bundles.ts";
-import { canonical, isObject, type JsonObject } from "./composition.ts";
+import {
+  canonical,
+  isObject,
+  type JsonObject,
+  type JsonValue,
+  type LoadedBundle,
+} from "../policy/index.ts";
 import { PlanError } from "./plan-errors.ts";
 import type { ChangeKind, DeferredChange, EntryChange, PlanOptions } from "./planning.ts";
 

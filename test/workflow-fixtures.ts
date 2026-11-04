@@ -1,9 +1,12 @@
 import { Effect } from "effect";
 
-import type { ApplicationDependencies, ApplicationReport } from "../src/application.ts";
-import type { ChangePlan } from "../src/planning.ts";
-import type { Answer } from "../src/selections.ts";
-import type { SetupPresentation } from "../src/workflow.ts";
+import type {
+  ApplicationDependencies,
+  ApplicationReport,
+} from "../src/modules/application/index.ts";
+import type { ChangePlan } from "../src/modules/planning/index.ts";
+import type { Answer } from "../src/modules/policy/index.ts";
+import type { SetupPresentation } from "../src/modules/setup/index.ts";
 import type { fixture } from "./fixtures.ts";
 
 interface Dialogue {

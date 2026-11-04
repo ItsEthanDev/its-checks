@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 import { Effect } from "effect";
 
-import { executingCommit } from "../src/source-revision.ts";
+import { executingCommit } from "../src/modules/setup/index.ts";
 import { snapshot } from "./fixtures.ts";
 
 const exec = promisify(execFile);

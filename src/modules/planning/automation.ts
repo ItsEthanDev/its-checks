@@ -2,7 +2,7 @@ import { TextDecoder } from "node:util";
 
 import { Effect, Schema } from "effect";
 
-import type { LoadedBundle, NativeFile } from "./bundles.ts";
+import type { LoadedBundle, NativeFile } from "../policy/index.ts";
 import { PlanError } from "./plan-errors.ts";
 import type { FileState, TargetSnapshot } from "./target-snapshot.ts";
 

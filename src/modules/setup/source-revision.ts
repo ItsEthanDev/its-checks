@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { Effect, Schema } from "effect";
 import { parse, type ParseError } from "jsonc-parser";
 
-import { commitPattern } from "./selections.ts";
+import { commitPattern } from "../policy/index.ts";
 
 const exec = promisify(execFile);
 const decodeNpmLock = Schema.decodeSync(

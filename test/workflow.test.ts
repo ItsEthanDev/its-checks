@@ -8,10 +8,10 @@ import { Effect, Result, Schema } from "effect";
 import {
   ApplicationError,
   OperationError,
+  createDependencyAdapter,
   type ApplicationDependencies,
-} from "../src/application.ts";
-import { createDependencyAdapter } from "../src/package-managers.ts";
-import { Cancelled, setup, type SetupPresentation } from "../src/workflow.ts";
+} from "../src/modules/application/index.ts";
+import { Cancelled, setup, type SetupPresentation } from "../src/modules/setup/index.ts";
 import { json, object, manifest as parseManifest } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 import { dialogue, ready, inputPolicy } from "./workflow-fixtures.ts";

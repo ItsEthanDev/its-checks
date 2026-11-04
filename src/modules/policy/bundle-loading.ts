@@ -25,9 +25,7 @@ import {
   type PolicySelections,
 } from "./bundle-types.ts";
 import { checkDeclaration } from "./bundle-validation.ts";
-import { canonical } from "./composition.ts";
-
-export { safePath, readText, json } from "./bundle-io.ts";
+import { canonical } from "./json.ts";
 const identifier = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function bundle(root: string, kind: BundleKind, id: string) {

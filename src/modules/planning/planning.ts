@@ -3,26 +3,22 @@ import { TextDecoder } from "node:util";
 
 import { Effect } from "effect";
 
-import { isAutomationPath, prepareAutomation, type AutomationChange } from "./automation.ts";
-import { json } from "./bundle-loading.ts";
-import type { JsonValue, LoadedBundle } from "./bundles.ts";
 import {
   canonical,
-  composeConfigurations,
-  configDestination,
+  json,
   jsonContent,
-  orderedBundles,
   type JsonObject,
-} from "./composition.ts";
-import type { ResolvedInputs } from "./inputs.ts";
+  type JsonValue,
+  type LoadedBundle,
+  type ResolvedInputs,
+  type SavedIntent,
+} from "../policy/index.ts";
+import { isAutomationPath, prepareAutomation, type AutomationChange } from "./automation.ts";
+import { composeConfigurations, configDestination, orderedBundles } from "./composition.ts";
 import { planManifest } from "./manifest-planning.ts";
 import { PlanError } from "./plan-errors.ts";
-import type { SavedIntent } from "./selections.ts";
 import { readTargetSnapshot, type FileState, type TargetSnapshot } from "./target-snapshot.ts";
 
-export { PlanError } from "./plan-errors.ts";
-export { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
-export type { FileState, TargetSnapshot } from "./target-snapshot.ts";
 export type ChangeKind = "creation" | "addition" | "replacement" | "removal" | "noop";
 export interface EntryChange {
   readonly section: "dependencies" | "devDependencies" | "scripts";

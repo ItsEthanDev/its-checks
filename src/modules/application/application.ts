@@ -5,10 +5,15 @@ import * as path from "node:path";
 
 import { Effect, Schema } from "effect";
 
-import type { PlanError } from "./plan-errors.ts";
-import type { ChangePlan, FileChange, FileState } from "./planning.ts";
-import { selectionFilename } from "./selections.ts";
-import { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
+import {
+  assertTargetUnchanged,
+  readTargetSnapshot,
+  type PlanError,
+  type ChangePlan,
+  type FileChange,
+  type FileState,
+} from "../planning/index.ts";
+import { selectionFilename } from "../policy/index.ts";
 
 export class OperationError extends Schema.TaggedError<
   OperationError,

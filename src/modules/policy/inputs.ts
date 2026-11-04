@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect";
 import { applyEdits, modify, parse } from "jsonc-parser";
 
 import { BundleError } from "./bundle-errors.ts";
-import { safePath } from "./bundle-loading.ts";
+import { safePath } from "./bundle-io.ts";
 import type {
   BundleDeclaration,
   JsonValue,
@@ -12,7 +12,7 @@ import type {
   LoadedPolicy,
   NativeFile,
 } from "./bundle-types.ts";
-import { canonical, isArray, isObject } from "./composition.ts";
+import { canonical, isArray, isObject } from "./json.ts";
 import {
   Answers,
   selectionContent,

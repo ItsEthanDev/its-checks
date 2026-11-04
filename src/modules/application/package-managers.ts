@@ -4,9 +4,8 @@ import * as path from "node:path";
 
 import { Effect, Schema } from "effect";
 
+import { createScriptPlanner, type ChangePlan, type PackageManager } from "../planning/index.ts";
 import { OperationError, type ApplicationDependencies } from "./application.ts";
-import type { ChangePlan } from "./planning.ts";
-import { createScriptPlanner, type PackageManager } from "./scripts.ts";
 
 const lockNames: Record<PackageManager, readonly string[]> = {
   npm: ["package-lock.json", "npm-shrinkwrap.json"],

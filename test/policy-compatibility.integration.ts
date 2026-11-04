@@ -8,18 +8,19 @@ import { promisify } from "node:util";
 
 import { Effect, Schema } from "effect";
 
-import { applyPlan } from "../src/application.ts";
-import type { PolicySelections } from "../src/bundle-types.ts";
-import { loadPolicy } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
 import {
+  applyPlan,
   createDependencyAdapter,
   resolveTargetManager,
   nodeManagerOperations,
-} from "../src/package-managers.ts";
-import { planProject } from "../src/planning.ts";
-import type { ChangePlan } from "../src/planning.ts";
-import { loadPreviousIntent } from "../src/selections.ts";
+} from "../src/modules/application/index.ts";
+import { planProject, type ChangePlan } from "../src/modules/planning/index.ts";
+import {
+  loadPolicy,
+  resolveInputs,
+  loadPreviousIntent,
+  type PolicySelections,
+} from "../src/modules/policy/index.ts";
 import { defined, json, object, manifest as parseManifest } from "./assertions.ts";
 
 const run = Effect.runPromise;

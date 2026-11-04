@@ -8,9 +8,14 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { Effect } from "effect";
 import { parse } from "jsonc-parser";
 
-import { loadPolicy } from "../src/bundles.ts";
-import { enumerateInputs, resolveInputs } from "../src/inputs.ts";
-import { decodeSavedIntent, loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+import {
+  loadPolicy,
+  enumerateInputs,
+  resolveInputs,
+  decodeSavedIntent,
+  loadPreviousIntent,
+  selectionFilename,
+} from "../src/modules/policy/index.ts";
 import { defined, json } from "./assertions.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 

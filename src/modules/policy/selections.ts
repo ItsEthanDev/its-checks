@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { Effect, Schema } from "effect";
 
 import { BundleError } from "./bundle-errors.ts";
-import { json, readText, safePath } from "./bundle-loading.ts";
+import { json, readText, safePath } from "./bundle-io.ts";
 import type { RootDeclaration } from "./bundle-types.ts";
 
 export const selectionFilename = ".its-checks.json";

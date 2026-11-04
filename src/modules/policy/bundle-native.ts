@@ -18,7 +18,7 @@ import {
   type Context,
 } from "./bundle-io.ts";
 import type { BundleInfo, JsonValue, LoadedBundle, NativeFile } from "./bundle-types.ts";
-import { isArray, isObject } from "./composition.ts";
+import { isArray, isObject } from "./json.ts";
 
 function parseNative(
   ctx: Context,

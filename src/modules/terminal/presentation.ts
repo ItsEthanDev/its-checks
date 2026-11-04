@@ -1,11 +1,9 @@
 import * as clack from "@clack/prompts";
 import { Effect, Schema } from "effect";
 
-import { ApplicationError, OperationError } from "./application.ts";
-import { safePath } from "./bundle-loading.ts";
-import type { DeclaredInput } from "./inputs.ts";
-import type { Answer } from "./selections.ts";
-import { Cancelled, type Question, type SetupPresentation } from "./workflow.ts";
+import { ApplicationError, OperationError } from "../application/index.ts";
+import { safePath, type DeclaredInput, type Answer } from "../policy/index.ts";
+import { Cancelled, type Question, type SetupPresentation } from "../setup/index.ts";
 
 const ask = <A>(prompt: () => Promise<A | typeof clack.CANCEL_SYMBOL>): Question<A> =>
   Effect.gen(function* () {

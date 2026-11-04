@@ -10,8 +10,8 @@ import {
   ApplicationError,
   OperationError,
   nodeApplicationFileSystem,
-} from "../src/application.ts";
-import { loadPreviousIntent, selectionFilename } from "../src/selections.ts";
+} from "../src/modules/application/index.ts";
+import { loadPreviousIntent, selectionFilename } from "../src/modules/policy/index.ts";
 import { noInstall, setup, failure } from "./application-fixtures.ts";
 import { defined } from "./assertions.ts";
 import { snapshot } from "./fixtures.ts";

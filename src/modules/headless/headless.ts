@@ -5,18 +5,23 @@ import { parseArgs } from "node:util";
 
 import { Effect, Schema } from "effect";
 
-import { applyPlan, OperationError, type ApplicationError } from "./application.ts";
-import { discoverPolicy, loadPolicy, type BundleError } from "./bundles.ts";
 import {
+  applyPlan,
+  OperationError,
+  type ApplicationError,
   createDependencyAdapter,
   managerLockfiles,
   resolveTargetManager,
-} from "./package-managers.ts";
-import type { PlanError } from "./plan-errors.ts";
-import { Answers, loadPreviousIntent } from "./selections.ts";
-import { executingCommit } from "./source-revision.ts";
-import { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
-import { knownSelections, prepareSetupPlan } from "./workflow.ts";
+} from "../application/index.ts";
+import { assertTargetUnchanged, readTargetSnapshot, type PlanError } from "../planning/index.ts";
+import {
+  discoverPolicy,
+  loadPolicy,
+  Answers,
+  loadPreviousIntent,
+  type BundleError,
+} from "../policy/index.ts";
+import { executingCommit, knownSelections, prepareSetupPlan } from "../setup/index.ts";
 
 const Manager = Schema.Literals(["npm", "pnpm", "yarn", "bun"]);
 const Config = Schema.Struct({

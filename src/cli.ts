@@ -3,10 +3,9 @@ import { fileURLToPath } from "node:url";
 import * as clack from "@clack/prompts";
 import { Effect, Schema } from "effect";
 
-import { headless } from "./headless.ts";
-import { createClackPresentation } from "./presentation.ts";
-import { executingCommit } from "./source-revision.ts";
-import { Cancelled, setup } from "./workflow.ts";
+import { headless } from "./modules/headless/index.ts";
+import { Cancelled, executingCommit, setup } from "./modules/setup/index.ts";
+import { createClackPresentation } from "./modules/terminal/index.ts";
 
 // Policy belongs to the executed package/checkout, never the target cwd.
 const interactive = process.stdin.isTTY && process.stdout.isTTY;

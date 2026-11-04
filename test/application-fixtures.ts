@@ -3,11 +3,18 @@ import * as path from "node:path";
 
 import { Effect } from "effect";
 
-import type { applyPlan, ApplicationDependencies, ApplicationError } from "../src/application.ts";
-import { loadPolicy, type PolicySelections } from "../src/bundles.ts";
-import { resolveInputs } from "../src/inputs.ts";
-import { planProject, type PlanOptions, type ChangePlan } from "../src/planning.ts";
-import { createScriptPlanner } from "../src/scripts.ts";
+import type {
+  applyPlan,
+  ApplicationDependencies,
+  ApplicationError,
+} from "../src/modules/application/index.ts";
+import {
+  planProject,
+  createScriptPlanner,
+  type PlanOptions,
+  type ChangePlan,
+} from "../src/modules/planning/index.ts";
+import { loadPolicy, resolveInputs, type PolicySelections } from "../src/modules/policy/index.ts";
 import { fixture, snapshot } from "./fixtures.ts";
 
 export const noInstall: ApplicationDependencies = {
