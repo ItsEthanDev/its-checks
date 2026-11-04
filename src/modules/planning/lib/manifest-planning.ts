@@ -52,20 +52,16 @@ function addRequirements(
 }
 function dependencyEdits(
   required: ReadonlyMap<string, Requirement>,
-  selected: readonly LoadedBundle[],
-  deselected: readonly LoadedBundle[],
+  previous: readonly LoadedBundle[],
 ) {
   const edits = new Map<string, DependencyEdit>();
   const edit = (section: DependencySection, name: string, after: string | null) =>
     edits.set(`${section}/${name}`, { section, name, after });
-  const removals = [
-    ...deselected.flatMap((bundle) =>
-      dependencySections.flatMap((section) =>
-        Object.keys(bundle.declaration[section] ?? {}).map((name) => ({ section, name })),
-      ),
+  const removals = previous.flatMap((bundle) =>
+    dependencySections.flatMap((section) =>
+      Object.keys(bundle.declaration[section] ?? {}).map((name) => ({ section, name })),
     ),
-    ...selected.flatMap(migrationDependencies),
-  ];
+  );
   for (const { section, name } of removals) {
     if (!required.has(name)) {
       edit(section, name, null);
@@ -76,15 +72,6 @@ function dependencyEdits(
     edit(entry.section === "dependencies" ? "devDependencies" : "dependencies", name, null);
   }
   return [...edits.values()];
-}
-function migrationDependencies(bundle: LoadedBundle) {
-  return dependencySections.flatMap((section) => {
-    const names =
-      section === "dependencies"
-        ? bundle.declaration.migration?.removeDependencies
-        : bundle.declaration.migration?.removeDevDependencies;
-    return (names ?? []).map((name) => ({ section, name }));
-  });
 }
 function applyDependencyEdits(
   manifest: Record<string, JsonValue>,
@@ -170,7 +157,7 @@ function validateManifest(original: JsonValue) {
 export function planManifest(
   value: JsonValue,
   selected: readonly LoadedBundle[],
-  deselected: readonly LoadedBundle[],
+  previous: readonly LoadedBundle[],
   options: PlanOptions,
 ): Effect.Effect<
   {
@@ -184,9 +171,9 @@ export function planManifest(
     const original = yield* validateManifest(value);
     const manifest: Record<string, JsonValue> = { ...original };
     const required = yield* requirements(selected);
-    const edits = dependencyEdits(required, selected, deselected);
+    const edits = dependencyEdits(required, previous);
     applyDependencyEdits(manifest, edits);
-    const scripts = yield* composeScripts(manifest, selected, deselected, options.manager);
+    const scripts = yield* composeScripts(manifest, selected, previous, options.manager);
     if (Object.hasOwn(manifest, "scripts") || Object.keys(scripts).length > 0) {
       manifest.scripts = scripts;
     }

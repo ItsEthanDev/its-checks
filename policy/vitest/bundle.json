@@ -1,0 +1,16 @@
+{
+  "name": "Vitest",
+  "description": "Scoped test correctness, assertions, and focused-test prevention",
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/overrides": "append-unique"
+      }
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "name": "Effect",
+  "description": "Typed failures, service requirements, and idiomatic Effect code",
+  "devDependencies": {
+    "@effect/tsgo": "0.63.0"
+  },
+  "scripts": {
+    "lint": {
+      "command": "effect-tsgo oxlint --deny-warnings .",
+      "replaces": "typescript"
+    },
+    "lint:fix": {
+      "command": "effect-tsgo oxlint --fix --deny-warnings .",
+      "replaces": "typescript"
+    }
+  },
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/plugins": "append-unique",
+        "/extends": "append-unique"
+      },
+      "replaces": {
+        "/$schema": "typescript",
+        "/rules/unicorn~1throw-new-error": "typescript"
+      }
+    }
+  ]
+}

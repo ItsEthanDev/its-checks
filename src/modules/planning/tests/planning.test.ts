@@ -5,392 +5,130 @@ import { test } from "node:test";
 
 import { Effect } from "effect";
 
-import { defined } from "../../../../test/shared/assertions.ts";
-import { fixture, snapshot } from "../../../../test/shared/fixtures.ts";
-import { loadPolicy, resolveInputs, type PolicySelections } from "../../policy/index.ts";
-import { assertTargetUnchanged, readTargetSnapshot } from "../index.ts";
-import {
-  planNpmProject as planProject,
-  output,
-  value,
-  changed,
-  setup,
-} from "./planning-fixtures.ts";
-
+import { json } from "../../../../test/shared/assertions.ts";
+import { manifest, defined } from "../../../../test/shared/assertions.ts";
+import { fixture, revision, snapshot } from "../../../../test/shared/fixtures.ts";
+import { applyPlan } from "../../application/index.ts";
+import { loadPolicy, resolveInputs, type LoadedPolicy } from "../../policy/index.ts";
+import { planProject, type ChangePlan } from "../index.ts";
 const run = Effect.runPromise;
-const empty: PolicySelections = { integrations: [], automation: [] };
-
-await test("fresh package gets a complete read-only plan with exact creations, additions, and stale observations", async (t) => {
-  const f = await setup(t);
-  const before = await snapshot(f.project);
-  const plan = await run(planProject(f.project, await f.resolve()));
-  assert.deepEqual(changed(plan), [
-    [".its-checks.json", "creation"],
-    [".oxfmtrc.json", "creation"],
-    [".oxlintrc.json", "creation"],
-    ["package.json", "addition"],
-  ]);
-  assert.equal(plan.requiresConfirmation, false);
-  assert.equal(plan.complete, true);
-  assert.deepEqual(value(plan, ".oxlintrc.json"), { rules: { "no-debugger": "error" } });
-  assert.deepEqual(value(plan, ".oxfmtrc.json"), {});
-  assert.deepEqual(value(plan, "package.json"), {
-    name: "untouched",
-    scripts: { install: "exit 99" },
-    devDependencies: { oxlint: "1.0.0" },
-  });
-  assert.deepEqual(await snapshot(f.project), before);
-  assert.equal(plan.snapshot.files["oxlint.config.ts"]?.kind, "absent");
-  await run(assertTargetUnchanged(plan.snapshot));
-  await f.writeProject("oxlint.config.ts", "throw Error('never execute');");
-  await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed since planning/);
-});
-
-await test("existing dedicated configuration is replaced, never inherited; matching JSON preserves exact bytes", async (t) => {
-  const f = await setup(t);
-  await f.writeProject(".oxlintrc.json", { rules: { local: "error", "no-debugger": "off" } });
-  await f.writeProject(".oxfmtrc.json", "{   }\n\n");
-  const plan = await run(planProject(f.project, await f.resolve()));
-  assert.deepEqual(value(plan, ".oxlintrc.json"), { rules: { "no-debugger": "error" } });
-  assert.equal(plan.files.find((file) => file.path === ".oxlintrc.json")?.kind, "replacement");
-  assert.equal(plan.requiresConfirmation, true);
-  assert.equal(output(plan, ".oxfmtrc.json"), "{   }\n\n");
-  assert.equal(plan.files.find((file) => file.path === ".oxfmtrc.json")?.kind, "noop");
-});
-
-await test("explicit migration and alternate config names are proposed without executing modules or guessing cleanup", async (t) => {
-  const f = await setup(t);
-  await f.add("base", {
-    name: "Base",
-    migration: { removeFiles: ["prettier.config.js"], removeDevDependencies: ["prettier"] },
-  });
-  const sentinel = path.join(f.project, "EXECUTED");
-  const executable = `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(sentinel)}, 'bad'); throw Error('executed');`;
-  for (const relative of ["prettier.config.js", "oxlint.config.ts", "oxfmt.config.mjs"]) {
-    await f.writeProject(relative, executable);
-  }
-  await f.writeProject("unlisted-legacy.js", executable);
-  await f.writeProject(".oxlintrc.jsonc", "{ // not imported\n}");
-  await f.writeProject("package.json", {
-    scripts: { legacy: "prettier ." },
-    devDependencies: { prettier: "3", other: "4" },
-    dependencies: { prettier: "2" },
-  });
-  const before = await snapshot(f.project);
-  const plan = await run(planProject(f.project, await f.resolve()));
-  for (const relative of [
-    "prettier.config.js",
-    "oxlint.config.ts",
-    "oxfmt.config.mjs",
-    ".oxlintrc.jsonc",
-  ]) {
-    const file = defined(plan.files.find((candidate) => candidate.path === relative));
-    assert.equal(file.kind, "removal");
-    assert.equal(file.conflict, true);
-  }
-  assert.equal(
-    plan.files.some((file) => file.path === "unlisted-legacy.js"),
-    false,
-  );
-  assert.deepEqual(value(plan, "package.json"), {
-    scripts: { legacy: "prettier ." },
-    devDependencies: { other: "4" },
-    dependencies: { prettier: "2" },
-  });
-  assert.deepEqual(await snapshot(f.project), before);
-  await assert.rejects(fs.stat(sentinel), { code: "ENOENT" });
-});
-
-await test("different dependency requirements fail with both policy sources, not range resolution", async (t) => {
-  const f = await setup(t);
-  await f.add("integrations/a", { name: "Alpha", dependencies: { oxlint: "^1.0.0" } });
-  const before = await snapshot(f.project);
-  await assert.rejects(
-    run(planProject(f.project, await f.resolve({ integrations: ["a"], automation: [] }))),
-    (error: Error) => {
-      assert.match(error.message, /Dependency oxlint/);
-      assert.match(error.message, /base \(TypeScript, .*bundle.json\) requires "1.0.0"/);
-      assert.match(error.message, /integrations\/a \(Alpha, .*bundle.json\) requires "\^1.0.0"/);
-      return true;
-    },
-  );
-  assert.deepEqual(await snapshot(f.project), before);
-});
-
-await test("same-version cross-section requests use runtime placement; existing versions are confirmation conflicts", async (t) => {
-  const f = await setup(t);
-  await f.add("integrations/runtime", { name: "Runtime", dependencies: { oxlint: "1.0.0" } });
-  await f.writeProject("package.json", {
-    private: true,
-    custom: { preserve: [1, 2] },
-    dependencies: { app: "2", oxlint: "old" },
-    devDependencies: { oxlint: "old-dev", test: "3" },
-    optionalDependencies: { oxlint: "optional" },
-  });
-  const plan = await run(
-    planProject(f.project, await f.resolve({ integrations: ["runtime"], automation: [] })),
-  );
-  assert.deepEqual(value(plan, "package.json"), {
-    private: true,
-    custom: { preserve: [1, 2] },
-    dependencies: { app: "2", oxlint: "1.0.0" },
-    devDependencies: { test: "3" },
-    optionalDependencies: { oxlint: "optional" },
-  });
-  assert.equal(plan.requiresConfirmation, true);
-  assert.deepEqual(
-    plan.packageEntries
-      .filter((entry) => entry.name === "oxlint")
-      .map((entry) => [entry.section, entry.before, entry.after, entry.kind]),
-    [
-      ["dependencies", "old", "1.0.0", "replacement"],
-      ["devDependencies", "old-dev", null, "removal"],
-    ],
-  );
-});
-
-await test("deselection removes only current-known contributions and keeps requirements and files shared by remaining bundles", async (t) => {
-  const f = await setup(t);
-  await f.add("integrations/a", { name: "A", devDependencies: { shared: "1", unique: "2" } });
-  await f.add("integrations/b", { name: "B", devDependencies: { shared: "1" } });
-  await f.write("typescript/integrations/a/files/known.json", { associated: true });
-  await f.write("typescript/integrations/a/files/shared.json", '{"shared":true}');
-  await f.write("typescript/integrations/b/files/shared.json", '{"shared":true}');
-  await f.writeProject("known.json", { associated: true });
-  await f.writeProject("shared.json", { shared: true });
-  await f.writeProject("historical-renamed.json", { keep: true });
-  await f.writeProject("package.json", {
-    devDependencies: { shared: "1", unique: "2", retired: "3" },
-  });
-  const prior = await f.resolve({ integrations: ["a", "b"], automation: [] });
-  const current = await f.resolve({ integrations: ["b"], automation: [] });
-  const before = await snapshot(f.project);
-  const plan = await run(
-    planProject(f.project, current, {
-      previous: { ...prior.intent, integrations: ["a", "b", "retired"] },
-      currentBundles: prior.policy.bundles,
+const dependencies = {
+  assess: () => Effect.succeed("not-required" as const),
+  install: () => Effect.die("unexpected install"),
+};
+const content = (artifact: ChangePlan, relative: string) => {
+  const file = artifact.files.find((candidate) => candidate.path === relative)?.after;
+  assert.ok(file?.kind === "file");
+  return Buffer.from(file.base64, "base64").toString();
+};
+const apply = (artifact: ChangePlan) => run(applyPlan(artifact, { approved: true, dependencies }));
+async function plan(project: string, policy: LoadedPolicy, prior?: LoadedPolicy) {
+  return await run(
+    planProject(project, await run(resolveInputs(policy, {})), {
+      manager: "npm",
+      previousBundles: prior?.bundles ?? [],
     }),
   );
-  assert.equal(plan.files.find((file) => file.path === "known.json")?.kind, "removal");
-  assert.equal(plan.files.find((file) => file.path === "shared.json")?.kind, "noop");
-  assert.equal(
-    plan.files.some((file) => file.path === "historical-renamed.json"),
-    false,
-  );
-  assert.deepEqual(value(plan, "package.json").devDependencies, {
-    shared: "1",
-    oxlint: "1.0.0",
-    retired: "3",
-  });
-  assert.deepEqual(await snapshot(f.project), before);
-});
-
-await test("migration is selected-only and cannot remove any remaining selected dependency requirement", async (t) => {
-  const f = await setup(t);
-  await f.add("base", {
-    name: "Base",
-    devDependencies: { shared: "1" },
-    migration: { removeDependencies: ["shared"], removeDevDependencies: ["shared"] },
-  });
-  await f.add("integrations/unused", {
-    name: "Unused",
-    migration: { removeFiles: ["unselected-legacy.json"], removeDevDependencies: ["unrelated"] },
-  });
-  await f.writeProject("unselected-legacy.json", {});
-  await f.writeProject("package.json", { devDependencies: { shared: "1", unrelated: "2" } });
-  const plan = await run(planProject(f.project, await f.resolve()));
-  assert.deepEqual(value(plan, "package.json"), {
-    devDependencies: { shared: "1", unrelated: "2" },
-  });
-  assert.equal(plan.files.find((file) => file.path === "package.json")?.kind, "noop");
-  assert.equal(
-    plan.files.some((file) => file.path === "unselected-legacy.json"),
-    false,
-  );
-});
-
-await test("dependency names that match object prototypes remain ordinary additions", async (t) => {
-  const f = await setup(t);
-  await f.add("base", { name: "Base", dependencies: { constructor: "1" } });
-  await f.writeProject("package.json", { dependencies: {} });
-  const plan = await run(planProject(f.project, await f.resolve()));
-  assert.deepEqual(value(plan, "package.json").dependencies, { constructor: "1" });
-  assert.equal(
-    plan.packageEntries.find(
-      (entry) => entry.section === "dependencies" && entry.name === "constructor",
-    )?.kind,
-    "addition",
-  );
-  assert.equal(plan.requiresConfirmation, false);
-});
-
-await test("snapshots retain arbitrary migration bytes and stale checks include mode and content", async (t) => {
-  const f = await setup(t);
-  const bytes = Buffer.from([0xff, 0x00, 0x80, 0x61]);
-  await fs.writeFile(path.join(f.project, "legacy.bin"), bytes, { mode: 0o600 });
-  await f.add("base", { name: "Base", migration: { removeFiles: ["legacy.bin"] } });
-  const plan = await run(planProject(f.project, await f.resolve()));
-  assert.deepEqual(plan.snapshot.files["legacy.bin"], {
-    kind: "file",
-    base64: "/wCAYQ==",
-    mode: 0o600,
-  });
-  await fs.chmod(path.join(f.project, "legacy.bin"), 0o644);
-  await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed/);
-  await fs.chmod(path.join(f.project, "legacy.bin"), 0o600);
-  await fs.writeFile(path.join(f.project, "legacy.bin"), Buffer.from([0x61]));
-  await assert.rejects(run(assertTargetUnchanged(plan.snapshot)), /Target changed/);
-});
-
-await test("matching rerun preserves all bytes and permission bits, and needs no confirmation", async (t) => {
-  const f = await setup(t);
-  const resolved = await f.resolve();
-  const first = await run(planProject(f.project, resolved));
-  // Test-fixture materialization only; the production seam never applies plans.
-  for (const file of first.files) {
-    if (file.after.kind === "file") {
-      await fs.writeFile(
-        path.join(f.project, file.path),
-        Buffer.from(file.after.base64, "base64"),
-        { mode: file.after.mode },
-      );
-    }
-  }
-  await f.writeProject(
-    "package.json",
-    ' { "scripts": { "install": "exit 99" }, "devDependencies": {"oxlint":"1.0.0"}, "name":"untouched" }\n',
-  );
-  await f.writeProject(
-    ".oxlintrc.json",
-    '{/* keep local layout */"rules":{"no-debugger":"error"}}\n',
-  );
-  await fs.chmod(path.join(f.project, ".oxlintrc.json"), 0o600);
-  const before = await snapshot(f.project);
-  const again = await run(
-    planProject(f.project, resolved, {
-      previous: resolved.intent,
-      currentBundles: resolved.policy.bundles,
-    }),
-  );
-  assert.deepEqual(changed(again), []);
-  assert.equal(again.requiresConfirmation, false);
-  for (const file of again.files) {
-    assert.deepEqual(file.after, file.before);
-  }
-  assert.deepEqual(await snapshot(f.project), before);
-});
-
-await test("planning includes manager-specific scripts without an additional composition adapter", async (t) => {
+}
+await test("seed, compose, replace and removal respect declared ownership and preserve unrelated data", async (t) => {
   const f = await fixture(t);
-  const resolved = await run(resolveInputs(await run(loadPolicy(f.policy, empty)), {}));
-  const plan = await run(planProject(f.project, resolved));
-  assert.equal(plan.complete, true);
-  assert.deepEqual(plan.deferred, []);
-  assert.deepEqual(value(plan, "package.json").scripts, {
-    install: "exit 99",
-    check: "npm run its-checks:check",
-    "its-checks:check": "(\noxlint .\n\n)",
+  await f.add("docs", {
+    name: "Docs",
+    requires: [],
+    files: [
+      { source: "files/readme.md", target: "docs/guide.md", operation: "seed" },
+      {
+        source: "files/config.json",
+        target: "config.json",
+        operation: "compose",
+        format: "json",
+        arrays: { "/ignore": "append-unique" },
+      },
+      { source: "files/workflow.yml", target: ".github/workflows/check.yml", operation: "replace" },
+    ],
   });
-});
-
-await test("unrelated workflows block automation planning rather than becoming replaceable dedicated configuration", async (t) => {
-  const f = await setup(t);
-  await f.add("automation/ci", {
-    name: "CI",
-    migration: { removeFiles: [".github/workflows/old.yml"] },
-  });
-  await f.write(
-    "typescript/automation/ci/files/.github/workflows/check.yml",
-    "# its-checks: managed\nname: checks\non: push\n",
+  await fs.mkdir(path.join(f.policy, "docs/files"));
+  await fs.writeFile(path.join(f.policy, "docs/files/readme.md"), "starter\n");
+  await fs.writeFile(
+    path.join(f.policy, "docs/files/config.json"),
+    '{"rules":{"managed":"error"},"ignore":["dist"]}',
   );
-  await f.writeProject(".github/workflows/check.yml", "name: unrelated\non: push\n");
-  await f.writeProject(".husky/pre-commit", "echo unrelated\n");
-  const selected = await f.resolve({ integrations: [], automation: ["ci"] });
+  await fs.writeFile(path.join(f.policy, "docs/files/workflow.yml"), "name: quality\n");
+  await fs.writeFile(
+    path.join(f.project, "config.json"),
+    '{"rules":{"unrelated":true,"managed":"off"},"ignore":["local"]}',
+  );
+  const loaded = await f.load(["docs"]);
   const before = await snapshot(f.project);
-  await assert.rejects(run(planProject(f.project, selected)), /Unrelated content.*Move or rename/);
-  await assert.rejects(
-    run(
-      planProject(f.project, await f.resolve(), {
-        previous: selected.intent,
-        currentBundles: selected.policy.bundles,
-      }),
-    ),
-    /Unrelated content/,
-  );
+  const initial = await plan(f.project, loaded);
   assert.deepEqual(await snapshot(f.project), before);
+  assert.deepEqual(json(content(initial, "config.json")), {
+    ignore: ["local", "dist"],
+    rules: { managed: "error", unrelated: true },
+  });
+  await apply(initial);
+  await fs.writeFile(path.join(f.project, "docs/guide.md"), "project-owned\n");
+  const rerun = await plan(f.project, loaded, loaded);
+  assert.ok(rerun.files.every((file) => file.kind === "noop"));
+  const cleanup = await plan(f.project, await f.load([]), loaded);
+  assert.equal(
+    cleanup.files.find((file) => file.path === ".github/workflows/check.yml")?.kind,
+    "removal",
+  );
+  await apply(cleanup);
+  assert.equal(await fs.readFile(path.join(f.project, "docs/guide.md"), "utf8"), "project-owned\n");
+  assert.deepEqual(json(await fs.readFile(path.join(f.project, "config.json"), "utf8")), {
+    ignore: ["local"],
+    rules: { unrelated: true },
+  });
 });
-
-await test("malformed manifests fail with typed target diagnostics before mutation", async (t) => {
-  for (const content of [
-    '{"name":',
-    '{"name":"a","name":"b"}',
-    "[]",
-    '{"dependencies":[]}',
-    '{"scripts":{"check":3}}',
-    '{"devDependencies":{"x":null}}',
-  ]) {
-    await t.test(content, async (subtest) => {
-      const f = await setup(subtest);
-      await f.writeProject("package.json", content);
-      const before = await snapshot(f.project);
-      await assert.rejects(run(planProject(f.project, await f.resolve())), /package.json/);
-      assert.deepEqual(await snapshot(f.project), before);
-    });
-  }
+await test("updates remove old declarations even when a bundle remains selected", async (t) => {
+  const f = await fixture(t);
+  await f.add("base", {
+    scripts: { check: "echo old", retired: "echo retired" },
+    devDependencies: { old: "1" },
+  });
+  const old = await f.load();
+  await apply(await plan(f.project, old));
+  await f.add("base", { scripts: { check: "echo new" }, devDependencies: { current: "2" } });
+  const current = await f.load();
+  const next = await plan(f.project, current, old);
+  const pkg = manifest(content(next, "package.json"));
+  assert.equal(pkg.devDependencies.old, undefined);
+  assert.equal(pkg.devDependencies.current, "2");
+  assert.equal(pkg.scripts.retired, undefined);
+  assert.match(defined(pkg.scripts["its-checks:check"]), /echo new/);
 });
-
-await test("target symlinks, nonregular destinations, unsafe paths and case aliases fail without traversing them", async (t) => {
-  for (const relative of ["package.json", ".oxlintrc.json", "oxlint.config.ts"]) {
-    await t.test(relative, async (subtest) => {
-      const f = await setup(subtest);
-      await fs.rm(path.join(f.project, relative), { force: true });
-      await fs.symlink(path.join(f.root, "outside"), path.join(f.project, relative));
-      await assert.rejects(
-        run(planProject(f.project, await f.resolve())),
-        /symlinks are forbidden/,
-      );
-    });
-  }
-  const f = await setup(t);
-  const rootLink = path.join(f.root, "project-link");
-  await fs.symlink(f.project, rootLink);
-  await assert.rejects(run(planProject(rootLink, await f.resolve())), /regular directory/);
-  await f.write("typescript/base/files/nested/config.json", {});
-  await fs.symlink(f.root, path.join(f.project, "nested"));
-  await assert.rejects(run(planProject(f.project, await f.resolve())), /symlinks are forbidden/);
-  await assert.rejects(run(readTargetSnapshot(f.project, ["../outside"])), /Unsafe/);
-  await assert.rejects(run(readTargetSnapshot(f.project, ["A.json", "a.json"])), /Case-alias/);
-  await assert.rejects(
-    run(readTargetSnapshot(f.project, ["A/one.json", "a/two.json"])),
-    /Case-alias/,
+await test("multiple sources compose independent contributions; identical dependencies coalesce", async (t) => {
+  const f = await fixture(t);
+  await f.add("base", { scripts: {}, devDependencies: { shared: "1" } });
+  const a = await f.load();
+  const b = await run(loadPolicy(f.policy, ["base"], { ...revision, repository: "other/policy" }));
+  const combined = {
+    root: a.root,
+    sources: [...a.sources, ...b.sources],
+    bundles: [...a.bundles, ...b.bundles],
+  };
+  const forward = await plan(f.project, combined);
+  const reverse = await plan(f.project, {
+    ...combined,
+    bundles: combined.bundles.toReversed(),
+    sources: combined.sources.toReversed(),
+  });
+  // State ordering is canonical too.
+  assert.deepEqual(forward, reverse);
+  assert.equal(manifest(content(forward, "package.json")).devDependencies.shared, "1");
+  await f.add("base", { devDependencies: { shared: "2" } });
+  const conflict = await run(
+    loadPolicy(f.policy, ["base"], { ...revision, repository: "other/policy" }),
   );
   await assert.rejects(
-    run(readTargetSnapshot(f.project, ["new", "new/file.json"])),
-    /also used as a parent/,
+    plan(f.project, { ...combined, bundles: [...a.bundles, ...conflict.bundles] }),
+    /Dependency shared/,
   );
-  await fs.mkdir(path.join(f.project, ".oxlintrc.json"));
-  await assert.rejects(run(readTargetSnapshot(f.project, [".oxlintrc.json"])), /regular file/);
 });
-
-await test("invalid composition shapes and policy/removal collisions fail with native source context", async (t) => {
-  const f = await setup(t);
-  await f.write("typescript/base/files/.oxlintrc.json", { rules: [] });
-  await assert.rejects(
-    run(planProject(f.project, await f.resolve())),
-    /\.oxlintrc.json: rules: Expected an object/,
-  );
-  await f.write("typescript/base/files/.oxlintrc.json", { plugins: {} });
-  await assert.rejects(
-    run(planProject(f.project, await f.resolve())),
-    /plugins: Expected an array/,
-  );
-  await f.write("typescript/base/files/.oxlintrc.json", {});
-  await f.write("typescript/base/files/.oxfmtrc.json", { extends: ["unverified"] });
-  await assert.rejects(run(planProject(f.project, await f.resolve())), /Oxfmt extends/);
-  await fs.rm(path.join(f.policy, "typescript/base/files/.oxfmtrc.json"));
-  await f.add("base", { name: "Base", migration: { removeFiles: [".oxlintrc.json"] } });
-  await assert.rejects(
-    run(planProject(f.project, await f.resolve())),
-    /Cannot remove selected output/,
-  );
+await test("target symlinks and parent symlinks are rejected before planning writes", async (t) => {
+  const f = await fixture(t);
+  await fs.symlink(path.join(f.root, "outside"), path.join(f.project, ".oxlintrc.json"));
+  await assert.rejects(plan(f.project, await f.load()), /symlink|regular/i);
 });

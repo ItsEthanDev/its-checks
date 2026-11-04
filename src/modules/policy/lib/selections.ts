@@ -4,120 +4,68 @@ import * as path from "node:path";
 import { Effect, Schema } from "effect";
 
 import { BundleError } from "./bundle-errors.ts";
-import { json, readText, safePath } from "./bundle-io.ts";
-import type { RootDeclaration } from "./bundle-types.ts";
+import { decode, json, readText, unique, validate } from "./bundle-io.ts";
 
 export const selectionFilename = ".its-checks.json";
-const id = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const namespace = /^(?:base|(?:integrations|automation)\/[a-z0-9]+(?:-[a-z0-9]+)*)$/;
 export const commitPattern = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 const Id = Schema.String.check(
-  Schema.makeFilter((value) => id.test(value) || "Expected a lowercase hyphenated ID"),
+  Schema.makeFilter(
+    (value) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value) || "Expected a lowercase hyphenated ID",
+  ),
 );
-const Namespace = Schema.String.check(
-  Schema.makeFilter((value) => namespace.test(value) || "Expected a namespaced bundle key"),
-);
-export const Answer = Schema.Union([
-  Schema.String,
-  Schema.Number.check(Schema.isFinite()),
-  Schema.Boolean,
-]);
-export const Answers = Schema.Record(Namespace, Schema.Record(Id, Answer));
+export const Answer = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
+/** Resolved input answers use source-qualified keys; persisted answers are source-local. */
+export const Answers = Schema.Record(Schema.String, Schema.Record(Id, Answer));
 export type Answer = typeof Answer.Type;
 export type Answers = typeof Answers.Type;
-
-const SelectionFile = Schema.Struct({
-  $schema: Schema.String,
-  source: Schema.String,
-  commit: Schema.optionalKey(
-    Schema.String.check(
-      Schema.makeFilter(
-        (value) => commitPattern.test(value) || "Expected a full immutable generating commit",
-      ),
-    ),
+export const SourceConfig = Schema.Struct({
+  repository: Schema.String,
+  commit: Schema.String.check(
+    Schema.makeFilter((value) => commitPattern.test(value) || "Expected an exact policy commit"),
   ),
-  integrations: Schema.Array(Id),
-  automation: Schema.Array(Id),
-  answers: Answers,
+  bundles: Schema.Array(Id),
+  answers: Schema.Record(Id, Schema.Record(Id, Answer)),
 });
-export type SavedIntent = typeof SelectionFile.Type;
+export type SourceConfig = typeof SourceConfig.Type;
+export const State = Schema.Struct({
+  schemaVersion: Schema.Literal(2),
+  sources: Schema.Array(SourceConfig),
+});
+export type SavedIntent = typeof State.Type;
 
-const context = (source: string, field: string, detail: string) =>
-  new BundleError({ bundle: "selections", source, field, detail });
-const check = (source: string, field: string, valid: boolean, detail: string) =>
-  valid ? Effect.void : Effect.fail(context(source, field, detail));
-const httpsUrl = (value: string): boolean => {
-  try {
-    const url = new URL(value);
-    return (
-      url.protocol === "https:" &&
-      url.username === "" &&
-      url.password === "" &&
-      url.search === "" &&
-      url.hash === ""
-    );
-  } catch {
-    return false;
-  }
-};
-
-/** The editor uses the source repository's main-branch schema, independent of the executing commit. */
-export function selectionSchemaUrl(
-  source: RootDeclaration["source"],
-): Effect.Effect<string, BundleError> {
+export function validateSources(
+  sources: readonly SourceConfig[],
+): Effect.Effect<void, BundleError> {
+  const ctx = { bundle: "selections", source: selectionFilename };
   return Effect.gen(function* () {
-    yield* check(
-      "provenance",
-      "source.repository",
-      httpsUrl(source.repository),
-      "Expected an HTTPS repository URL without credentials, query, or fragment",
+    yield* unique(
+      ctx,
+      "sources",
+      sources.map((source) => source.repository),
     );
-    yield* check(
-      "provenance",
-      "source.selectionSchema",
-      safePath(source.selectionSchema) && source.selectionSchema.endsWith(".json"),
-      "Expected a safe repository-relative JSON Schema path",
-    );
-    return `${source.repository.replace(/\/$/, "")}/raw/main/${source.selectionSchema.split("/").map(encodeURIComponent).join("/")}`;
+    for (const source of sources) {
+      yield* validate(
+        ctx,
+        "repository",
+        /^[a-z0-9][a-z0-9-]*\/[a-z0-9_.-]+$/.test(source.repository) &&
+          ![".", ".."].includes(source.repository.split("/")[1] ?? ""),
+        "Expected a canonical lowercase GitHub owner/repo",
+      );
+      yield* unique(ctx, "bundles", source.bundles);
+    }
   });
 }
-
-/** Decode saved project intent offline; unsupported shapes fail without mutation. */
 export function decodeSavedIntent(
   content: string,
   source = selectionFilename,
 ): Effect.Effect<SavedIntent, BundleError> {
   return Effect.gen(function* () {
-    const value = yield* json({ bundle: "selections", source }, content, false);
-    const saved = yield* Schema.decodeUnknownEffect(SelectionFile, {
-      onExcessProperty: "error",
-      errors: "all",
-    })(value).pipe(Effect.mapError((cause) => context(source, "$", cause.message)));
-    yield* check(
-      source,
-      "source",
-      httpsUrl(saved.source),
-      "Expected an HTTPS source repository URL without credentials, query, or fragment",
-    );
-    yield* check(
-      source,
-      "$schema",
-      httpsUrl(saved.$schema),
-      "Expected an HTTPS JSON Schema URL without credentials, query, or fragment",
-    );
-    for (const kind of ["integrations", "automation"] as const) {
-      yield* check(
-        source,
-        kind,
-        new Set(saved[kind]).size === saved[kind].length,
-        "Duplicate selection ID",
-      );
-    }
-    return saved;
+    const ctx = { bundle: "selections", source };
+    const state = yield* decode(ctx, State, yield* json(ctx, content, false));
+    yield* validateSources(state.sources);
+    return state;
   });
 }
-
-/** Absence means first use; all other filesystem/decoding failures are reported. No writes. */
 export function loadPreviousIntent(
   projectRoot: string,
 ): Effect.Effect<SavedIntent | undefined, BundleError> {
@@ -126,32 +74,50 @@ export function loadPreviousIntent(
     const exists = yield* Effect.tryPromise({
       try: async () => {
         try {
-          return await fs.lstat(source);
+          await fs.lstat(source);
+          return true;
         } catch (cause) {
           if (cause instanceof Error && "code" in cause && cause.code === "ENOENT") {
-            return undefined;
+            return false;
           }
           throw cause;
         }
       },
       catch: (cause) =>
-        context(source, "$", cause instanceof Error ? cause.message : String(cause)),
+        new BundleError({ bundle: "selections", source, field: "$", detail: String(cause) }),
     });
-    if (exists === undefined) {
-      return undefined;
-    }
-    return yield* decodeSavedIntent(yield* readText({ bundle: "selections", source }), source);
+    return exists
+      ? yield* decodeSavedIntent(yield* readText({ bundle: "selections", source }), source)
+      : undefined;
   });
 }
-
-/** Write only the current intent shape. Neither provenance nor selections prove installation success. */
 export function selectionContent(intent: SavedIntent): Effect.Effect<string, BundleError> {
   return Effect.gen(function* () {
-    const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(SelectionFile, { space: 2 }))(
+    const encoded = yield* Schema.encodeEffect(Schema.fromJsonString(State, { space: 2 }))(
       intent,
-    ).pipe(Effect.mapError((cause) => context(selectionFilename, "$", cause.message)));
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new BundleError({
+            bundle: "selections",
+            source: selectionFilename,
+            field: "$",
+            detail: cause.message,
+          }),
+      ),
+    );
     const content = `${encoded}\n`;
     yield* decodeSavedIntent(content);
     return content;
   });
+}
+export function qualifiedAnswers(sources: readonly SourceConfig[]): Answers {
+  return Object.fromEntries(
+    sources.flatMap((source) =>
+      Object.entries(source.answers).map(([id, answers]) => [
+        `${source.repository}:${id}`,
+        answers,
+      ]),
+    ),
+  );
 }

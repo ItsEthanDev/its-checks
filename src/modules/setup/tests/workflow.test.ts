@@ -3,394 +3,243 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { test } from "node:test";
 
-import { Effect, Result, Schema } from "effect";
+import { Effect } from "effect";
 
-import { json, object, manifest as parseManifest } from "../../../../test/shared/assertions.ts";
-import { fixture, snapshot } from "../../../../test/shared/fixtures.ts";
-import {
-  ApplicationError,
-  OperationError,
-  createDependencyAdapter,
-  type ApplicationDependencies,
-} from "../../application/index.ts";
-import { Cancelled, setup, type SetupPresentation } from "../index.ts";
-import { dialogue, ready, inputPolicy } from "./workflow-fixtures.ts";
-
-await test("first run asks explicit categories and selected inputs; rerun preselects and prefills without writes or install", async (t) => {
+import { defined } from "../../../../test/shared/assertions.ts";
+import { fixture, revision, snapshot } from "../../../../test/shared/fixtures.ts";
+import { loadPreviousIntent, type SourceStore } from "../../policy/index.ts";
+import { Cancelled, setup } from "../index.ts";
+import { dialogue, ready } from "./workflow-fixtures.ts";
+const run = Effect.runPromise;
+await test("first use does not select an implicit policy", async (t) => {
   const f = await fixture(t);
-  await inputPolicy(f);
-  const first = dialogue({
-    integrations: ["example"],
-    automation: ["ci"],
-    answers: { "integrations/example/stylesheet": "styles/site.css" },
-  });
-  let installed = 0;
-  const dependencies: ApplicationDependencies = {
-    assess: () => Effect.succeed("required"),
-    install: (plan) => {
-      assert.deepEqual(plan, first.plan, "execution must match the displayed plan");
-      installed++;
-      return Effect.void;
+  const d = dialogue();
+  const before = await snapshot(f.project);
+  const report = await run(
+    setup({
+      interactive: true,
+      projectRoot: f.project,
+      presentation: d.ui,
+      sources: f.store,
+      dependencies: () => ready,
+    }),
+  );
+  assert.equal(report.status, "no-sources");
+  assert.deepEqual(await snapshot(f.project), before);
+  assert.match(defined(d.notes[0]), /add owner\/repo/);
+});
+await test("add preserves other sources, reruns stay pinned, and removal uses the same combined plan", async (t) => {
+  const f = await fixture(t);
+  let tip = revision.commit;
+  const fetched: string[] = [];
+  const store: SourceStore = {
+    resolve: (repository, commit) => {
+      fetched.push(`${repository}@${commit ?? "latest"}`);
+      return Effect.succeed({
+        repository: repository.toLowerCase(),
+        commit: commit ?? tip,
+        root: f.policy,
+      });
     },
   };
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: first.ui,
-      dependencies: () => dependencies,
-    }),
-  );
-  assert.equal(first.managerQuestions, 1);
-  assert.equal(first.confirmations, 0);
-  assert.equal(installed, 1);
-  assert.deepEqual(
-    first.shown.map((x) => x.category),
-    ["integrations", "automation"],
-  );
-  assert.equal(first.questions[0]?.initial, "src/app.css");
-  assert.equal(
-    object(json(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8")).sortTailwindcss)
-      .stylesheet,
-    "styles/site.css",
-  );
-  const before = await snapshot(f.project);
-  const stat = await fs.stat(path.join(f.project, ".its-checks.json"));
-  const second = dialogue();
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: second.ui,
-      dependencies: () => ready,
-    }),
-  );
-  assert.deepEqual(
-    second.shown.map((x) => x.previous),
-    [["example"], ["ci"]],
-  );
-  assert.equal(second.questions[0]?.initial, "styles/site.css");
-  assert.equal(second.confirmations, 0);
-  assert.equal(second.completion?.dependencyWork, "not-required");
-  assert.deepEqual(await snapshot(f.project), before);
-  assert.equal((await fs.stat(path.join(f.project, ".its-checks.json"))).mtimeMs, stat.mtimeMs);
-});
-
-await test("one declined conflict includes current-known deselection and leaves all project state unchanged", async (t) => {
-  const f = await fixture(t);
-  await inputPolicy(f);
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: dialogue({ integrations: ["example"], automation: ["ci"] }).ui,
-      dependencies: () => ready,
-    }),
-  );
-  const before = await snapshot(f.project);
-  const d = dialogue({ integrations: [], automation: [], approve: false });
-  const result = await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: d.ui,
-      dependencies: () => ready,
-    }),
-  );
-  assert.equal(result.status, "declined");
-  assert.equal(d.confirmations, 1);
-  assert.ok(d.plan !== undefined);
-  assert.ok(
-    d.plan.files.some((x) => x.path === ".github/workflows/check.yml" && x.kind === "removal"),
-  );
-  assert.ok(d.plan.packageEntries.some((x) => x.name === "example" && x.kind === "removal"));
-  assert.deepEqual(await snapshot(f.project), before);
-});
-
-await test("accepted deselection removes only identifiable current setup and records new intent", async (t) => {
-  const f = await fixture(t);
-  await inputPolicy(f);
-  for (const integrations of [["example"], []]) {
-    await Effect.runPromise(
+  const perform = async (
+    command?: "add" | "update" | "remove",
+    repository?: string,
+    approve = true,
+  ) => {
+    const d = dialogue({
+      selections: { "example/fork": ["base"], "other/policy": ["base"] },
+      approve,
+    });
+    const report = await run(
       setup({
         interactive: true,
         projectRoot: f.project,
-        policyRoot: f.policy,
-        presentation: dialogue({ integrations }).ui,
+        presentation: d.ui,
+        sources: store,
         dependencies: () => ready,
+        ...(command === undefined ? {} : { command }),
+        ...(repository === undefined ? {} : { repository }),
       }),
     );
-  }
-  const manifest = parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8"));
-  assert.equal(manifest.devDependencies.example, undefined);
-  assert.equal(manifest.scripts.install, "exit 99");
-  assert.deepEqual(
-    json(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).integrations,
-    [],
+    return { report, d };
+  };
+  await perform("add", "Example/Fork");
+  await perform("add", "other/policy");
+  assert.equal((await run(loadPreviousIntent(f.project)))?.sources.length, 2);
+  fetched.length = 0;
+  tip = "b".repeat(40);
+  await perform();
+  assert.ok(fetched.every((entry) => !entry.endsWith("latest")));
+  await perform("update", "example/fork");
+  let state = await run(loadPreviousIntent(f.project));
+  assert.equal(state?.sources.find((source) => source.repository === "example/fork")?.commit, tip);
+  assert.equal(
+    state?.sources.find((source) => source.repository === "other/policy")?.commit,
+    revision.commit,
   );
-});
-
-await test("source identity changes preserve prefills, decline safeguards, and deselection identity", async (t) => {
-  const f = await fixture(t);
-  await inputPolicy(f);
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      commit: "b".repeat(40),
-      presentation: dialogue({
-        integrations: ["example"],
-        automation: ["ci"],
-        answers: { "integrations/example/stylesheet": "src/saved.css" },
-      }).ui,
-      dependencies: () => ready,
-    }),
-  );
-  const file = path.join(f.project, ".its-checks.json");
-  const before = await snapshot(f.project),
-    declined = dialogue({ approve: false });
-  const result = await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      commit: "c".repeat(40),
-      presentation: declined.ui,
-      dependencies: () => ready,
-    }),
-  );
-  assert.equal(result.status, "declined");
-  assert.deepEqual(
-    declined.shown.map((category) => category.previous),
-    [["example"], ["ci"]],
-  );
-  assert.equal(declined.questions[0]?.initial, "src/saved.css");
-  assert.equal(declined.confirmations, 1);
-  assert.deepEqual(
-    declined.plan?.files.filter((entry) => entry.kind !== "noop").map((entry) => entry.path),
-    [".its-checks.json"],
-  );
+  const before = await snapshot(f.project);
+  await perform("remove", "example/fork", false);
   assert.deepEqual(await snapshot(f.project), before);
-  const accepted = dialogue({ integrations: [], automation: [] });
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      commit: "c".repeat(40),
-      presentation: accepted.ui,
-      dependencies: () => ready,
-    }),
+  await perform("remove", "example/fork");
+  state = await run(loadPreviousIntent(f.project));
+  assert.deepEqual(
+    state?.sources.map((source) => source.repository),
+    ["other/policy"],
   );
-  const saved = json(await fs.readFile(file, "utf8"));
-  assert.equal(saved.source, "https://github.com/example/fork");
-  assert.equal(saved.commit, "c".repeat(40));
-  assert.equal(saved.schemaVersion, undefined);
-  assert.deepEqual(saved.integrations, []);
-  assert.deepEqual(saved.automation, []);
-  assert.deepEqual(saved.answers, {});
-  assert.equal(
-    parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies
-      .example,
-    undefined,
-  );
-  await assert.rejects(fs.stat(path.join(f.project, ".github/workflows/check.yml")), {
-    code: "ENOENT",
-  });
 });
-
-await test("retired saved IDs are disclosed, not passed as invalid selections; accepted no-history cleanup remains manual", async (t) => {
+await test("hidden dependency inclusion is explained and deselecting its explicit checkbox retains it", async (t) => {
   const f = await fixture(t);
-  await inputPolicy(f);
-  await Effect.runPromise(
+  await f.add("shared", { name: "Shared", hidden: true, requires: [] });
+  await f.add("top", { name: "Top", requires: ["shared"] });
+  const d = dialogue({ selections: { "example/fork": ["top"] } });
+  await run(
     setup({
       interactive: true,
       projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: dialogue({ integrations: ["example"] }).ui,
-      dependencies: () => ready,
-    }),
-  );
-  await fs.rm(path.join(f.policy, "typescript/integrations/example"), { recursive: true });
-  const d = dialogue();
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
+      command: "add",
+      repository: "example/fork",
+      sources: f.store,
       presentation: d.ui,
       dependencies: () => ready,
     }),
   );
-  assert.deepEqual(d.shown[0]?.previous, []);
-  assert.match(d.notes.join("\n"), /Retired saved options: integrations\/example.*manually/);
-  const saved = json(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"));
-  assert.deepEqual(saved.integrations, []);
-  assert.deepEqual(saved.answers, {});
-  assert.equal(
-    parseManifest(await fs.readFile(path.join(f.project, "package.json"), "utf8")).devDependencies
-      .example,
-    "1.0.0",
-  );
+  assert.equal(d.shown[0]?.ids.includes("shared"), false);
+  assert.ok(d.notes.some((note) => /shared.*required by.*top/.test(note)));
+  assert.deepEqual((await run(loadPreviousIntent(f.project)))?.sources[0]?.bundles, ["top"]);
 });
-
-await test("cancellation during choices, inputs, manager or confirmation is read-only", async (t) => {
-  for (const stage of ["choices", "input", "manager", "confirm"] as const) {
-    const f = await fixture(t);
-    await inputPolicy(f);
-    await fs.writeFile(path.join(f.project, ".oxlintrc.json"), '{"rules":{}}');
-    const before = await snapshot(f.project);
-    const d = dialogue({ integrations: ["example"] });
-    const ui = { ...d.ui, [stage]: () => Effect.fail(new Cancelled()) } as SetupPresentation;
-    const result = await Effect.runPromise(
-      setup({
-        interactive: true,
-        projectRoot: f.project,
-        policyRoot: f.policy,
-        presentation: ui,
-        dependencies: () => ready,
-      }).pipe(Effect.result),
-    );
-    assert.ok(Result.isFailure(result));
-    assert.deepEqual(await snapshot(f.project), before);
-  }
-});
-
-await test("noninteractive execution fails before any discovery/target reads or questions", async () => {
-  const d = dialogue();
-  const result = await Effect.runPromise(
-    setup({
-      interactive: false,
-      projectRoot: "/missing-project",
-      policyRoot: "/missing-policy",
-      presentation: d.ui,
-    }).pipe(Effect.result),
-  );
-  assert.ok(Result.isFailure(result));
-  assert.match(String(result.failure), /interactive terminal/);
-  assert.deepEqual(d.shown, []);
-});
-
-await test("project package-manager settings do not block setup before approval", async (t) => {
+await test("cancellation, declined plans, and noninteractive misuse make no project changes", async (t) => {
   const f = await fixture(t);
-  await fs.writeFile(path.join(f.project, "package.json"), '{"packageManager":"pnpm@99.0.0"}');
-  await fs.writeFile(path.join(f.project, ".oxlintrc.json"), '{"old":true}');
   const before = await snapshot(f.project);
   const d = dialogue({ approve: false });
-  const result = await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: d.ui,
-      dependencies: (target) =>
-        createDependencyAdapter(target, {
-          run: () => Effect.die("Must not invoke a manager before approval"),
-        }),
-    }),
+  const options = {
+    interactive: true,
+    projectRoot: f.project,
+    command: "add" as const,
+    repository: "example/fork",
+    sources: f.store,
+    presentation: d.ui,
+    dependencies: () => ready,
+  };
+  assert.equal((await run(setup(options))).status, "declined");
+  await assert.rejects(run(setup({ ...options, interactive: false })), /terminal/);
+  await assert.rejects(
+    run(
+      setup({ ...options, presentation: { ...d.ui, choices: () => Effect.fail(new Cancelled()) } }),
+    ),
   );
-  assert.equal(result.status, "declined");
-  assert.equal(d.confirmations, 1);
   assert.deepEqual(await snapshot(f.project), before);
 });
-
-await test("installation failure retains applied intent, reports incomplete work, never emits completion", async (t) => {
+await test("a failed install leaves saved revisions unchanged", async (t) => {
   const f = await fixture(t);
-  const d = dialogue();
-  const dependencies: ApplicationDependencies = {
-    assess: () => Effect.succeed("required"),
-    install: () =>
-      Effect.fail(
-        new OperationError({
-          detail: "installation failed: inspect lockfile and lifecycle output",
-        }),
-      ),
+  const d = dialogue({ selections: { "example/fork": ["base"] } });
+  const options = {
+    interactive: true,
+    projectRoot: f.project,
+    command: "add" as const,
+    repository: "example/fork",
+    sources: f.store,
+    presentation: d.ui,
+    dependencies: () => ready,
   };
-  const result = await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: d.ui,
-      dependencies: () => dependencies,
-    }).pipe(Effect.result),
-  );
-  assert.ok(Result.isFailure(result));
-  assert.ok(Schema.is(ApplicationError)(result.failure));
-  assert.equal(result.failure.report.status, "failed");
-  assert.ok(result.failure.report.completed.some((x) => x.path === ".its-checks.json"));
-  assert.ok(result.failure.report.incomplete.some((x) => x.kind === "install-dependencies"));
-  assert.equal(d.completion, undefined);
-  assert.ok((await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8")).length > 0);
-});
-
-await test("invalid selected native policy and invalid typed answers fail before any mutation", async (t) => {
-  for (const invalid of ["policy", "answer"]) {
-    const f = await fixture(t);
-    await inputPolicy(f);
-    if (invalid === "policy") {
-      await f.write("typescript/integrations/example/files/.oxfmtrc.json", "{broken");
-    }
-    const before = await snapshot(f.project);
-    const d = dialogue({
-      integrations: ["example"],
-      answers: { "integrations/example/stylesheet": 42 },
-    });
-    const result = await Effect.runPromise(
+  await run(setup(options));
+  const prior = await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8");
+  const store: SourceStore = {
+    resolve: (repository, commit) =>
+      Effect.succeed({ repository, commit: commit ?? "b".repeat(40), root: f.policy }),
+  };
+  const { OperationError } = await import("../../application/index.ts");
+  await assert.rejects(
+    run(
       setup({
-        interactive: true,
-        projectRoot: f.project,
-        policyRoot: f.policy,
-        presentation: d.ui,
-        dependencies: () => ready,
-      }).pipe(Effect.result),
-    );
-    assert.ok(Result.isFailure(result));
-    assert.match(
-      String(result.failure),
-      invalid === "policy" ? /\.oxfmtrc\.json/ : /requires path/,
-    );
-    assert.equal(d.confirmations, 0);
-    assert.equal(d.completion, undefined);
-    assert.deepEqual(await snapshot(f.project), before);
-  }
-});
-
-await test("dependency state is reassessed after configuration, not cached from read-only preview", async (t) => {
-  const f = await fixture(t);
-  const d = dialogue();
-  let installed = false;
-  const dependencies: ApplicationDependencies = {
-    assess: () =>
-      Effect.tryPromise({
-        try: async () => {
-          const intent = await fs.access(path.join(f.project, ".its-checks.json")).then(
-            () => true,
-            () => false,
-          );
-          return intent ? ("required" as const) : ("not-required" as const);
-        },
-        catch: (cause) => new OperationError({ detail: String(cause) }),
+        ...options,
+        command: "update",
+        sources: store,
+        dependencies: () => ({
+          assess: () => Effect.succeed("required"),
+          install: () => Effect.fail(new OperationError({ detail: "install failed" })),
+        }),
       }),
-    install: () =>
-      Effect.sync(() => {
-        installed = true;
+    ),
+    /install failed/,
+  );
+  assert.equal(await fs.readFile(path.join(f.project, ".its-checks.json"), "utf8"), prior);
+});
+await test("updates retain valid explicit selections and saved answers without reopening the picker", async (t) => {
+  const f = await fixture(t);
+  await f.add("extra", {
+    name: "Extra",
+    inputs: [
+      {
+        id: "label",
+        prompt: "Label?",
+        type: "string",
+        destination: { file: "config.json", field: ["label"] },
+      },
+    ],
+  });
+  await f.write("extra/files/config.json", { label: "authored" });
+  const first = dialogue({
+    selections: { "example/fork": ["extra"] },
+    answers: { "example/fork:extra/label": "saved" },
+  });
+  const options = {
+    interactive: true,
+    projectRoot: f.project,
+    sources: f.store,
+    presentation: first.ui,
+    dependencies: () => ready,
+  };
+  await run(setup({ ...options, command: "add", repository: "example/fork" }));
+  const next = dialogue();
+  const sources: SourceStore = {
+    resolve: (repository, commit) =>
+      Effect.succeed({ repository, commit: commit ?? "b".repeat(40), root: f.policy }),
+  };
+  await run(setup({ ...options, command: "update", presentation: next.ui, sources }));
+  assert.deepEqual(next.shown, []);
+  assert.deepEqual(next.questions, []);
+  const saved = await run(loadPreviousIntent(f.project));
+  assert.deepEqual(saved?.sources[0]?.bundles, ["extra"]);
+  assert.deepEqual(saved?.sources[0]?.answers, { extra: { label: "saved" } });
+});
+await test("an update cannot silently drop a selected bundle that becomes dependency-only", async (t) => {
+  const f = await fixture(t);
+  await f.add("extra", { name: "Extra" });
+  const first = dialogue({ selections: { "example/fork": ["extra"] } });
+  const options = {
+    interactive: true,
+    projectRoot: f.project,
+    sources: f.store,
+    presentation: first.ui,
+    dependencies: () => ready,
+  };
+  await run(setup({ ...options, command: "add", repository: "example/fork" }));
+  const nextRoot = path.join(f.root, "next-policy");
+  await fs.cp(f.policy, nextRoot, { recursive: true });
+  const declaration = path.join(nextRoot, "extra/bundle.json");
+  await fs.writeFile(
+    declaration,
+    JSON.stringify({ name: "Extra", description: "Now dependency-only", hidden: true }),
+  );
+  const sources: SourceStore = {
+    resolve: (repository, commit) =>
+      Effect.succeed({
+        repository,
+        commit: commit ?? "b".repeat(40),
+        root: commit === revision.commit ? f.policy : nextRoot,
       }),
   };
-  await Effect.runPromise(
-    setup({
-      interactive: true,
-      projectRoot: f.project,
-      policyRoot: f.policy,
-      presentation: d.ui,
-      dependencies: () => dependencies,
-    }),
+  const before = await snapshot(f.project);
+  const declined = dialogue({ selections: { "example/fork": ["base"] }, approve: false });
+  assert.equal(
+    (await run(setup({ ...options, command: "update", sources, presentation: declined.ui })))
+      .status,
+    "declined",
   );
-  assert.equal(installed, true);
-  assert.equal(d.completion?.dependencyWork, "completed");
+  assert.deepEqual(await snapshot(f.project), before);
+  assert.ok(declined.notes.some((note) => /extra.*Revise selections/.test(note)));
+  const accepted = dialogue({ selections: { "example/fork": ["base"] } });
+  await run(setup({ ...options, command: "update", sources, presentation: accepted.ui }));
+  assert.deepEqual((await run(loadPreviousIntent(f.project)))?.sources[0]?.bundles, ["base"]);
 });

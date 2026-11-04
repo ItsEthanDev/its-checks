@@ -1,0 +1,19 @@
+{
+  "name": "Husky pre-commit",
+  "description": "Check the whole package before commits; never fix or stage files",
+  "scripts": {
+    "postinstall": "husky"
+  },
+  "devDependencies": {
+    "husky": "9.1.7"
+  },
+  "requires": ["base"],
+  "files": [
+    {
+      "source": "files/.husky/pre-commit",
+      "target": ".husky/pre-commit",
+      "operation": "replace",
+      "executable": true
+    }
+  ]
+}

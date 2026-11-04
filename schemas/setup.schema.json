@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "its-checks headless setup configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sources"],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "sources": { "$ref": "its-checks.schema.json#/properties/sources" },
+    "packageManager": { "enum": ["npm", "pnpm", "yarn", "bun"] }
+  }
+}

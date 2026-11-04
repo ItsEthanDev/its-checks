@@ -16,23 +16,20 @@ import {
 import { assertTargetUnchanged, type PlanError } from "../../planning/index.ts";
 import {
   discoverPolicy,
-  loadPolicy,
-  Answers,
+  createSourceStore,
+  SourceConfig,
+  qualifiedAnswers,
+  type SourceStore,
   loadPreviousIntent,
   type BundleError,
 } from "../../policy/index.ts";
-import { executingCommit, knownSelections, prepareSetupPlan } from "../../setup/index.ts";
+import { loadSources, prepareSetupPlan } from "../../setup/index.ts";
 
 const Manager = Schema.Literals(["npm", "pnpm", "yarn", "bun"]);
 const Config = Schema.Struct({
-  integrations: Schema.Array(Schema.String),
-  automation: Schema.Array(Schema.String),
-  answers: Answers,
+  schemaVersion: Schema.Literal(2),
+  sources: Schema.Array(SourceConfig),
   packageManager: Schema.optionalKey(Manager),
-  // Saved intent can be supplied directly; provenance is regenerated, not trusted as an execution pin.
-  $schema: Schema.optionalKey(Schema.String),
-  source: Schema.optionalKey(Schema.String),
-  commit: Schema.optionalKey(Schema.String),
 });
 const FileState = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("absent") }),
@@ -40,10 +37,18 @@ const FileState = Schema.Union([
 ]);
 const Kind = Schema.Literals(["creation", "addition", "replacement", "removal", "noop"]);
 const SavedPlan = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literal(2),
   generator: Schema.String,
   manager: Manager,
   plan: Schema.Struct({
+    sources: Schema.Array(Schema.Struct({ repository: Schema.String, commit: Schema.String })),
+    bundles: Schema.Array(
+      Schema.Struct({
+        key: Schema.String,
+        explicit: Schema.Boolean,
+        requiredBy: Schema.Array(Schema.String),
+      }),
+    ),
     snapshot: Schema.Struct({
       root: Schema.String,
       files: Schema.Record(Schema.String, FileState),
@@ -115,7 +120,7 @@ function fingerprint(packageRoot: string) {
         throw new Error(`Unsupported generator file: ${relative}`);
       }
     }
-    for (const relative of ["package.json", "bin", "src", "policy"]) {
+    for (const relative of ["package.json", "bin", "src", "schemas"]) {
       await visit(relative);
     }
     return hash.digest("hex");
@@ -127,6 +132,7 @@ export function headless(
   args: readonly string[],
   projectRoot: string,
   packageRoot: string,
+  sources: SourceStore = createSourceStore(),
 ): Effect.Effect<
   { readonly json: boolean; readonly result: unknown; readonly text?: string },
   OperationError | BundleError | PlanError | ApplicationError
@@ -148,11 +154,15 @@ export function headless(
     });
     const { values, positionals } = parsed;
     const [command, planFile] = positionals;
-    const policyRoot = path.join(packageRoot, "policy");
     switch (command) {
       case "options":
-        if (positionals.length === 1 && values.config === undefined && values.out === undefined) {
-          return { json: values.json === true, result: yield* describeOptions(policyRoot) };
+        if (
+          positionals.length === 2 &&
+          planFile !== undefined &&
+          values.config === undefined &&
+          values.out === undefined
+        ) {
+          return { json: values.json === true, result: yield* describeOptions(planFile, sources) };
         }
         break;
       case "plan":
@@ -162,6 +172,7 @@ export function headless(
             packageRoot,
             configFile: values.config,
             out: values.out,
+            sources,
           });
           return { json: values.json === true, ...result };
         }
@@ -186,27 +197,28 @@ export function headless(
         break;
     }
     return yield* fail(
-      "Usage: its-checks options [--json] | plan --config <file> --out <new-file> [--json] | apply <plan-file> [--json]",
+      "Usage: its-checks options <owner/repo> [--json] | plan --config <file> --out <new-file> [--json] | apply <plan-file> [--json]",
     );
   });
 }
 
-function describeOptions(policyRoot: string) {
+function describeOptions(repository: string, sources: SourceStore) {
   return Effect.gen(function* () {
-    const catalog = yield* discoverPolicy(policyRoot);
-    const describe = (bundle: typeof catalog.baseline) => ({
+    const source = yield* sources.resolve(repository);
+    const catalog = yield* discoverPolicy(source.root, source.repository);
+    const describe = (bundle: (typeof catalog.bundles)[number]) => ({
       id: bundle.id,
       key: bundle.key,
       name: bundle.declaration.name,
-      ...(bundle.declaration.description === undefined
-        ? {}
-        : { description: bundle.declaration.description }),
+      description: bundle.declaration.description,
       inputs: bundle.declaration.inputs ?? [],
+      requires: bundle.declaration.requires ?? [],
+      hidden: bundle.declaration.hidden ?? false,
     });
     const result = {
-      base: describe(catalog.baseline),
-      integrations: catalog.integrations.map(describe),
-      automation: catalog.automation.map(describe),
+      repository: source.repository,
+      commit: source.commit,
+      bundles: catalog.bundles.map(describe),
     };
     return result;
   });
@@ -217,37 +229,36 @@ function savePlan(options: {
   packageRoot: string;
   configFile: string;
   out: string;
+  sources: SourceStore;
 }) {
   return Effect.gen(function* () {
     const { projectRoot, packageRoot } = options;
-    const policyRoot = path.join(packageRoot, "policy");
     const config = yield* readJson(path.resolve(projectRoot, options.configFile), Config);
     const previous = yield* loadPreviousIntent(projectRoot);
-    const catalog = yield* discoverPolicy(policyRoot);
-    const policy = yield* loadPolicy(policyRoot, config);
+    const policy = yield* loadSources(config.sources, options.sources);
     const resolution = yield* resolveTargetManager(projectRoot, config.packageManager);
     if (resolution.kind === "question") {
       return yield* fail(
         `${resolution.reason} Set packageManager in the config to one of: ${resolution.choices.join(", ")}. Evidence: ${resolution.evidence.length === 0 ? "none" : resolution.evidence.join(", ")}`,
       );
     }
-    const commit = yield* executingCommit(packageRoot);
     const plan = yield* prepareSetupPlan({
       projectRoot,
       policy,
-      answers: config.answers,
+      answers: qualifiedAnswers(config.sources),
       target: resolution.target,
       previous,
-      prior: knownSelections(catalog, previous),
-      ...(commit === undefined ? {} : { commit }),
+      sources: options.sources,
     });
     const evidence = yield* snapshotManagerEvidence(projectRoot);
     const saved: typeof SavedPlan.Type = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       generator: yield* fingerprint(packageRoot),
       manager: resolution.target.manager,
       plan: {
         ...plan,
+        sources: plan.sources ?? [],
+        bundles: plan.bundles ?? [],
         snapshot: {
           root: plan.snapshot.root,
           files: { ...evidence.files, ...plan.snapshot.files },
@@ -293,6 +304,11 @@ function describePlan(saved: typeof SavedPlan.Type, output: string) {
   return [
     `Target: ${plan.snapshot.root}`,
     `Package manager: ${saved.manager}`,
+    ...plan.sources.map((source) => `Policy: ${source.repository}@${source.commit}`),
+    ...plan.bundles.map(
+      (bundle) =>
+        `${bundle.explicit ? "Selected" : "Dependency"}: ${bundle.key}${bundle.requiredBy.length === 0 ? "" : `; required by ${bundle.requiredBy.join(", ")}`}`,
+    ),
     ...plan.files
       .filter((file) => file.kind !== "noop")
       .map((file) => `${file.kind}: ${file.path}${file.conflict ? " [conflict]" : ""}`),

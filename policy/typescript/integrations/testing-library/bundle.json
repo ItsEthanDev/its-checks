@@ -1,8 +1,0 @@
-{
-  "name": "Testing Library",
-  "description": "Awaited queries and interactions, accessible DOM queries, and side-effect-free retries",
-  "devDependencies": {
-    "eslint": "9.39.5",
-    "eslint-plugin-testing-library": "7.16.2"
-  }
-}

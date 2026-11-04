@@ -1,7 +1,7 @@
 import type { JsonValue } from "./lib/bundle-types.ts";
 
 /** JSON/JSONC documents and target-relative paths shared by policy consumers. */
-export { json, safePath } from "./lib/bundle-io.ts";
+export { json, safePath, compare } from "./lib/bundle-io.ts";
 
 export type JsonObject = { readonly [key: string]: JsonValue };
 export const isObject = (value: unknown): value is JsonObject =>

@@ -5,7 +5,7 @@ import { applyEdits, modify, parse } from "jsonc-parser";
 
 import { canonical, isArray, isObject } from "../documents.ts";
 import { BundleError } from "./bundle-errors.ts";
-import { safePath } from "./bundle-io.ts";
+import { safePath, compare } from "./bundle-io.ts";
 import type {
   BundleDeclaration,
   JsonValue,
@@ -17,7 +17,7 @@ import {
   Answers,
   selectionContent,
   selectionFilename,
-  selectionSchemaUrl,
+  qualifiedAnswers,
   type Answer,
   type SavedIntent,
 } from "./selections.ts";
@@ -124,7 +124,7 @@ function overlapping(a: InputDeclaration["destination"], b: InputDeclaration["de
   );
 }
 
-/** Enumerate only declarations, including baseline and automation; never infer questions. */
+/** Enumerate selected bundles and dependencies; defaults and saved values are suggestions only. */
 export function enumerateInputs(
   policy: LoadedPolicy,
   previous?: SavedIntent,
@@ -145,16 +145,18 @@ export function enumerateInputs(
             `Overlapping input destinations: ${other.id} and ${input.id}`,
           );
         }
-        const saved = answerAt(previous?.answers, bundle.key, input.id);
-        const initialValue = saved ?? input.default;
-        if (initialValue !== undefined) {
-          yield* validateAnswer(
-            bundle,
-            input,
-            initialValue,
-            `${saved !== undefined ? "saved answers" : "defaults"}.${bundle.key}.${input.id}`,
-          );
-        }
+        const saved = answerAt(
+          previous === undefined ? undefined : qualifiedAnswers(previous.sources),
+          bundle.key,
+          input.id,
+        );
+        const validSaved =
+          saved === undefined
+            ? false
+            : yield* validateAnswer(bundle, input, saved, "saved answers").pipe(
+                Effect.match({ onSuccess: () => true, onFailure: () => false }),
+              );
+        const initialValue = validSaved ? saved : input.default;
         result.push({
           bundle: bundle.key,
           source: bundle.source,
@@ -187,7 +189,6 @@ function bind(file: NativeFile, input: InputDeclaration, answer: Answer): Native
 export function resolveInputs(
   policy: LoadedPolicy,
   supplied: unknown,
-  commit?: string,
 ): Effect.Effect<ResolvedInputs, BundleError> {
   return Effect.gen(function* () {
     const ctx = { bundle: "inputs", source: policy.root, field: "answers" };
@@ -207,15 +208,20 @@ export function resolveInputs(
       assert(answer !== undefined);
       (intendedAnswers[bundle] ??= {})[input.id] = answer;
     }
-    const selected = (kind: "integration" | "automation") =>
-      policy.bundles.filter((bundle) => bundle.kind === kind).map((bundle) => bundle.id);
     const intent: SavedIntent = {
-      $schema: yield* selectionSchemaUrl(policy.declaration.source),
-      source: policy.declaration.source.repository,
-      ...(commit === undefined ? {} : { commit }),
-      integrations: selected("integration"),
-      automation: selected("automation"),
-      answers: intendedAnswers,
+      schemaVersion: 2,
+      sources: policy.sources
+        .toSorted((a, b) => compare(a.repository, b.repository))
+        .map((source) => ({
+          repository: source.repository,
+          commit: source.commit,
+          bundles: source.bundles,
+          answers: Object.fromEntries(
+            Object.entries(intendedAnswers)
+              .filter(([key]) => key.startsWith(`${source.repository}:`))
+              .map(([key, values]) => [key.slice(source.repository.length + 1), values]),
+          ),
+        })),
     };
     return {
       policy: { ...policy, bundles },

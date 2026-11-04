@@ -1,111 +1,58 @@
 import { Effect } from "effect";
 
-import type { fixture } from "../../../../test/shared/fixtures.ts";
-import type { ApplicationDependencies, ApplicationReport } from "../../application/index.ts";
-import type { ChangePlan } from "../../planning/index.ts";
+import type { ApplicationDependencies } from "../../application/index.ts";
 import type { Answer } from "../../policy/index.ts";
 import type { SetupPresentation } from "../index.ts";
-
-interface Dialogue {
-  ui: SetupPresentation;
-  shown: { category: string; previous: readonly string[]; options: string[] }[];
-  questions: { key: string; initial: Answer | undefined }[];
-  notes: string[];
-  readonly plan: ChangePlan | undefined;
-  readonly confirmations: number;
-  readonly managerQuestions: number;
-  readonly completion: ApplicationReport | undefined;
-}
-
+export const ready: ApplicationDependencies = {
+  assess: () => Effect.succeed("not-required"),
+  install: () => Effect.die("Unexpected install"),
+};
 export function dialogue(
-  choices: {
-    integrations?: readonly string[];
-    automation?: readonly string[];
-    approve?: boolean;
-    answers?: Record<string, Answer>;
+  options: {
+    readonly selections?: Readonly<Record<string, readonly string[]>>;
+    readonly approve?: boolean;
+    readonly answers?: Readonly<Record<string, Answer>>;
   } = {},
-): Dialogue {
-  const shown: { category: string; previous: readonly string[]; options: string[] }[] = [];
-  const questions: { key: string; initial: Answer | undefined }[] = [];
+): {
+  readonly ui: SetupPresentation;
+  readonly notes: string[];
+  readonly shown: { source: string; ids: readonly string[]; previous: readonly string[] }[];
+  readonly questions: string[];
+} {
   const notes: string[] = [];
-  let plan: ChangePlan | undefined;
-  let confirmations = 0;
-  let managerQuestions = 0;
-  let completion: ApplicationReport | undefined;
+  const shown: {
+    source: string;
+    ids: readonly string[];
+    previous: readonly string[];
+  }[] = [];
+  const questions: string[] = [];
   const ui: SetupPresentation = {
-    choices: (category, options, previous) => {
-      shown.push({ category, previous, options: options.map((x) => x.id) });
-      return Effect.succeed(choices[category] ?? previous);
+    choices: (source, bundles, previous) => {
+      shown.push({ source, ids: bundles.map((bundle) => bundle.id), previous });
+      return Effect.succeed(options.selections?.[source] ?? previous);
     },
     input: (declaration) => {
-      const key = `${declaration.bundle}/${declaration.input.id}`;
-      questions.push({ key, initial: declaration.initialValue });
-      return Effect.succeed(choices.answers?.[key] ?? declaration.initialValue ?? "");
+      questions.push(`${declaration.bundle}/${declaration.input.id}`);
+      return Effect.succeed(
+        options.answers?.[`${declaration.bundle}/${declaration.input.id}`] ??
+          declaration.initialValue ??
+          "",
+      );
     },
-    manager: () => {
-      managerQuestions++;
-      return Effect.succeed("npm");
-    },
-    confirm: () => {
-      confirmations++;
-      return Effect.succeed(choices.approve ?? true);
-    },
+    manager: () => Effect.succeed("npm"),
+    confirm: () => Effect.succeed(options.approve ?? true),
     note: (message) => {
       notes.push(message);
     },
-    plan: (value) => {
-      plan = value;
+    plan: () => {
+      /* Recorded by module-level planning tests. */
     },
     progress: () => {
-      /* empty */
+      /* Presentation only. */
     },
-    complete: (value) => {
-      completion = value;
-    },
-  };
-  return {
-    ui,
-    shown,
-    questions,
-    notes,
-    get plan() {
-      return plan;
-    },
-    get confirmations() {
-      return confirmations;
-    },
-    get managerQuestions() {
-      return managerQuestions;
-    },
-    get completion() {
-      return completion;
+    complete: () => {
+      /* Report returned by setup. */
     },
   };
-}
-export const ready: ApplicationDependencies = {
-  assess: () => Effect.succeed("not-required"),
-  install: () => Effect.die("Unexpected installation"),
-};
-export async function inputPolicy(f: Awaited<ReturnType<typeof fixture>>): Promise<void> {
-  await f.add("integrations/example", {
-    name: "Example",
-    inputs: [
-      {
-        id: "stylesheet",
-        prompt: "Stylesheet path?",
-        type: "path",
-        default: "src/app.css",
-        destination: { file: ".oxfmtrc.json", field: ["sortTailwindcss", "stylesheet"] },
-      },
-    ],
-    devDependencies: { example: "1.0.0" },
-  });
-  await f.write("typescript/integrations/example/files/.oxfmtrc.json", {
-    sortTailwindcss: { stylesheet: "placeholder" },
-  });
-  await f.add("automation/ci", { name: "CI" });
-  await f.write(
-    "typescript/automation/ci/files/.github/workflows/check.yml",
-    "# its-checks: managed\nname: Checks\non: push\n",
-  );
+  return { ui, notes, shown, questions };
 }

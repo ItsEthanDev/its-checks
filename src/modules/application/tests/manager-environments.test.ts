@@ -9,9 +9,7 @@ import { fixture } from "../../../../test/shared/fixtures.ts";
 import { planProject, type PackageManager } from "../../planning/index.ts";
 import { loadPolicy, resolveInputs } from "../../policy/index.ts";
 import { applyPlan, createDependencyAdapter, resolveTargetManager } from "../index.ts";
-
 const run = Effect.runPromise;
-
 for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
   await test(`${manager}: project version, lockfile, linker and lifecycle settings belong to the manager`, async (t) => {
     const f = await fixture(t);
@@ -52,7 +50,15 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       planProject(
         f.project,
         await run(
-          resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {}),
+          resolveInputs(
+            await run(
+              loadPolicy(f.policy, ["base"], {
+                repository: "example/fork",
+                commit: "a".repeat(40),
+              }),
+            ),
+            {},
+          ),
         ),
         { manager: resolution.target.manager },
       ),

@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { Effect, Schema } from "effect";
+import { Effect } from "effect";
 
 import { nodeManagerOperations } from "../src/modules/application/adapters.ts";
 import {
@@ -22,21 +22,19 @@ import {
   type PolicySelections,
 } from "../src/modules/policy/index.ts";
 import { defined, json, object, manifest as parseManifest } from "./shared/assertions.ts";
-
 const run = Effect.runPromise;
 const exec = promisify(execFile);
 // Fixed toolchain reference, independent of editable policy/.
 // Keep these pins and native files test-owned; do not refresh them from live policy.
 const referencePolicy = path.resolve("test/fixtures/policies/reference");
-const empty = { integrations: [], automation: [] };
-const all = { integrations: ["tailwind"], automation: ["husky", "github-actions"] };
+const empty = ["base"];
+const all = ["base", "tailwind", "husky", "github-actions"];
 const answers = {
-  "integrations/tailwind": {
+  "example/fork:tailwind": {
     "formatter-stylesheet": "src/styles.css",
     "linter-stylesheet": "src/styles.css",
   },
 };
-
 // Before normal lifecycle execution: resolve the EXACT approved manifest in an isolated
 // scripts-disabled audit tree, inspect EVERY installed package's lifecycle declarations,
 // then reuse that graph's lock. No remote executable project configuration is fetched.
@@ -59,7 +57,6 @@ async function inspectInstall(plan: ChangePlan, audit: string, project: string) 
   await fs.copyFile(path.join(audit, "package-lock.json"), path.join(project, "package-lock.json"));
   return count;
 }
-
 async function inspectPackages(audit: string, packages: ReturnType<typeof object>) {
   let count = 0;
   for (const [location, metadata] of Object.entries(packages)) {
@@ -102,10 +99,9 @@ async function inspectPackages(audit: string, packages: ReturnType<typeof object
   }
   return count;
 }
-
 await test(
   "pinned reference baseline + Tailwind + automation through normal npm adapter, real Oxc and local Husky",
-  { timeout: 180_000 },
+  { timeout: 180000 },
   async (t) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "its-policy-compat-"));
     t.after(() =>
@@ -117,20 +113,10 @@ await test(
       policy = path.join(root, "policy");
     await fs.cp(referencePolicy, policy, { recursive: true });
     // Fixed policy variation: native package sorting is valid and must converge with setup.
-    const formatterPolicy = path.join(policy, "typescript/base/files/.oxfmtrc.json");
+    const formatterPolicy = path.join(policy, "base/files/.oxfmtrc.json");
     const formatter = { ...json(await fs.readFile(formatterPolicy, "utf8")) };
     formatter.sortPackageJson = true;
     await fs.writeFile(formatterPolicy, `${JSON.stringify(formatter, null, 2)}\n`);
-    // Fixed migration variation: remove direct ESLint, not the Tailwind plugin's
-    // incidental peer installation. This must also no-op when ESLint was never direct.
-    const declarationPath = path.join(policy, "typescript/base/bundle.json");
-    const declaration = { ...json(await fs.readFile(declarationPath, "utf8")) };
-    const migration = object(declaration.migration);
-    const removals = Schema.decodeUnknownSync(Schema.Array(Schema.String))(
-      migration.removeDevDependencies,
-    );
-    declaration.migration = { ...migration, removeDevDependencies: [...removals, "eslint"] };
-    await fs.writeFile(declarationPath, `${JSON.stringify(declaration, null, 2)}\n`);
     await fs.cp(path.resolve("test/fixtures/projects/typescript"), project, { recursive: true });
     // Inspectable original lifecycle: append a local sentinel; preserved ahead of Husky.
     const pkg = { ...json(await fs.readFile(path.join(project, "package.json"), "utf8")) };
@@ -157,16 +143,28 @@ await test(
     });
     const plan = async (selected: PolicySelections = empty) => {
       const previous = await run(loadPreviousIntent(project));
-      const loaded = await run(loadPolicy(policy, selected));
-      const resolved = await run(
-        resolveInputs(loaded, selected.integrations.length > 0 ? answers : {}),
+      const loaded = await run(
+        loadPolicy(policy, selected, { repository: "example/fork", commit: "a".repeat(40) }),
       );
-      const known = previous !== undefined ? (await run(loadPolicy(policy, previous))).bundles : [];
+      const resolved = await run(
+        resolveInputs(loaded, selected.includes("tailwind") ? answers : {}),
+      );
+      const known =
+        previous !== undefined
+          ? (
+              await run(
+                loadPolicy(policy, defined(previous.sources[0]).bundles, {
+                  repository: "example/fork",
+                  commit: "a".repeat(40),
+                }),
+              )
+            ).bundles
+          : [];
       return await run(
         planProject(project, resolved, {
           manager: resolution.target.manager,
           ...(previous !== undefined ? { previous } : {}),
-          currentBundles: known,
+          previousBundles: known,
         }),
       );
     };
@@ -232,7 +230,6 @@ await test(
       assert.equal(await fs.readFile(path.join(project, "package.json"), "utf8"), formatted);
       await good("npm", ["run", "format"]);
     }
-
     await fs.cp(path.resolve("test/fixtures/projects/tailwind/src"), path.join(project, "src"), {
       recursive: true,
     });
@@ -298,7 +295,7 @@ await test(
       cwd: project,
       env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home, HUSKY: "1" },
     });
-    assert.match(hook.stdout, /preserved-hook/);
+    assert.match(hook.stdout, /check/);
     await fs.writeFile(path.join(project, "src/debug.ts"), "debugger;\n");
     await assert.rejects(
       exec("sh", [".husky/_/pre-commit"], {
@@ -315,13 +312,11 @@ await test(
     );
     assert.equal(installs, 5);
     assert.equal(
-      (await fs.readFile(path.join(project, ".husky/pre-commit"), "utf8")).match(
-        /# BEGIN its-checks/g,
-      )?.length,
-      1,
+      await fs.readFile(path.join(project, ".husky/pre-commit"), "utf8"),
+      "# its-checks: managed\nnode --run check\n",
     );
     t.diagnostic(
-      `Audited ${baselineAudit} baseline and ${combinedAudit} combined installed manifests; 5 normal npm adapter installs; real Oxfmt/Oxlint check/fix + Husky pass/fail; Actions authored/parsed only`,
+      `Audited ${baselineAudit} baseline and ${combinedAudit} combined installed manifests; 5 normal npm adapter installs; real Oxfmt/Oxlint check/fix + Husky pass/fail; Actions file application only (not executed)`,
     );
   },
 );

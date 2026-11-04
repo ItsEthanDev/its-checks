@@ -1,0 +1,42 @@
+{
+  "name": "Playwright",
+  "description": "Awaited browser operations, web-first assertions, reliable waits, and focused-test prevention",
+  "devDependencies": {
+    "eslint-plugin-playwright": "2.12.2"
+  },
+  "inputs": [
+    {
+      "id": "test-files",
+      "prompt": "Playwright test-file glob (exclude unit tests)",
+      "type": "string",
+      "default": "tests/**",
+      "destination": {
+        "file": ".oxlintrc.json",
+        "field": ["overrides", 0, "files", 0]
+      }
+    }
+  ],
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxfmtrc.json",
+      "target": ".oxfmtrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/ignorePatterns": "append-unique"
+      }
+    },
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/jsPlugins": "append-unique",
+        "/overrides": "append-unique",
+        "/ignorePatterns": "append-unique"
+      }
+    }
+  ]
+}

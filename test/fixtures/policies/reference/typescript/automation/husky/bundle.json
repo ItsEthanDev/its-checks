@@ -1,6 +1,0 @@
-{
-  "name": "Husky pre-commit",
-  "description": "Check the whole package before commits; never fix or stage files",
-  "scripts": { "postinstall": "husky" },
-  "devDependencies": { "husky": "9.1.7" }
-}

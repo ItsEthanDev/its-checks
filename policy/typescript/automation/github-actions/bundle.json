@@ -1,4 +1,0 @@
-{
-  "name": "GitHub Actions checks",
-  "description": "Node 24 quality checks using the declared, tested package manager"
-}

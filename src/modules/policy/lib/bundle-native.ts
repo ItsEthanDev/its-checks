@@ -1,158 +1,84 @@
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { Effect } from "effect";
-import { parseAllDocuments } from "yaml";
 
-import { isArray, isObject } from "../documents.ts";
+import { isObject } from "../documents.ts";
 import type { BundleError } from "./bundle-errors.ts";
-import {
-  checkPath,
-  compare,
-  directory,
-  fail,
-  io,
-  json,
-  readText,
-  unique,
-  validate,
-  type Context,
-} from "./bundle-io.ts";
-import type { BundleInfo, JsonValue, LoadedBundle, NativeFile } from "./bundle-types.ts";
+import { directory, json, readText, validate, type Context } from "./bundle-io.ts";
+import type {
+  BundleInfo,
+  FileDeclaration,
+  JsonValue,
+  LoadedBundle,
+  NativeFile,
+} from "./bundle-types.ts";
 
-function parseNative(
-  ctx: Context,
-  common: { path: string; source: string; content: string; executable: boolean },
-): Effect.Effect<NativeFile, BundleError> {
+function checkComposition(ctx: Context, declaration: FileDeclaration, value: JsonValue) {
   return Effect.gen(function* () {
-    const { content, path: target } = common;
-    const extension = path.posix.extname(target).toLowerCase();
-    if (extension === ".json" || extension === ".jsonc") {
-      const value = yield* json(ctx, content, extension === ".jsonc");
-      yield* validate(ctx, "$", isObject(value), "Native JSON configuration must be an object");
-      return {
-        ...common,
-        format: extension === ".json" ? ("json" as const) : ("jsonc" as const),
-        value,
-      };
+    if (declaration.operation !== "compose") {
+      return undefined;
     }
-    if (extension === ".yaml" || extension === ".yml") {
-      yield* Effect.try({
-        try: () => {
-          const documents = parseAllDocuments(content, { uniqueKeys: true });
-          const errors = documents.flatMap((doc) => doc.errors);
-          if (errors.length > 0) {
-            throw new Error(errors.map((error) => error.message).join("; "));
-          }
-          if (documents.length !== 1) {
-            throw new Error("Expected one YAML document");
-          }
-        },
-        catch: (cause) => fail(ctx, "$", String(cause)),
-      });
-      return { ...common, format: "yaml" as const };
-    }
-    yield* validate(
-      ctx,
-      "$",
-      extension === ".sh" || (extension === "" && target.startsWith(".husky/")),
-      "Supported native formats: JSON, JSONC, YAML, .sh, and extensionless .husky hooks; executable installers are not supported",
-    );
-    yield* validate(ctx, "$", !content.includes("\0"), "Shell files cannot contain NUL");
-    return { ...common, format: "shell" as const };
-  });
-}
-function readNativeFiles(info: BundleInfo) {
-  return Effect.gen(function* () {
-    const files: NativeFile[] = [];
-    const root = path.join(info.directory, "files");
-    const walk = (relative: string): Effect.Effect<void, BundleError> =>
-      Effect.gen(function* () {
-        const ctx = { bundle: info.key, source: path.join(root, relative) };
-        for (const name of yield* directory(ctx, relative === "")) {
-          const target = relative.length > 0 ? `${relative}/${name}` : name;
-          const child = { ...ctx, source: path.join(root, target) };
-          yield* checkPath(child, "$", target);
-          yield* validate(
-            child,
-            "$",
-            name.toLowerCase() !== "package.json",
-            "Declare package scripts/dependencies in bundle.json, not files/package.json",
-          );
-          const stat = yield* io(child, () => fs.lstat(child.source));
-          if (stat.isDirectory()) {
-            yield* walk(target);
-            continue;
-          }
-          yield* validate(
-            child,
-            "$",
-            stat.isFile(),
-            "Only regular files and directories are supported; no symbolic links",
-          );
-          const content = yield* readText(child);
-          files.push(
-            yield* parseNative(child, {
-              path: target,
-              source: child.source,
-              content,
-              executable: (stat.mode & 0o111) !== 0,
-            }),
-          );
-        }
-      });
-    yield* walk("");
-    return files;
-  });
-}
-function fieldAt(value: JsonValue | undefined, key: string | number): JsonValue | undefined {
-  if (isArray(value) && typeof key === "number" && Object.hasOwn(value, key)) {
-    return value[key];
-  }
-  if (isObject(value) && typeof key === "string" && Object.hasOwn(value, key)) {
-    return value[key];
-  }
-  return undefined;
-}
-function checkBindings(info: BundleInfo, files: readonly NativeFile[]) {
-  return Effect.gen(function* () {
-    for (const [index, input] of (info.declaration.inputs ?? []).entries()) {
-      const ctx = { bundle: info.key, source: info.source };
-      const file = files.find((candidate) => candidate.path === input.destination.file);
-      const nativeJson = file !== undefined && (file.format === "json" || file.format === "jsonc");
+    yield* validate(ctx, "$", isObject(value), "Compose contributions must be objects");
+    for (const pointer of Object.keys(declaration.arrays ?? {})) {
+      let field: unknown = value;
+      const keys = pointer
+        .slice(1)
+        .split("/")
+        .map((key) => key.replaceAll("~1", "/").replaceAll("~0", "~"));
+      for (const key of keys) {
+        field = isObject(field) && Object.hasOwn(field, key) ? field[key] : undefined;
+      }
       yield* validate(
         ctx,
-        `inputs[${index}].destination.file`,
-        nativeJson,
-        "Input destination must name this bundle's native JSON/JSONC file",
+        pointer,
+        field === undefined || Array.isArray(field),
+        "Declared array operation requires an array",
       );
-      if (file !== undefined && (file.format === "json" || file.format === "jsonc")) {
-        let value: JsonValue | undefined = file.value;
-        for (const key of input.destination.field) {
-          value = fieldAt(value, key);
-        }
-        yield* validate(
-          ctx,
-          `inputs[${index}].destination.field`,
-          value !== undefined,
-          `Destination field must exist in ${file.source}`,
-        );
-      }
     }
+    return undefined;
   });
 }
-
-/** Load native files without executing policy code. */
+function readFile(info: BundleInfo, declaration: FileDeclaration) {
+  return Effect.gen(function* () {
+    const source = path.join(info.directory, declaration.source);
+    const ctx = { bundle: info.key, source };
+    const parts = declaration.source.split("/");
+    for (let index = 1; index < parts.length; index++) {
+      yield* directory({ ...ctx, source: path.join(info.directory, ...parts.slice(0, index)) });
+    }
+    const content = yield* readText(ctx);
+    const common = {
+      path: declaration.target,
+      source,
+      content,
+      executable: declaration.executable ?? false,
+      operation: declaration.operation,
+      arrays: declaration.arrays ?? {},
+      replaces: declaration.replaces ?? {},
+    };
+    if (declaration.format === undefined) {
+      return { ...common, format: "text" as const };
+    }
+    const value = yield* json(ctx, content, declaration.format === "jsonc");
+    yield* checkComposition(ctx, declaration, value);
+    return { ...common, format: declaration.format, value };
+  });
+}
+/** Load explicitly declared UTF-8 contributions, never code or filename conventions. */
 export function nativeFiles(info: BundleInfo): Effect.Effect<LoadedBundle, BundleError> {
   return Effect.gen(function* () {
-    const files = yield* readNativeFiles(info);
-    files.sort((a, b) => compare(a.path, b.path));
-    yield* unique(
-      { bundle: info.key, source: path.join(info.directory, "files") },
-      "$",
-      files.map((file) => file.path),
+    const files: NativeFile[] = yield* Effect.forEach(info.declaration.files ?? [], (declaration) =>
+      readFile(info, declaration),
     );
-    yield* checkBindings(info, files);
+    for (const input of info.declaration.inputs ?? []) {
+      const file = files.find((candidate) => candidate.path === input.destination.file);
+      yield* validate(
+        { bundle: info.key, source: info.source },
+        "inputs.destination",
+        file !== undefined && file.format !== "text",
+        "Input destinations must name a declared JSON/JSONC contribution",
+      );
+    }
     return { ...info, files };
   });
 }

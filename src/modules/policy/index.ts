@@ -8,6 +8,10 @@ export {
 } from "./lib/inputs.ts";
 export {
   Answers,
+  State,
+  SourceConfig,
+  qualifiedAnswers,
+  validateSources,
   commitPattern,
   decodeSavedIntent,
   loadPreviousIntent,
@@ -18,12 +22,20 @@ export {
 export type {
   BundleDeclaration,
   BundleInfo,
-  BundleKind,
   JsonValue,
   LoadedBundle,
   LoadedPolicy,
   NativeFile,
   PolicyCatalog,
   PolicySelections,
-  RootDeclaration,
+  SourceRevision,
+  PolicySource,
+  FileDeclaration,
 } from "./lib/bundle-types.ts";
+
+export {
+  createSourceStore,
+  repositoryIdentity,
+  type SourceStore,
+  type SourceTransport,
+} from "./lib/sources.ts";

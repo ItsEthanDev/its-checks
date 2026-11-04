@@ -5,15 +5,15 @@ import { test } from "node:test";
 
 import { Effect, Schema } from "effect";
 
+import { objects } from "../../../../test/shared/assertions.ts";
+import { json } from "../../../../test/shared/assertions.ts";
 import { defined } from "../../../../test/shared/assertions.ts";
 import { snapshot } from "../../../../test/shared/fixtures.ts";
 import { loadPreviousIntent, selectionFilename } from "../../policy/index.ts";
 import { nodeApplicationFileSystem } from "../adapters.ts";
 import { applyPlan, ApplicationError, OperationError } from "../index.ts";
 import { noInstall, setup, failure } from "./application-fixtures.ts";
-
 const run = Effect.runPromise;
-
 await test("filesystem failure reports completed files, observed partial bytes/mode, stops and recovers by replanning", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();
@@ -60,10 +60,9 @@ await test("filesystem failure reports completed files, observed partial bytes/m
   await run(applyPlan(retry, { approved: true, dependencies: noInstall }));
   assert.equal(await fs.readFile(path.join(f.project, ".oxfmtrc.json"), "utf8"), "{}\n");
 });
-
 await test("new symlink parents and leafs after planning fail without traversing outside the project", async (t) => {
   const f = await setup(t);
-  await f.write("typescript/base/files/nested/config.sh", "managed");
+  await f.write("base/files/nested/config.sh", "managed");
   const plan = await f.plan();
   await fs.symlink(f.root, path.join(f.project, "nested"));
   const before = await snapshot(f.project);
@@ -79,10 +78,9 @@ await test("new symlink parents and leafs after planning fail without traversing
     "validation",
   );
 });
-
 await test("failed parent creation reports observed directory without deleting it or continuing", async (t) => {
   const f = await setup(t);
-  await f.write("typescript/base/files/tools/deep/check.sh", "echo check");
+  await f.write("base/files/tools/deep/check.sh", "echo check");
   const error = await failure(
     applyPlan(await f.plan(), {
       approved: true,
@@ -122,12 +120,17 @@ await test("failed parent creation reports observed directory without deleting i
   await assert.rejects(fs.stat(path.join(f.project, "tools/deep")), { code: "ENOENT" });
   await run(applyPlan(await f.plan(), { approved: true, dependencies: noInstall }));
 });
-
-await test("file removal failure stops and reports retained migration content", async (t) => {
+await test("file removal failure stops and reports retained departing contribution", async (t) => {
   const f = await setup(t);
+  await f.write("base/files/prettier.config.js", "throw Error('never execute');");
+  const prior = await f.load();
+  const declarationFile = path.join(f.policy, "base/bundle.json");
+  const declaration = json(await fs.readFile(declarationFile, "utf8"));
+  const files = objects(declaration.files).filter((file) => file.target !== "prettier.config.js");
+  await fs.writeFile(declarationFile, JSON.stringify({ ...declaration, files }));
   await f.put("prettier.config.js", "throw Error('never execute');");
   const error = await failure(
-    applyPlan(await f.plan(), {
+    applyPlan(await f.plan(undefined, { previousBundles: prior.bundles }), {
       approved: true,
       dependencies: noInstall,
       fileSystem: {
@@ -141,16 +144,15 @@ await test("file removal failure stops and reports retained migration content", 
   assert.equal(typeof error.report.observed === "object" && error.report.observed.kind, "file");
   assert.deepEqual(error.report.incomplete, [
     { kind: "remove-file", path: "prettier.config.js" },
-    { kind: "write-file", path: selectionFilename },
     { kind: "assess-dependencies", path: "package.json" },
     { kind: "install-dependencies", path: "package.json" },
+    { kind: "write-file", path: selectionFilename },
   ]);
   assert.equal(
     await fs.readFile(path.join(f.project, "prettier.config.js"), "utf8"),
     "throw Error('never execute');",
   );
 });
-
 await test("a symlink introduced during application is rechecked before the next file write", async (t) => {
   const f = await setup(t);
   const outside = path.join(f.root, "outside.json");
@@ -181,7 +183,6 @@ await test("a symlink introduced during application is rechecked before the next
   assert.equal(error.report.observed, "unavailable");
   assert.equal(await fs.readFile(outside, "utf8"), "keep");
 });
-
 await test("a failed operation that already wrote intended bytes is not relabeled successful", async (t) => {
   const f = await setup(t);
   const plan = await f.plan();

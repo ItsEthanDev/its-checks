@@ -1,0 +1,21 @@
+{
+  "name": "Convex",
+  "description": "Access control, bounded queries, and Convex best practices",
+  "devDependencies": {
+    "@convex-dev/eslint-plugin": "5.0.1"
+  },
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/jsPlugins": "append-unique",
+        "/overrides": "append-unique",
+        "/ignorePatterns": "append-unique"
+      }
+    }
+  ]
+}

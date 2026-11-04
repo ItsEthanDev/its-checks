@@ -1,0 +1,38 @@
+{
+  "name": "TypeScript",
+  "description": "Opinionated formatting and type-aware linting",
+  "scripts": {
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "oxlint --fix --deny-warnings .",
+    "check": "node --run fmt:check && node --run lint"
+  },
+  "devDependencies": {
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "oxlint-tsgolint": "7.0.2005"
+  },
+  "files": [
+    {
+      "source": "files/.oxfmtrc.json",
+      "target": ".oxfmtrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/ignorePatterns": "append-unique"
+      }
+    },
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/plugins": "append-unique",
+        "/overrides": "append-unique",
+        "/ignorePatterns": "append-unique"
+      }
+    }
+  ]
+}

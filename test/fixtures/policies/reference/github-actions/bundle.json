@@ -1,0 +1,12 @@
+{
+  "name": "GitHub Actions checks",
+  "description": "Minimal test-owned workflow for native file ownership and edits",
+  "requires": ["base"],
+  "files": [
+    {
+      "source": "files/.github/workflows/its-checks.yml",
+      "target": ".github/workflows/its-checks.yml",
+      "operation": "replace"
+    }
+  ]
+}

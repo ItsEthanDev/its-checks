@@ -10,6 +10,7 @@ export function defined<A>(value: A | undefined): A {
 
 export const json = Schema.decodeSync(Schema.fromJsonString(Schema.JsonObject));
 export const object = Schema.decodeUnknownSync(Schema.JsonObject);
+export const objects = Schema.decodeUnknownSync(Schema.Array(Schema.JsonObject));
 export const strings = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.String));
 
 /** Keep unrelated manifest fields observable while narrowing the maps these tests inspect. */

@@ -33,21 +33,19 @@ function validate(declaration: DeclaredInput, value: string | undefined) {
   }
   return undefined;
 }
-const choices: SetupPresentation["choices"] = (category, options, previous) => {
+const choices: SetupPresentation["choices"] = (source, options, previous) => {
   // Clack needs a focusable option. Empty catalogs still have an explicit checkbox dialogue.
   const empty = "";
   return ask(() =>
     clack.multiselect({
-      message: `Choose ${category} (Space toggles, Enter confirms)`,
+      message: `Choose ${source} (Space toggles, Enter confirms)`,
       required: false,
       options:
         options.length > 0
           ? options.map((bundle) => ({
               value: bundle.id,
               label: bundle.declaration.name,
-              ...(bundle.declaration.description === undefined
-                ? {}
-                : { hint: bundle.declaration.description }),
+              hint: bundle.declaration.description,
             }))
           : [{ value: empty, label: "None available" }],
       initialValues: [...previous],
@@ -143,6 +141,11 @@ const showPlan: SetupPresentation["plan"] = (plan, dependencies) => {
   const entries = plan.packageEntries.filter((entry) => entry.kind !== "noop");
   clack.note(
     [
+      ...(plan.sources ?? []).map((source) => `Policy: ${source.repository}@${source.commit}`),
+      ...(plan.bundles ?? []).map(
+        (bundle) =>
+          `${bundle.explicit ? "Selected" : "Dependency"}: ${bundle.key}${bundle.requiredBy.length === 0 ? "" : `; required by ${bundle.requiredBy.join(", ")}`}`,
+      ),
       ...files.map(
         (file) =>
           `${file.kind}: ${file.path}${file.conflict ? " [conflict]" : ""}\n  ${file.reasons.join("; ")}`,

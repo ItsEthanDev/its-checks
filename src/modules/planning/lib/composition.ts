@@ -1,117 +1,172 @@
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
-import { canonical, isArray, isObject, type JsonObject } from "../../policy/documents.ts";
-import type { JsonValue, LoadedBundle, LoadedPolicy } from "../../policy/index.ts";
+import { canonical, compare } from "../../policy/documents.ts";
+import type { JsonValue, LoadedBundle, NativeFile } from "../../policy/index.ts";
+import { conflict, field, fieldAt, merge, setField } from "./json-composition.ts";
 import { PlanError } from "./plan-errors.ts";
+export { composeTarget } from "./json-composition.ts";
 
-const rank = { base: 0, integration: 1, automation: 2 };
-export const orderedBundles = (bundles: readonly LoadedBundle[]): readonly LoadedBundle[] =>
-  bundles.toSorted((a, b) => {
-    const difference = rank[a.kind] - rank[b.kind];
-    if (difference !== 0) {
-      return difference;
+/** Dependencies precede dependents; unrelated bundles use source-qualified lexical order. */
+export function orderedBundles(bundles: readonly LoadedBundle[]): readonly LoadedBundle[] {
+  const result: LoadedBundle[] = [];
+  const done = new Set<string>();
+  const visit = (bundle: LoadedBundle) => {
+    if (done.has(bundle.key)) {
+      return;
     }
-    if (a.id === b.id) {
-      return 0;
-    }
-    return a.id < b.id ? -1 : 1;
-  });
-export const configDestination = (
-  relative: string,
-): ".oxfmtrc.json" | ".oxlintrc.json" | undefined => {
-  if (relative === ".oxfmtrc.json" || relative === ".oxfmtrc.jsonc") {
-    return ".oxfmtrc.json";
-  }
-  if (relative === ".oxlintrc.json" || relative === ".oxlintrc.jsonc") {
-    return ".oxlintrc.json";
-  }
-  return undefined;
-};
-
-/** Installer composition only; never evaluates tool inheritance or existing target configuration. */
-export function composeConfigurations(
-  policy: LoadedPolicy,
-): Effect.Effect<Readonly<Record<".oxfmtrc.json" | ".oxlintrc.json", JsonObject>>, PlanError> {
-  return Effect.gen(function* () {
-    const outputs: Record<".oxfmtrc.json" | ".oxlintrc.json", Record<string, JsonValue>> = {
-      ".oxfmtrc.json": {},
-      ".oxlintrc.json": {},
-    };
-    for (const bundle of orderedBundles(policy.bundles)) {
-      const seen = new Set<string>();
-      for (const file of bundle.files) {
-        const destination = configDestination(file.path);
-        if (destination === undefined) {
-          continue;
-        }
-        const fail = (field: string, detail: string) =>
-          Effect.fail(new PlanError({ source: file.source, field, detail }));
-        if (seen.has(destination)) {
-          return yield* fail(
-            "$",
-            `One bundle cannot supply both JSON and JSONC for ${destination}`,
-          );
-        }
-        seen.add(destination);
-        if (!("value" in file) || !isObject(file.value)) {
-          return yield* fail("$", "Expected a native JSON/JSONC object");
-        }
-        yield* mergeConfiguration(
-          outputs[destination],
-          file.value,
-          destination === ".oxlintrc.json",
-          file.source,
-        );
+    done.add(bundle.key);
+    for (const id of (bundle.declaration.requires ?? []).toSorted()) {
+      const dependency = bundles.find(
+        (candidate) => candidate.key === `${bundle.repository}:${id}`,
+      );
+      if (dependency !== undefined) {
+        visit(dependency);
       }
     }
-    return outputs;
-  });
+    result.push(bundle);
+  };
+  for (const bundle of bundles.toSorted((a, b) => compare(a.key, b.key))) {
+    visit(bundle);
+  }
+  return result;
 }
-
-function mergeConfiguration(
-  output: Record<string, JsonValue>,
-  fragment: JsonObject,
-  lint: boolean,
-  source: string,
+export interface Contribution {
+  readonly file: NativeFile;
+  readonly owners: readonly string[];
+}
+type Authored = { readonly bundle: LoadedBundle; file: NativeFile };
+const overlaps = (a: string, b: string) =>
+  a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+function replaceFields(
+  contributions: Authored[],
+  entry: Authored,
+  replacements: Map<string, JsonValue>,
 ) {
-  const fail = (field: string, detail: string) =>
-    Effect.fail(new PlanError({ source, field, detail }));
-  return Effect.gen(function* () {
-    for (const [field, value] of Object.entries(fragment)) {
-      if (!lint && field === "extends") {
-        return yield* fail(field, "Oxfmt extends is not an installer-supported field");
-      }
-      if (
-        lint &&
-        ["rules", "categories", "env", "globals", "settings", "options"].includes(field)
-      ) {
-        if (!isObject(value)) {
-          return yield* fail(field, "Expected an object; entries compose by key as whole values");
-        }
-        const previous = output[field];
-        output[field] = { ...(isObject(previous) ? previous : {}), ...value };
-      } else if (
-        field === "overrides" ||
-        field === "ignorePatterns" ||
-        (lint && ["plugins", "jsPlugins", "extends"].includes(field))
-      ) {
-        if (!isArray(value)) {
-          return yield* fail(field, "Expected an array");
-        }
-        const previous = output[field];
-        const combined = [...(isArray(previous) ? previous : []), ...value];
-        output[field] =
-          field === "overrides"
-            ? combined
-            : combined.filter(
-                (entry, index) =>
-                  combined.findIndex((other) => canonical(other) === canonical(entry)) === index,
-              );
-      } else {
-        // Every other top-level field is atomic, including formatter option objects and arrays.
-        output[field] = value;
-      }
+  const { bundle, file } = entry;
+  for (const [at, targetId] of Object.entries(file.replaces)) {
+    const target = contributions.find(
+      (candidate) =>
+        candidate.bundle.key === `${bundle.repository}:${targetId}` &&
+        candidate.file.path === file.path,
+    );
+    if (
+      target === undefined ||
+      target.file.operation !== "compose" ||
+      target.file.format === "text" ||
+      file.format === "text"
+    ) {
+      conflict(
+        file.source,
+        at,
+        "Replacement requires a selected ordinary contribution from the same source",
+      );
     }
-    return undefined;
+    if (Object.keys(target.file.replaces).some((other) => overlaps(other, at))) {
+      conflict(file.source, at, "Replacement chains are unsupported");
+    }
+    const replacement = field(file.value, at, file.source);
+    field(target.file.value, at, target.file.source);
+    const identity = `${target.bundle.key}:${file.path}:${at}`;
+    if ([...replacements.keys()].some((other) => other !== identity && overlaps(other, identity))) {
+      conflict(file.source, at, "Overlapping replacements");
+    }
+    const earlier = replacements.get(identity);
+    if (earlier !== undefined && canonical(earlier) !== canonical(replacement)) {
+      conflict(file.source, at, "Conflicting replacements");
+    }
+    replacements.set(identity, replacement);
+    target.file = {
+      ...target.file,
+      value: setField(target.file.value, at, replacement, file.source),
+    };
+  }
+}
+function activeArrays(file: NativeFile): NativeFile {
+  if (file.format === "text") {
+    return file;
+  }
+  const value = file.value;
+  return {
+    ...file,
+    arrays: Object.fromEntries(
+      Object.entries(file.arrays).filter(([at]) => fieldAt(value, at) !== undefined),
+    ),
+  };
+}
+function compositionArrays(a: NativeFile, b: NativeFile, source: string) {
+  if (a.format === "text" || b.format === "text") {
+    return {};
+  }
+  for (const at of new Set([...Object.keys(a.arrays), ...Object.keys(b.arrays)])) {
+    if (
+      fieldAt(a.value, at) !== undefined &&
+      fieldAt(b.value, at) !== undefined &&
+      a.arrays[at] !== b.arrays[at]
+    ) {
+      conflict(source, at, "Incompatible composition declarations for a shared array");
+    }
+  }
+  return { ...a.arrays, ...b.arrays };
+}
+function addFile(files: Map<string, Contribution>, bundle: LoadedBundle, authored: NativeFile) {
+  const file = activeArrays(authored);
+  const previous = files.get(file.path);
+  if (previous === undefined) {
+    files.set(file.path, { file, owners: [bundle.key] });
+    return;
+  }
+  const a = previous.file;
+  const source = `${previous.owners.join(", ")} and ${bundle.key} (${file.source})`;
+  if (a.operation !== file.operation || a.executable !== file.executable) {
+    conflict(source, file.path, "Incompatible file operations or composition declarations");
+  }
+  let combined = file;
+  if (file.operation === "compose" && file.format !== "text" && a.format !== "text") {
+    const arrays = compositionArrays(a, file, source);
+    combined = { ...file, arrays, value: merge(a.value, file.value, { arrays, source }) };
+  } else if (a.content !== file.content) {
+    conflict(source, file.path, "Different complete-file contributions");
+  }
+  files.set(file.path, { file: combined, owners: [...previous.owners, bundle.key] });
+}
+function checkDestinations(files: ReadonlyMap<string, Contribution>) {
+  const paths = [...files.keys()].toSorted();
+  const folded = new Set<string>();
+  for (const relative of paths) {
+    if (
+      folded.has(relative.toLowerCase()) ||
+      paths.some(
+        (other) =>
+          other !== relative && relative.toLowerCase().startsWith(`${other.toLowerCase()}/`),
+      )
+    ) {
+      conflict(relative, "$", "Overlapping or case-aliased destinations");
+    }
+    folded.add(relative.toLowerCase());
+  }
+}
+export function collectFiles(
+  bundles: readonly LoadedBundle[],
+): Effect.Effect<ReadonlyMap<string, Contribution>, PlanError> {
+  return Effect.try({
+    try: () => {
+      const files = new Map<string, Contribution>();
+      const contributions = orderedBundles(bundles).flatMap((bundle) =>
+        bundle.files.map((file) => ({ bundle, file })),
+      );
+      const replacements = new Map<string, JsonValue>();
+      for (const entry of contributions) {
+        replaceFields(contributions, entry, replacements);
+      }
+      for (const { bundle, file } of contributions) {
+        addFile(files, bundle, file);
+      }
+      checkDestinations(files);
+      return files;
+    },
+    catch: (cause) =>
+      Schema.is(PlanError)(cause)
+        ? cause
+        : new PlanError({ source: "composition", field: "$", detail: String(cause) }),
   });
 }

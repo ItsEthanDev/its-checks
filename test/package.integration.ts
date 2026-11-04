@@ -156,7 +156,7 @@ await test(
           timeout: 60_000,
         },
       ),
-      { code: 1, stderr: /its-checks requires an interactive terminal/ },
+      { code: 1, stderr: /Interactive commands require a terminal/ },
     );
   },
 );

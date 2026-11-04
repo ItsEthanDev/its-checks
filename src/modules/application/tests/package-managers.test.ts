@@ -16,7 +16,6 @@ import {
   resolveTargetManager,
   createDependencyAdapter,
 } from "../index.ts";
-
 const run = Effect.runPromise;
 const managers: PackageManager[] = ["npm", "pnpm", "yarn", "bun"];
 const put = async (root: string, file: string, value: string | object) => {
@@ -26,7 +25,6 @@ const put = async (root: string, file: string, value: string | object) => {
     typeof value === "string" ? value : JSON.stringify(value),
   );
 };
-
 await test("manager evidence asks on absent, malformed, conflicting declarations/locks; explicit answer feeds script planning", async (t) => {
   const f = await fixture(t);
   assert.equal((await run(resolveTargetManager(f.project))).kind, "question");
@@ -61,7 +59,15 @@ await test("manager evidence asks on absent, malformed, conflicting declarations
     throw Error("Expected explicit answer");
   }
   const resolved = await run(
-    resolveInputs(await run(loadPolicy(f.policy, { integrations: [], automation: [] })), {}),
+    resolveInputs(
+      await run(
+        loadPolicy(f.policy, ["base"], {
+          repository: "example/fork",
+          commit: "a".repeat(40),
+        }),
+      ),
+      {},
+    ),
   );
   const plan = await run(planProject(f.project, resolved, { manager: resolution.target.manager }));
   const state = defined(plan.files.find((file) => file.path === "package.json")).after;
@@ -80,7 +86,6 @@ await test("manager evidence asks on absent, malformed, conflicting declarations
     "other lockfiles are preserved",
   );
 });
-
 for (const manager of managers) {
   await test(`${manager}: normal install preserves approved intent, reruns, reports failures and retries without repairing native state`, async (t) => {
     const f = await fixture(t);
@@ -102,7 +107,12 @@ for (const manager of managers) {
           f.project,
           await run(
             resolveInputs(
-              await run(loadPolicy(f.policy, { integrations: [], automation: [] })),
+              await run(
+                loadPolicy(f.policy, ["base"], {
+                  repository: "example/fork",
+                  commit: "a".repeat(40),
+                }),
+              ),
               {},
             ),
           ),

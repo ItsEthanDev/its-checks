@@ -1,0 +1,39 @@
+{
+  "name": "TypeScript",
+  "description": "Test-owned Oxfmt and Oxlint reference",
+  "scripts": {
+    "format:check": "oxfmt --check .",
+    "format": "oxfmt .",
+    "lint": "oxlint --deny-warnings .",
+    "lint:fix": "oxlint --fix --deny-warnings .",
+    "check": "node --run format:check && node --run lint"
+  },
+  "devDependencies": {
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0"
+  },
+  "files": [
+    {
+      "source": "files/.oxfmtrc.json",
+      "target": ".oxfmtrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/ignorePatterns": "append-unique"
+      }
+    },
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/plugins": "append-unique",
+        "/jsPlugins": "append-unique",
+        "/extends": "append-unique",
+        "/overrides": "append-unique",
+        "/ignorePatterns": "append-unique"
+      }
+    }
+  ]
+}

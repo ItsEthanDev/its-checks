@@ -33,7 +33,7 @@ function recognize(command: string, helper: string): { original?: string } | und
 export function composeScripts(
   manifest: JsonObject,
   selected: readonly LoadedBundle[],
-  deselected: readonly LoadedBundle[],
+  previous: readonly LoadedBundle[],
   manager: PackageManager,
 ): Effect.Effect<Readonly<Record<string, string>>, PlanError> {
   return Effect.gen(function* () {
@@ -48,9 +48,7 @@ export function composeScripts(
     }
     const contributions = yield* scriptContributions(orderedBundles(selected));
     const known = new Set(
-      [...selected, ...deselected].flatMap((bundle) =>
-        Object.keys(bundle.declaration.scripts ?? {}),
-      ),
+      [...selected, ...previous].flatMap((bundle) => Object.keys(bundle.declaration.scripts ?? {})),
     );
     for (const name of [...known].toSorted()) {
       yield* updateScript(scripts, name, manager, contributions.get(name));
@@ -78,7 +76,7 @@ function scriptContributions(selected: readonly LoadedBundle[]) {
         if (typeof replacement === "string") {
           continue;
         }
-        const target = contributions.get(name)?.get(replacement.replaces);
+        const target = contributions.get(name)?.get(`${bundle.repository}:${replacement.replaces}`);
         const fail = (detail: string) =>
           Effect.fail(new PlanError({ source: bundle.source, field: `scripts.${name}`, detail }));
         if (target === undefined) {

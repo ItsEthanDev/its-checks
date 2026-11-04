@@ -36,14 +36,12 @@
     "@clack/prompts": "1.8.1",
     "effect": "4.1.1",
     "jsonc-parser": "3.3.1",
-    "tsx": "4.23.15",
-    "yaml": "2.9.1"
+    "tsx": "4.23.15"
   },
   "devDependencies": {
     "@effect/tsgo": "0.63.0",
     "@types/node": "24.19.2",
     "ajv": "8.17.1",
-    "ajv-formats": "3.0.1",
     "dependency-cruiser": "18.7.2",
     "husky": "9.1.7",
     "oxfmt": "0.75.0",

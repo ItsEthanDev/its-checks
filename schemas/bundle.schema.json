@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "its-checks bundle",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hidden": {
+      "type": "boolean"
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "operation": {
+            "type": "string",
+            "enum": ["seed", "compose", "replace"]
+          },
+          "format": {
+            "type": "string",
+            "enum": ["json", "jsonc"]
+          },
+          "arrays": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": ["append-unique"]
+            }
+          },
+          "executable": {
+            "type": "boolean"
+          },
+          "replaces": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["source", "target", "operation"],
+        "additionalProperties": false
+      }
+    },
+    "scripts": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "replaces": {
+                "type": "string"
+              }
+            },
+            "required": ["command", "replaces"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "devDependencies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["string", "number", "boolean", "path"]
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "destination": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "field": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["file", "field"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "prompt", "type", "destination"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["name", "description"],
+  "additionalProperties": false,
+  "$defs": {}
+}

@@ -1,0 +1,29 @@
+{
+  "name": "TanStack Router",
+  "description": "Inference-safe route options and generated route-tree exclusions",
+  "devDependencies": {
+    "@tanstack/eslint-plugin-router": "1.162.0"
+  },
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxfmtrc.json",
+      "target": ".oxfmtrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/ignorePatterns": "append-unique"
+      }
+    },
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/jsPlugins": "append-unique",
+        "/ignorePatterns": "append-unique"
+      }
+    }
+  ]
+}

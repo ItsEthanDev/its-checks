@@ -1,0 +1,16 @@
+{
+  "name": "React",
+  "description": "Hooks correctness, safe JSX, and accessible interactions",
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/plugins": "append-unique"
+      }
+    }
+  ]
+}

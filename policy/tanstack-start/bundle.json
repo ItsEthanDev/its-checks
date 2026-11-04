@@ -1,0 +1,25 @@
+{
+  "name": "TanStack Start",
+  "description": "Generated-output exclusions; select TanStack Router for route rules",
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.oxfmtrc.json",
+      "target": ".oxfmtrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/ignorePatterns": "append-unique"
+      }
+    },
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "arrays": {
+        "/ignorePatterns": "append-unique"
+      }
+    }
+  ]
+}

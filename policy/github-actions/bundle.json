@@ -1,0 +1,12 @@
+{
+  "name": "GitHub Actions checks",
+  "description": "Node 24 quality checks using the declared, tested package manager",
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.github/workflows/its-checks.yml",
+      "target": ".github/workflows/its-checks.yml",
+      "operation": "replace"
+    }
+  ]
+}

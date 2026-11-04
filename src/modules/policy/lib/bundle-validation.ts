@@ -2,7 +2,7 @@ import { Effect } from "effect";
 
 import type { BundleError } from "./bundle-errors.ts";
 import { checkPath, unique, validate, type Context } from "./bundle-io.ts";
-import type { BundleDeclaration } from "./bundle-types.ts";
+import type { BundleDeclaration, FileDeclaration } from "./bundle-types.ts";
 
 const identifier = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const packageName = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
@@ -50,37 +50,6 @@ function checkDependencies(ctx: Context, declaration: BundleDeclaration) {
         `devDependencies.${name}`,
         !Object.hasOwn(declaration.devDependencies ?? {}, name),
         "A package cannot be declared in both dependency sections of one bundle",
-      );
-    }
-  });
-}
-function checkMigration(ctx: Context, migration: NonNullable<BundleDeclaration["migration"]>) {
-  return Effect.gen(function* () {
-    for (const section of ["removeFiles", "removeDependencies", "removeDevDependencies"] as const) {
-      const values = migration[section] ?? [];
-      yield* unique(ctx, `migration.${section}`, values);
-      for (const value of values) {
-        yield* checkMigrationEntry(ctx, section, value);
-      }
-    }
-  });
-}
-function checkMigrationEntry(ctx: Context, section: string, value: string) {
-  return Effect.gen(function* () {
-    if (section === "removeFiles") {
-      yield* checkPath(ctx, `migration.${section}`, value);
-      yield* validate(
-        ctx,
-        `migration.${section}`,
-        !value.split("/").some((p) => p.toLowerCase() === "package.json"),
-        "Cannot remove a package manifest",
-      );
-    } else {
-      yield* validate(
-        ctx,
-        `migration.${section}`,
-        packageName.test(value),
-        "Invalid npm package name",
       );
     }
   });
@@ -133,8 +102,33 @@ export function checkDeclaration(
   return Effect.gen(function* () {
     yield* checkScripts(ctx, declaration);
     yield* checkDependencies(ctx, declaration);
-    if (declaration.migration !== undefined) {
-      yield* checkMigration(ctx, declaration.migration);
+    yield* unique(ctx, "requires", declaration.requires ?? []);
+    for (const id of declaration.requires ?? []) {
+      yield* validate(
+        ctx,
+        "requires",
+        identifier.test(id),
+        "Dependencies must use source-local bundle IDs",
+      );
+    }
+    for (const command of Object.values(declaration.scripts ?? {})) {
+      if (typeof command !== "string") {
+        yield* validate(
+          ctx,
+          "replaces",
+          identifier.test(command.replaces),
+          "Replacement targets must use source-local bundle IDs",
+        );
+      }
+    }
+    const files = declaration.files ?? [];
+    yield* unique(
+      ctx,
+      "files.target",
+      files.map((file) => file.target),
+    );
+    for (const file of files) {
+      yield* checkFile(ctx, file);
     }
     const inputs = declaration.inputs ?? [];
     yield* unique(
@@ -153,6 +147,59 @@ export function checkDeclaration(
     );
     for (const [index, input] of inputs.entries()) {
       yield* checkInput(ctx, input, index);
+    }
+  });
+}
+function checkFile(ctx: Context, file: FileDeclaration) {
+  return Effect.gen(function* () {
+    yield* checkPath(ctx, "files.source", file.source);
+    yield* checkPath(ctx, "files.target", file.target);
+    yield* validate(
+      ctx,
+      "files.source",
+      file.source.startsWith("files/"),
+      "File sources must be under files/",
+    );
+    yield* validate(
+      ctx,
+      "files.target",
+      !["package.json", ".its-checks.json"].includes(file.target.toLowerCase()),
+      "Package and saved-state files use dedicated contracts",
+    );
+    yield* validate(
+      ctx,
+      "files",
+      file.operation === "compose"
+        ? file.format !== undefined
+        : file.arrays === undefined && file.replaces === undefined,
+      "Compose requires a JSON format; array operations apply only to compose",
+    );
+    for (const target of Object.values(file.replaces ?? {})) {
+      yield* validate(
+        ctx,
+        "files.replaces",
+        identifier.test(target),
+        "Replacement targets must use source-local bundle IDs",
+      );
+    }
+    for (const pointer of [
+      ...Object.keys(file.arrays ?? {}),
+      ...Object.keys(file.replaces ?? {}),
+    ]) {
+      yield* validate(
+        ctx,
+        "files.arrays",
+        pointer.startsWith("/") &&
+          !/~(?![01])/u.test(pointer) &&
+          !pointer
+            .split("/")
+            .some((key) =>
+              ["__proto__", "constructor", "prototype"].includes(
+                key.replaceAll("~1", "/").replaceAll("~0", "~"),
+              ),
+            ),
+        "Expected a safe JSON Pointer",
+      );
     }
   });
 }

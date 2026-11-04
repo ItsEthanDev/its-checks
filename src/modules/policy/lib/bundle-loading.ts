@@ -1,15 +1,15 @@
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import { Effect } from "effect";
 
-import { canonical } from "../documents.ts";
 import type { BundleError } from "./bundle-errors.ts";
 import {
-  checkPath,
   compare,
   decode,
   directory,
   fail,
+  io,
   json,
   readText,
   unique,
@@ -18,125 +18,124 @@ import {
 import { nativeFiles } from "./bundle-native.ts";
 import {
   BundleDeclaration,
-  RootDeclaration,
   type BundleInfo,
-  type BundleKind,
   type LoadedPolicy,
   type PolicyCatalog,
   type PolicySelections,
+  type SourceRevision,
 } from "./bundle-types.ts";
 import { checkDeclaration } from "./bundle-validation.ts";
-const identifier = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function bundle(root: string, kind: BundleKind, id: string) {
-  const key =
-    kind === "base" ? "base" : `${kind === "integration" ? "integrations" : "automation"}/${id}`;
-  const dir = path.join(root, "typescript", key);
-  const ctx = { bundle: key, source: path.join(dir, "bundle.json") };
-  return Effect.gen(function* () {
-    const entries = yield* directory({ ...ctx, source: dir });
-    yield* validate(
-      ctx,
-      "$",
-      entries.every((entry) => entry === "bundle.json" || entry === "files"),
-      "Bundle directories contain only bundle.json and files/; executable installers are not supported",
-    );
-    const declaration = yield* decode(
-      ctx,
-      BundleDeclaration,
-      yield* json(ctx, yield* readText(ctx), false),
-    );
-    yield* checkDeclaration(ctx, declaration);
-    return { id, key, kind, directory: dir, source: ctx.source, declaration } satisfies BundleInfo;
-  });
-}
-
-/** Discover display metadata without loading unselected native policy. No target filesystem is accepted. */
-export function discoverPolicy(policyRoot: string): Effect.Effect<PolicyCatalog, BundleError> {
+export const identifier = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+/** Discover only declarations. Source identity is provided by the fetcher, never by policy content. */
+export function discoverPolicy(
+  policyRoot: string,
+  repository: string,
+): Effect.Effect<PolicyCatalog, BundleError> {
   return Effect.gen(function* () {
     const root = path.resolve(policyRoot);
-    const ctx = { bundle: "policy", source: path.join(root, "bundle.json") };
-    yield* directory({ ...ctx, source: root });
-    yield* directory({ ...ctx, source: path.join(root, "typescript") });
-    const declaration = yield* decode(
-      ctx,
-      RootDeclaration,
-      yield* json(ctx, yield* readText(ctx), false),
-    );
-    const url = URL.parse(declaration.source.repository);
-    yield* validate(
-      ctx,
-      "source.repository",
-      url !== null &&
-        url.protocol === "https:" &&
-        url.username === "" &&
-        url.password === "" &&
-        url.search === "" &&
-        url.hash === "",
-      "Expected an HTTPS repository URL without credentials, query, or fragment",
-    );
-    yield* checkPath(ctx, "source.selectionSchema", declaration.source.selectionSchema);
-    yield* validate(
-      ctx,
-      "source.selectionSchema",
-      declaration.source.selectionSchema.endsWith(".json"),
-      "Expected a repository-relative JSON Schema path",
-    );
-    const baseline = yield* bundle(root, "base", "base");
-    const discover = (kind: "integration" | "automation") =>
-      Effect.gen(function* () {
-        const parent = path.join(
-          root,
-          "typescript",
-          kind === "integration" ? "integrations" : "automation",
-        );
-        const ids = yield* directory({ bundle: "policy", source: parent }, true);
-        yield* unique({ bundle: "policy", source: parent }, "$", ids);
-        const bundles: BundleInfo[] = [];
-        for (const id of ids) {
-          yield* validate(
-            { bundle: id, source: parent },
-            "$",
-            identifier.test(id),
-            "Bundle directory IDs must be lowercase words separated by hyphens",
-          );
-          bundles.push(yield* bundle(root, kind, id));
-        }
-        return bundles;
+    const ctx = { bundle: repository, source: root };
+    const bundles: BundleInfo[] = [];
+    const entries = yield* directory(ctx);
+    yield* unique(ctx, "$", entries);
+    for (const id of entries) {
+      const dir = path.join(root, id);
+      const stat = yield* io(ctx, () => fs.lstat(dir));
+      if (stat.isFile() && id === "README.md") {
+        continue;
+      }
+      yield* validate(
+        ctx,
+        id,
+        identifier.test(id) && stat.isDirectory(),
+        "Expected a lowercase hyphenated bundle directory (or README.md)",
+      );
+      const source = path.join(dir, "bundle.json");
+      const context = { bundle: `${repository}:${id}`, source };
+      const children = yield* directory({ ...context, source: dir });
+      yield* validate(
+        context,
+        "$",
+        children.every((entry) => entry === "bundle.json" || entry === "files"),
+        "Bundle directories contain only bundle.json and files/; executable installers are unsupported",
+      );
+      const declaration = yield* decode(
+        context,
+        BundleDeclaration,
+        yield* json(context, yield* readText(context), false),
+      );
+      yield* checkDeclaration(context, declaration);
+      bundles.push({
+        id,
+        key: `${repository}:${id}`,
+        repository,
+        directory: dir,
+        source,
+        declaration,
       });
-    return {
-      root,
-      declaration,
-      baseline,
-      integrations: yield* discover("integration"),
-      automation: yield* discover("automation"),
-    };
+    }
+    return { root, bundles };
   });
 }
 
-/** Load baseline and explicit selections. Read-only: never executes policy, installs, or writes. */
+/** Resolve a source-local dependency graph in deterministic dependency-first order. */
 export function loadPolicy(
   policyRoot: string,
   selections: PolicySelections,
+  revision: SourceRevision,
 ): Effect.Effect<LoadedPolicy, BundleError> {
   return Effect.gen(function* () {
-    const catalog = yield* discoverPolicy(policyRoot);
-    const selected: BundleInfo[] = [catalog.baseline];
-    for (const kind of ["integrations", "automation"] as const) {
-      const ctx = { bundle: "policy", source: catalog.root };
-      yield* unique(ctx, `selections.${kind}`, selections[kind]);
-      for (const id of [...selections[kind]].toSorted(compare)) {
-        const info = catalog[kind].find((candidate) => candidate.id === id);
-        if (info === undefined) {
-          return yield* fail(ctx, `selections.${kind}`, `Unknown bundle ID ${canonical(id)}`);
+    const catalog = yield* discoverPolicy(policyRoot, revision.repository);
+    const ctx = { bundle: revision.repository, source: catalog.root };
+    yield* unique(ctx, "bundles", selections);
+    const selected: BundleInfo[] = [];
+    const complete = new Set<string>();
+    const visiting: string[] = [];
+    const visit = (id: string): Effect.Effect<void, BundleError> =>
+      Effect.gen(function* () {
+        if (visiting.includes(id)) {
+          return yield* fail(
+            ctx,
+            "requires",
+            `Dependency cycle: ${[...visiting, id].join(" -> ")}`,
+          );
         }
+        if (complete.has(id)) {
+          return undefined;
+        }
+        const info = catalog.bundles.find((bundle) => bundle.id === id);
+        if (info === undefined) {
+          return yield* fail(
+            ctx,
+            "requires",
+            `Missing bundle ${id}, required by ${visiting.at(-1) ?? "explicit selection"}`,
+          );
+        }
+        visiting.push(id);
+        for (const dependency of (info.declaration.requires ?? []).toSorted(compare)) {
+          yield* visit(dependency);
+        }
+        visiting.pop();
+        complete.add(id);
         selected.push(info);
+        return undefined;
+      });
+    for (const id of selections.toSorted(compare)) {
+      const info = catalog.bundles.find((bundle) => bundle.id === id);
+      if (info?.declaration.hidden === true) {
+        return yield* fail(
+          ctx,
+          "bundles",
+          `Bundle ${id} is dependency-only; revise the explicit selection`,
+        );
       }
+      yield* visit(id);
     }
-    const bundles = [];
-    for (const info of selected) {
-      bundles.push(yield* nativeFiles(info));
-    }
-    return { root: catalog.root, declaration: catalog.declaration, bundles };
+    const bundles = yield* Effect.forEach(selected, nativeFiles);
+    return {
+      root: catalog.root,
+      sources: [{ ...revision, root: catalog.root, bundles: selections.toSorted(compare) }],
+      bundles,
+    };
   });
 }

@@ -1,7 +1,0 @@
-{
-  "schemaVersion": 1,
-  "source": {
-    "repository": "https://github.com/ItsEthanDev/its-checks",
-    "selectionSchema": "schemas/its-checks.schema.json"
-  }
-}

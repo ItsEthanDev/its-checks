@@ -1,0 +1,29 @@
+{
+  "name": "Dependency Cruiser",
+  "description": "Public module entry points, public-interface tests, and dependency hygiene",
+  "devDependencies": {
+    "dependency-cruiser": "18.7.2"
+  },
+  "scripts": {
+    "lint": "depcruise .",
+    "lint:fix": "depcruise ."
+  },
+  "requires": ["typescript"],
+  "files": [
+    {
+      "source": "files/.dependency-cruiser.json",
+      "target": ".dependency-cruiser.json",
+      "operation": "replace",
+      "format": "json"
+    },
+    {
+      "source": "files/.oxlintrc.json",
+      "target": ".oxlintrc.json",
+      "operation": "compose",
+      "format": "json",
+      "replaces": {
+        "/rules/import~1no-cycle": "typescript"
+      }
+    }
+  ]
+}

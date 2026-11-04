@@ -87,16 +87,14 @@ export function applyPlan(
   options: ApplicationOptions,
 ): Effect.Effect<ApplicationReport, ApplicationError> {
   return Effect.gen(function* () {
-    // Keep the displayed plan intact. Retain prior IDs until every config/cleanup operation succeeds.
+    // Keep prior pins until configuration, cleanup, and dependency installation succeed.
     const changed = plan.files.filter((file) => !same(file.before, file.after));
-    const changes = [
-      ...changed.filter((file) => file.path !== selectionFilename),
-      ...changed.filter((file) => file.path === selectionFilename),
-    ];
     const assess: ApplicationOperation = { kind: "assess-dependencies", path: "package.json" };
     const install: ApplicationOperation = { kind: "install-dependencies", path: "package.json" };
     const completed: ApplicationOperation[] = [];
-    let incomplete = [...changes.map(operation), assess, install];
+    const configuration = changed.filter((file) => file.path !== selectionFilename);
+    const intent = changed.filter((file) => file.path === selectionFilename);
+    let incomplete = [...configuration.map(operation), assess, install, ...intent.map(operation)];
     let dependencyWork: ApplicationReport["dependencyWork"] = "not-assessed";
     if (options.approved !== true) {
       return { status: "declined", completed, incomplete, dependencyWork };
@@ -127,7 +125,7 @@ export function applyPlan(
       });
     yield* validatePlan(plan, failure);
     const fileSystem = options.fileSystem ?? nodeApplicationFileSystem;
-    for (const file of changes) {
+    for (const file of configuration) {
       const currentOperation = operation(file);
       yield* applyFile(file, { root: plan.snapshot.root, fileSystem, completed, failure }).pipe(
         Effect.catch((cause) => reportFileFailure(cause, file, plan.snapshot.root, failure)),
@@ -139,7 +137,7 @@ export function applyPlan(
       .assess(plan)
       .pipe(Effect.mapError((cause) => failure("dependencies", cause.message, assess)));
     completed.push(assess);
-    incomplete = [install];
+    incomplete = [install, ...intent.map(operation)];
     dependencyWork = required;
     if (required === "required") {
       yield* options.dependencies
@@ -147,6 +145,15 @@ export function applyPlan(
         .pipe(Effect.mapError((cause) => failure("dependencies", cause.message, install)));
       dependencyWork = "completed";
       completed.push(install);
+    }
+    incomplete = intent.map(operation);
+    // Advance source pins only after configuration and dependency installation succeed.
+    for (const file of intent) {
+      yield* applyFile(file, { root: plan.snapshot.root, fileSystem, completed, failure }).pipe(
+        Effect.catch((cause) => reportFileFailure(cause, file, plan.snapshot.root, failure)),
+      );
+      completed.push(operation(file));
+      incomplete = incomplete.slice(1);
     }
     incomplete = [];
     return { status: "completed", completed, incomplete, dependencyWork };

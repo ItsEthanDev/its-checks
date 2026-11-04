@@ -10,9 +10,8 @@ import { defined, json, manifest as parseManifest } from "../../../../test/share
 import { fixture, snapshot } from "../../../../test/shared/fixtures.ts";
 import { loadPolicy, resolveInputs, type PolicySelections } from "../../policy/index.ts";
 import { planProject, type ChangePlan, type PlanOptions, type PackageManager } from "../index.ts";
-
 const run = Effect.runPromise;
-const empty: PolicySelections = { integrations: [], automation: [] };
+const empty: PolicySelections = ["base"];
 function content(plan: ChangePlan): string {
   const after = defined(plan.files.find((file) => file.path === "package.json")).after;
   assert.equal(after.kind, "file");
@@ -23,7 +22,14 @@ async function setup(t: Parameters<typeof fixture>[0]) {
   const f = await fixture(t);
   await f.add("base", { name: "TypeScript" });
   const resolve = async (selections = empty) =>
-    await run(resolveInputs(await run(loadPolicy(f.policy, selections)), {}));
+    await run(
+      resolveInputs(
+        await run(
+          loadPolicy(f.policy, selections, { repository: "example/fork", commit: "a".repeat(40) }),
+        ),
+        {},
+      ),
+    );
   const plan = async (
     selections = empty,
     manager: PackageManager = "npm",
@@ -81,37 +87,36 @@ process.exit(result.status ?? 90);
     });
   return { ...f, plan, resolve, writeScripts, materialize, execute };
 }
-
 await test("check and prepare compose in bundle order, deduplicate exact strings and retain unrelated scripts", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
     scripts: { check: "printf 'base\\n'", prepare: "printf 'base\\n'" },
   });
-  await f.add("integrations/z", {
+  await f.add("z", {
     name: "Z",
     scripts: { check: "printf 'z\\n'", prepare: "printf 'z\\n'" },
   });
-  await f.add("integrations/a", {
+  await f.add("a", {
     name: "A",
     scripts: { check: "printf 'base\\n'", prepare: "printf 'a\\n'" },
   });
-  await f.add("automation/ci", {
+  await f.add("ci", {
     name: "CI",
     scripts: { check: "printf 'ci\\n'", prepare: "printf 'ci\\n'" },
   });
-  const selections = { integrations: ["z", "a"], automation: ["ci"] };
+  const selections = ["base", "z", "a", "ci"];
   const before = await snapshot(f.project);
   const p = await f.plan(selections);
   assert.equal(p.complete, true);
   assert.equal(p.requiresConfirmation, false);
   assert.equal(manifest(p).scripts.install, "exit 99");
   assert.deepEqual(await snapshot(f.project), before, "planning is read-only");
-  assert.deepEqual(p, await f.plan({ ...selections, integrations: ["a", "z"] }));
+  assert.deepEqual(p, await f.plan(["ci", "a", "base", "z"]));
   await f.materialize(p);
   for (const [name, expected] of [
-    ["check", "base\nz\nci\n"],
-    ["prepare", "base\na\nz\nci\n"],
+    ["check", "base\nci\nz\n"],
+    ["prepare", "base\na\nci\nz\n"],
   ] as const) {
     const result = f.execute(p, name);
     assert.equal(result.status, 0, result.stderr);
@@ -121,33 +126,33 @@ await test("check and prepare compose in bundle order, deduplicate exact strings
   assert.ok(rerun.files.every((file) => file.kind === "noop"));
   assert.equal(rerun.requiresConfirmation, false);
 });
-
 await test("only exact duplicates collapse; equivalent but different strings still execute", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf x" } });
-  await f.add("integrations/a", { name: "A", scripts: { check: "printf x " } });
-  await f.add("integrations/b", { name: "B", scripts: { check: "printf x" } });
-  const p = await f.plan({ integrations: ["b", "a"], automation: [] });
+  await f.add("a", { name: "A", scripts: { check: "printf x " } });
+  await f.add("b", { name: "B", scripts: { check: "printf x" } });
+  const p = await f.plan(["base", "b", "a"]);
   await f.materialize(p);
   const result = f.execute(p, "check");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "xx");
 });
-
 await test("a replacement keeps its target's position and restores it on deselection", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
     scripts: { lint: "printf 'base\\n'", check: "npm run lint" },
   });
-  await f.add("integrations/a", { name: "A", scripts: { lint: "printf 'extra\\n'" } });
-  await f.add("integrations/z", {
+  await f.add("a", { name: "A", scripts: { lint: "printf 'extra\\n'" } });
+  await f.add("z", {
     name: "Z",
     scripts: { lint: { command: "printf 'replacement\\n'", replaces: "base" } },
   });
   await f.writeScripts({ lint: "printf 'original\\n'", other: "echo untouched" });
-  const selected = { integrations: ["z", "a"], automation: [] };
-  const known = await run(loadPolicy(f.policy, selected));
+  const selected = ["base", "z", "a"];
+  const known = await run(
+    loadPolicy(f.policy, selected, { repository: "example/fork", commit: "a".repeat(40) }),
+  );
   const p = await f.plan(selected);
   await f.materialize(p);
   const result = f.execute(p, "check");
@@ -155,48 +160,42 @@ await test("a replacement keeps its target's position and restores it on deselec
   assert.equal(result.stdout, "original\nreplacement\nextra\n");
   assert.equal(manifest(p).scripts.other, "echo untouched");
   assert.ok((await f.plan(selected)).files.every((file) => file.kind === "noop"));
-  const restored = await f.plan({ integrations: ["a"], automation: [] }, "npm", {
-    previous: (await f.resolve(selected)).intent,
-    currentBundles: known.bundles,
+  const restored = await f.plan(["base", "a"], "npm", {
+    previousBundles: known.bundles,
   });
   await f.materialize(restored);
   const after = f.execute(restored, "check");
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, "original\nbase\nextra\n");
 });
-
 await test("replacement targets retain their identity until after command deduplication", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf 'shared\\n'" } });
-  await f.add("integrations/a", { name: "A", scripts: { check: "printf 'shared\\n'" } });
-  await f.add("integrations/b", {
+  await f.add("a", { name: "A", scripts: { check: "printf 'shared\\n'" } });
+  await f.add("b", {
     name: "B",
     scripts: { check: { command: "printf 'replacement\\n'", replaces: "base" } },
   });
-  const p = await f.plan({ integrations: ["a", "b"], automation: [] });
+  const p = await f.plan(["base", "a", "b"]);
   await f.materialize(p);
   const result = f.execute(p, "check");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "replacement\nshared\n");
 });
-
 await test("missing targets and conflicting replacements fail read-only with source context", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf base" } });
-  await f.add("integrations/a", {
+  await f.add("a", {
     name: "A",
-    scripts: { check: { command: "printf a", replaces: "integrations/missing" } },
+    scripts: { check: { command: "printf a", replaces: "missing" } },
   });
   const before = await snapshot(f.project);
-  await assert.rejects(
-    f.plan({ integrations: ["a"], automation: [] }),
-    /integrations\/a\/bundle\.json.*scripts\.check.*integrations\/missing/s,
-  );
-  await f.add("integrations/a", {
+  await assert.rejects(f.plan(["base", "a"]), /a\/bundle\.json.*scripts\.check.*missing/s);
+  await f.add("a", {
     name: "A",
     scripts: { check: { command: "printf a", replaces: "base" } },
   });
-  await f.add("integrations/b", {
+  await f.add("b", {
     name: "B",
     scripts: { check: { command: "printf b", replaces: "base" } },
   });
@@ -205,30 +204,28 @@ await test("missing targets and conflicting replacements fail read-only with sou
     ["b", "a"],
   ]) {
     await assert.rejects(
-      f.plan({ integrations, automation: [] }),
-      /integrations\/b\/bundle\.json.*scripts\.check.*[Cc]onflict.*integrations\/a\/bundle\.json/s,
+      f.plan(["base", ...integrations]),
+      /b\/bundle\.json.*scripts\.check.*[Cc]onflict.*a\/bundle\.json/s,
     );
   }
   assert.deepEqual(await snapshot(f.project), before);
 });
-
 await test("identical replacements coalesce and can target an integration contribution", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "printf 'base\\n'" } });
-  await f.add("integrations/a", { name: "A", scripts: { check: "printf 'extra\\n'" } });
+  await f.add("a", { name: "A", scripts: { check: "printf 'extra\\n'" } });
   for (const id of ["b", "c"]) {
-    await f.add(`integrations/${id}`, {
+    await f.add(id, {
       name: id,
-      scripts: { check: { command: "printf 'replacement\\n'", replaces: "integrations/a" } },
+      scripts: { check: { command: "printf 'replacement\\n'", replaces: "a" } },
     });
   }
-  const p = await f.plan({ integrations: ["c", "a", "b"], automation: [] });
+  const p = await f.plan(["base", "c", "a", "b"]);
   await f.materialize(p);
   const result = f.execute(p, "check");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "base\nreplacement\n");
 });
-
 await test("an absent scripts section stays absent when there is nothing to manage", async (t) => {
   const f = await setup(t);
   await fs.writeFile(path.join(f.project, "package.json"), '{ "name": "fixture" }\n');
@@ -236,7 +233,6 @@ await test("an absent scripts section stays absent when there is nothing to mana
   assert.equal(json(content(p)).scripts, undefined);
   assert.equal(p.files.find((file) => file.path === "package.json")?.kind, "noop");
 });
-
 await test("opaque compound originals and contributions keep POSIX shell semantics", async (t) => {
   const originals = [
     "printf 'one\\n' && printf 'two\\n'",
@@ -264,8 +260,8 @@ await test("opaque compound originals and contributions keep POSIX shell semanti
   for (const [index, original] of originals.entries()) {
     await f.writeScripts({ check: original, untouched: "echo untouched" });
     await f.add("base", { name: "Base", scripts: { check: original } });
-    await f.add("integrations/end", { name: "End", scripts: { check: "printf 'managed-end\\n'" } });
-    const p = await f.plan({ integrations: ["end"], automation: [] });
+    await f.add("end", { name: "End", scripts: { check: "printf 'managed-end\\n'" } });
+    const p = await f.plan(["base", "end"]);
     await f.materialize(p);
     const result = f.execute(p, "check");
     assert.equal(result.status, 0, `${original}: ${result.stderr}`);
@@ -276,15 +272,14 @@ await test("opaque compound originals and contributions keep POSIX shell semanti
     assert.equal(manifest(p).scripts.untouched, "echo untouched");
   }
 });
-
 await test("failure in an original or contribution prevents later expressions, without flattening ||", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
     scripts: { check: "false || (printf 'recovered\\n'; exit 7)" },
   });
-  await f.add("integrations/end", { name: "End", scripts: { check: "printf 'must-not-run\\n'" } });
-  const selected = { integrations: ["end"], automation: [] };
+  await f.add("end", { name: "End", scripts: { check: "printf 'must-not-run\\n'" } });
+  const selected = ["base", "end"];
   let p = await f.plan(selected);
   await f.materialize(p);
   let result = f.execute(p, "check");
@@ -297,30 +292,29 @@ await test("failure in an original or contribution prevents later expressions, w
   assert.equal(result.status, 9);
   assert.equal(result.stdout, "original\n");
 });
-
 await test("deselection rebuilds shared scripts, restores original bytes and removes originally absent wrappers", async (t) => {
   const f = await setup(t);
   const original = "printf 'original\\n' # retained exactly\n";
   await f.writeScripts({ check: original, other: "echo other" });
-  await f.add("integrations/a", {
+  await f.add("a", {
     name: "A",
     scripts: { check: "printf 'shared\\n'", prepare: "printf 'prepare\\n'" },
   });
-  await f.add("integrations/b", { name: "B", scripts: { check: "printf 'shared\\n'" } });
-  const both = { integrations: ["a", "b"], automation: [] };
-  const known = await run(loadPolicy(f.policy, both));
+  await f.add("b", { name: "B", scripts: { check: "printf 'shared\\n'" } });
+  const both = ["base", "a", "b"];
+  const known = await run(
+    loadPolicy(f.policy, both, { repository: "example/fork", commit: "a".repeat(40) }),
+  );
   const p = await f.plan(both);
   await f.materialize(p);
-  const previous = (await f.resolve(both)).intent;
-  const one = await f.plan({ integrations: ["b"], automation: [] }, "npm", {
-    previous,
-    currentBundles: known.bundles,
+  const one = await f.plan(["base", "b"], "npm", {
+    previousBundles: known.bundles,
   });
   assert.equal(manifest(one).scripts["its-checks:check"], manifest(p).scripts["its-checks:check"]);
   assert.equal(manifest(one).scripts.prepare, undefined);
   assert.equal(manifest(one).scripts["its-checks:prepare"], undefined);
   await f.materialize(one);
-  const none = await f.plan(empty, "npm", { previous, currentBundles: known.bundles });
+  const none = await f.plan(empty, "npm", { previousBundles: known.bundles });
   assert.deepEqual(manifest(none).scripts, { check: original, other: "echo other" });
   assert.equal(none.requiresConfirmation, true);
   await f.materialize(none);
@@ -328,7 +322,6 @@ await test("deselection rebuilds shared scripts, restores original bytes and rem
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "original\n");
 });
-
 await test("edited helpers are normal replacement conflicts, not inferred command history", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "echo prescribed" } });
@@ -347,7 +340,6 @@ await test("edited helpers are normal replacement conflicts, not inferred comman
     manifest(first).scripts["its-checks:check"],
   );
 });
-
 await test("edited public references and unowned reserved helpers fail actionably without mutation", async (t) => {
   const f = await setup(t);
   await f.add("base", { name: "Base", scripts: { check: "echo managed" } });
@@ -368,18 +360,17 @@ await test("edited public references and unowned reserved helpers fail actionabl
   await f.add("base", { name: "Base", scripts: { "its-checks:custom": "echo forbidden" } });
   await assert.rejects(f.plan(), /reserved its-checks: namespace/);
 });
-
 await test("all target manager runners execute and exact wrappers migrate safely between managers", async (t) => {
   const f = await setup(t);
   await f.add("base", {
     name: "Base",
     scripts: { check: "printf 'managed\\n'", prepare: "printf 'prepared\\n'" },
   });
-  await f.add("integrations/override", {
+  await f.add("override", {
     name: "Override",
     scripts: { check: { command: "printf 'replacement\\n'", replaces: "base" } },
   });
-  const selected = { integrations: ["override"], automation: [] };
+  const selected = ["base", "override"];
   const original = "printf 'original\\n'";
   await f.writeScripts({ check: original });
   for (const manager of ["npm", "pnpm", "yarn", "bun"] as const) {

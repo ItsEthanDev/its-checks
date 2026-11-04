@@ -1,75 +1,80 @@
 # its-checks
 
-CLI that sets up formatting and linting in TypeScript projects, with optional integrations and automation.
+CLI that initializes and maintains project-selected code-quality tooling and conventions from GitHub policy repositories.
 
 ## Requirements
 
-Node.js 22 or newer (including npm) and Git on `PATH`.
+Node.js 22 or newer (including npm), Git, and the target project's package manager (npm, pnpm, Yarn, or Bun) on `PATH`.
 
-Install the target project's package manager (npm, pnpm, Yarn, or Bun) on `PATH`. Setup uses the project's existing package-manager configuration.
+Application runs the project's normal package-manager `install`, including lifecycle scripts and reruns with no configuration changes. The package manager owns dependency resolution and installation.
 
-After applying configuration, setup runs the selected manager's normal `install`, including on reruns with no configuration changes. The package manager owns dependency resolution and installation.
-
-## Run
+## Add policy sources
 
 From the target directory containing `package.json`, in a terminal:
 
 ```sh
-npx --yes 'ItsEthanDev/its-checks'
+npx --yes 'ItsEthanDev/its-checks' add ItsEthanDev/its-checks
+npx --yes 'ItsEthanDev/its-checks' add another/policies
 ```
 
-Use Space to select options and Enter to continue. Default-branch launches can reuse cached code; append `#<full-commit-sha>` to the repository reference to choose an immutable revision. Replace the repository reference to use a fork.
+The first repository reference selects the executable; the `add` argument selects a policy source. They need not be the same repository. GitHub-based executable distribution remains supported; npm publication and the rename are deferred.
 
-For a local checkout, run `npm install --omit=dev --ignore-scripts` there, then run this from the target directory:
+Choose bundles with Space and Enter. Sources contain ordinary bundles under `policy/`, with no mandatory baseline. Required bundles are included automatically and explained before application. Review the combined plan and approve it before any project changes or installation.
+
+Setup saves source identities, exact policy commits, explicit bundle selections, and non-secret answers in `.its-checks.json`. Commit this file for pinned reruns. Old selection files are unsupported; delete an old-format file and initialize afresh. Deleting state is not an uninstall and does not remove previously generated files.
+
+## Rerun, update, or remove
 
 ```sh
-node /absolute/path/to/its-checks/bin/its-checks.js
+# Edit selections across saved sources, using saved policy commits.
+npx --yes 'ItsEthanDev/its-checks'
+
+# Review an update to one source or all sources.
+npx --yes 'ItsEthanDev/its-checks' update author/policies
+npx --yes 'ItsEthanDev/its-checks' update
+
+# Review removal of a source and its managed contributions.
+npx --yes 'ItsEthanDev/its-checks' remove author/policies
 ```
 
-Review the generated package scripts for the commands supplied by your selected policy.
+Running without configured sources explains how to add one; it does not select a default policy. Updating the executable does not update saved policy commits. For an immutable executable revision, append `#<full-commit-sha>` to the executable repository reference.
 
-Setup generates `.its-checks.json` in the target project to save your selections, answers, and source identity. Keep it for reruns: setup uses it to prefill choices and clean up deselected integrations and automation.
+Sources are cached by repository and commit under `$XDG_CACHE_HOME/its-checks/policies` (default `~/.cache/its-checks/policies`). Pinned reruns use cached content or fetch that exact commit, never a newer substitute. Installation may still need network access.
 
-For agents and unattended setup, see [headless usage](docs/headless.md).
+Policy declares ownership explicitly: seeded files are created only if absent and left behind on removal; composed fields are managed within their declared scope; replacement files are managed in full and proposed for deletion on removal. Direct edits within managed content may be overwritten. Inspect the Git diff and restore exceptions as needed. No override file or edit tracking is required.
+
+Application is not transactional. Failures leave completed changes in place and report partial state. Source pins and answers are saved only after configuration and dependency installation succeed. Inspect failures and build a fresh plan before retrying.
+
+For unattended use, see [headless setup](docs/headless.md). For policy authoring, see [customize policy](docs/customize-policy.md).
 
 ## Set up with an AI agent
 
-Give your AI agent this prompt:
+Give your agent the source repositories to use and this workflow:
 
-```text
-Set up its-checks policies in this project.
-
-1. Read the upstream documentation:
-   https://github.com/ItsEthanDev/its-checks/blob/main/README.md
-   https://github.com/ItsEthanDev/its-checks/blob/main/docs/headless.md
-2. Discover the available integrations, automations, and required inputs using the documented headless interface.
-3. Inspect this project's code, dependencies, and existing configuration to determine which integrations apply. Ask me about anything you cannot determine.
-4. Explain the available automations and ask which ones I want. Ask for any required setup inputs you cannot infer.
-5. Create and review a setup plan, then apply it using the documented headless workflow.
-6. After setup succeeds, ask whether I want you to format the project and fix lint errors according to the newly added policies. Wait for my approval before making those fixes.
-```
-
-## Customize
-
-[Fork this repository and customize its policies](docs/customize-policy.md) to use your own formatting, linting, and automation preferences.
+1. Read this README and `docs/headless.md`.
+2. Discover each source through `options <owner/repo> --json` and use its returned exact commit.
+3. Inspect the project, explain suitable bundles and automation, and ask for selections and inputs that cannot be inferred. Do not supply secrets as answers.
+4. Create and review a combined plan, then apply the approved artifact.
+5. Ask before running installed formatters or lint fixes against project code.
 
 ## Develop
 
-Bun is this repository's development package manager. Install dependencies with `bun install --frozen-lockfile --ignore-scripts`.
+Bun is the development package manager:
 
-Edit the executed checkout's `policy/` declarations and native files, then rerun setup; no build is needed. Generated target configuration can be replaced on rerun. Implementation is in [`src/`](src/); the Node launcher uses `tsx` to run it directly.
+```sh
+bun install --frozen-lockfile --ignore-scripts
+node /absolute/path/to/its-checks/bin/its-checks.js add author/policies
+```
 
-`src/cli.ts` is the executable entry point. Implementation lives in `src/modules/`:
+No build is needed. `src/cli.ts` dispatches to six modules under `src/modules/`:
 
-- `policy`: bundle loading, validation, inputs, and saved intent.
-- `planning`: configuration composition, scripts, automation, and target snapshots.
-- `application`: approved-plan application and package-manager operations.
-- `setup`: shared workflow coordination and source revision detection.
-- `terminal`: interactive prompts and presentation.
-- `headless`: noninteractive commands and saved-plan validation.
+- `policy`: source fetching/cache, declarations, dependency graphs, inputs, and saved intent.
+- `planning`: file/package composition, conflict detection, cleanup, and target snapshots.
+- `application`: exact approved-plan application and package-manager operations.
+- `setup`: interactive workflow and shared multi-source planning coordination.
+- `terminal`: prompts and presentation.
+- `headless`: discovery, configuration, saved plans, and noninteractive commands.
 
-Module-root files are deliberate public entry points: `index.ts` exposes primary operations; additional files expose distinct contracts such as planning artifacts or native adapters. Implementation lives in `lib/`, and module-owned tests live in `tests/`. Cross-module callers and tests use public entry points, never `lib/` or another module's test helpers.
+Module-root files are public entry points. Implementation lives in `lib/`, with module-owned tests in `tests/`. Cross-module callers and tests use public entry points, never another module's internals or test helpers. Module tests are excluded from installed packages and generator fingerprints. Executable fingerprints exclude policy content because policy revisions are independent.
 
-The authored `policy/` and `schemas/` remain separate runtime assets. Module tests are excluded from the installed package and saved-plan generator fingerprints.
-
-Follow the [project standards](STANDARDS.md) and [testing guidance](docs/testing.md).
+The authored `policy/` remains a normal source repository alongside the implementation; it does not provide a built-in default. Local uncommitted policy edits do not affect fetched policy revisions. Follow [project standards](STANDARDS.md) and [testing guidance](docs/testing.md).

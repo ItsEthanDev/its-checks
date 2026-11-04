@@ -8,7 +8,12 @@ import { Effect, Schema } from "effect";
 
 import { json, object, manifest as parseManifest } from "../../../../test/shared/assertions.ts";
 import { planProject, type ChangePlan, type PackageManager } from "../../planning/index.ts";
-import { loadPolicy, resolveInputs, loadPreviousIntent } from "../../policy/index.ts";
+import {
+  loadPolicy,
+  resolveInputs,
+  loadPreviousIntent,
+  type LoadedBundle,
+} from "../../policy/index.ts";
 import { nodeManagerOperations } from "../adapters.ts";
 import {
   applyPlan,
@@ -17,14 +22,12 @@ import {
   resolveTargetManager,
   type ApplicationDependencies,
 } from "../index.ts";
-
 const run = Effect.runPromise;
-const empty = { integrations: [], automation: [] };
+const empty = ["base"];
 // Authored local lifecycle commands only. Dependencies are local archives without hooks or bin entries.
 const lifecycle = `node -e 'const f=require("node:fs"); if(!f.existsSync(".oxlintrc.json"))process.exit(81); f.appendFileSync("lifecycle.log","postinstall\\n"); if(f.existsSync("fail-lifecycle"))process.exit(42)'`;
 const original = `node -e 'require("node:fs").appendFileSync("commands.log","original\\n")'`;
 const helper = `node -e 'require("node:fs").appendFileSync("commands.log","helper\\n")'`;
-
 const put = async (file: string, value: string | object) => {
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(
@@ -34,16 +37,22 @@ const put = async (file: string, value: string | object) => {
 };
 const declaration = (archive: string | null) => ({
   name: "Base",
+  description: "Local tooling fixture",
+  files: [
+    {
+      source: "files/.oxlintrc.json",
+      target: ".oxlintrc.json",
+      operation: "replace",
+      format: "json",
+    },
+  ],
   scripts: { check: helper },
-  ...(archive !== null
-    ? { devDependencies: { "managed-dep": `file:../${archive}.tgz` } }
-    : { migration: { removeDevDependencies: ["managed-dep"] } }),
+  ...(archive !== null ? { devDependencies: { "managed-dep": `file:../${archive}.tgz` } } : {}),
 });
-
 for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
   await test(
     `${manager}: real install/update/remove/rerun/failure/retry/lifecycle/wrappers`,
-    { timeout: 120_000 },
+    { timeout: 120000 },
     async (t) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), `its-checks-real-${manager}-`));
       t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -74,15 +83,8 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         custom: { preserved: true },
       });
       await isolateManager(project, manager);
-      await put(path.join(policy, "bundle.json"), {
-        schemaVersion: 1,
-        source: {
-          repository: "https://github.com/example/fork",
-          selectionSchema: "schemas/its-checks.schema.json",
-        },
-      });
-      await put(path.join(policy, "typescript/base/bundle.json"), declaration("one"));
-      await put(path.join(policy, "typescript/base/files/.oxlintrc.json"), {
+      await put(path.join(policy, "base/bundle.json"), declaration("one"));
+      await put(path.join(policy, "base/files/.oxlintrc.json"), {
         rules: { "no-debugger": "error" },
       });
       const resolution = await run(resolveTargetManager(project, manager));
@@ -97,19 +99,29 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
           return nodeManagerOperations.run(cmd, args, cwd);
         },
       });
+      let prior: readonly LoadedBundle[] = [];
+      let pending: readonly LoadedBundle[] = [];
       const plan = async () => {
         const previous = await run(loadPreviousIntent(project));
-        const loaded = await run(loadPolicy(policy, empty));
+        const loaded = await run(
+          loadPolicy(policy, empty, { repository: "example/fork", commit: "a".repeat(40) }),
+        );
+        pending = loaded.bundles;
         return await run(
           planProject(project, await run(resolveInputs(loaded, {})), {
             manager: resolution.target.manager,
             ...(previous !== undefined ? { previous } : {}),
-            currentBundles: loaded.bundles,
+            previousBundles: prior,
           }),
         );
       };
-      const apply = async () =>
-        await run(applyPlan(await plan(), { approved: true, dependencies: adapter }));
+      const apply = async () => {
+        const report = await run(
+          applyPlan(await plan(), { approved: true, dependencies: adapter }),
+        );
+        prior = pending;
+        return report;
+      };
       const version = async (name = "managed-dep") =>
         json(await fs.readFile(path.join(project, "node_modules", name, "package.json"), "utf8"))
           .version;
@@ -131,7 +143,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         await fs.readFile(path.join(project, "lifecycle.log"), "utf8"),
         /^postinstall\n/,
       );
-      await put(path.join(policy, "typescript/base/bundle.json"), declaration("two"));
+      await put(path.join(policy, "base/bundle.json"), declaration("two"));
       await apply();
       assert.equal(await version(), "2.0.0");
       await put(path.join(project, "fail-lifecycle"), "");
@@ -148,7 +160,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
           },
         });
       }
-      await put(path.join(policy, "typescript/base/files/.oxlintrc.json"), {
+      await put(path.join(policy, "base/files/.oxlintrc.json"), {
         rules: { "no-debugger": "warn" },
       });
       const failed = await run(
@@ -177,7 +189,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
         await put(manifestFile, beforeFailure);
       }
       assert.equal((await apply()).dependencyWork, "completed");
-      await put(path.join(policy, "typescript/base/bundle.json"), declaration(null));
+      await put(path.join(policy, "base/bundle.json"), declaration(null));
       await apply();
       const removed = parseManifest(await fs.readFile(path.join(project, "package.json"), "utf8"));
       assert.equal(removed.devDependencies["managed-dep"], undefined);
@@ -186,7 +198,7 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
       // Changed lifecycle helpers behind stable wrappers must be handed to the normal install too.
       let wrapper: string | undefined;
       for (const value of ["first", "second"]) {
-        await put(path.join(policy, "typescript/base/bundle.json"), {
+        await put(path.join(policy, "base/bundle.json"), {
           ...declaration(null),
           scripts: {
             check: helper,
@@ -215,7 +227,6 @@ for (const manager of ["npm", "pnpm", "yarn", "bun"] as PackageManager[]) {
     },
   );
 }
-
 async function isolateManager(project: string, manager: PackageManager) {
   // Keep integration fixtures offline; these are test isolation settings, not product requirements.
   if (manager === "npm") {
@@ -225,7 +236,6 @@ async function isolateManager(project: string, manager: PackageManager) {
     await put(path.join(project, ".yarnrc"), "disable-self-update-check true\noffline true\n");
   }
 }
-
 async function checkMatchingReruns(
   project: string,
   plan: () => Promise<ChangePlan>,

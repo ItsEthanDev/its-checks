@@ -5,18 +5,22 @@ const Text = Schema.String.check(
 );
 const Strings = Schema.Record(Schema.String, Text);
 const InputValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
-
-export const RootDeclaration = Schema.Struct({
-  schemaVersion: Schema.Literal(1),
-  source: Schema.Struct({
-    repository: Text,
-    selectionSchema: Text,
-  }),
+export const FileDeclaration = Schema.Struct({
+  source: Text,
+  target: Text,
+  operation: Schema.Literals(["seed", "compose", "replace"]),
+  format: Schema.optionalKey(Schema.Literals(["json", "jsonc"])),
+  arrays: Schema.optionalKey(Schema.Record(Schema.String, Schema.Literal("append-unique"))),
+  executable: Schema.optionalKey(Schema.Boolean),
+  replaces: Schema.optionalKey(Schema.Record(Schema.String, Text)),
 });
-
+export type FileDeclaration = typeof FileDeclaration.Type;
 export const BundleDeclaration = Schema.Struct({
   name: Text,
-  description: Schema.optionalKey(Text),
+  description: Text,
+  requires: Schema.optionalKey(Schema.Array(Text)),
+  hidden: Schema.optionalKey(Schema.Boolean),
+  files: Schema.optionalKey(Schema.Array(FileDeclaration)),
   scripts: Schema.optionalKey(
     Schema.Record(
       Schema.String,
@@ -44,18 +48,8 @@ export const BundleDeclaration = Schema.Struct({
       }),
     ),
   ),
-  migration: Schema.optionalKey(
-    Schema.Struct({
-      removeFiles: Schema.optionalKey(Schema.Array(Text)),
-      removeDependencies: Schema.optionalKey(Schema.Array(Text)),
-      removeDevDependencies: Schema.optionalKey(Schema.Array(Text)),
-    }),
-  ),
 });
-
-export type RootDeclaration = typeof RootDeclaration.Type;
 export type BundleDeclaration = typeof BundleDeclaration.Type;
-export type BundleKind = "base" | "integration" | "automation";
 export type JsonValue =
   | null
   | boolean
@@ -63,47 +57,44 @@ export type JsonValue =
   | string
   | readonly JsonValue[]
   | { readonly [key: string]: JsonValue };
-
+export interface SourceRevision {
+  readonly repository: string;
+  readonly commit: string;
+}
+export interface PolicySource extends SourceRevision {
+  readonly root: string;
+  readonly bundles: readonly string[];
+}
 export interface BundleInfo {
   readonly id: string;
-  /** Namespaced stable identity: base, integrations/<id>, automation/<id>. */
   readonly key: string;
-  readonly kind: BundleKind;
+  readonly repository: string;
   readonly directory: string;
   readonly source: string;
   readonly declaration: BundleDeclaration;
 }
-
 export interface PolicyCatalog {
   readonly root: string;
-  readonly declaration: RootDeclaration;
-  readonly baseline: BundleInfo;
-  readonly integrations: readonly BundleInfo[];
-  readonly automation: readonly BundleInfo[];
+  readonly bundles: readonly BundleInfo[];
 }
-
-export interface PolicySelections {
-  readonly integrations: readonly string[];
-  readonly automation: readonly string[];
-}
-
+export type PolicySelections = readonly string[];
 export type NativeFile = {
   readonly path: string;
   readonly source: string;
   readonly content: string;
   readonly executable: boolean;
+  readonly operation: "seed" | "compose" | "replace";
+  readonly arrays: Readonly<Record<string, "append-unique">>;
+  readonly replaces: Readonly<Record<string, string>>;
 } & (
   | { readonly format: "json" | "jsonc"; readonly value: JsonValue }
-  | { readonly format: "yaml" | "shell" }
+  | { readonly format: "text" }
 );
-
 export interface LoadedBundle extends BundleInfo {
   readonly files: readonly NativeFile[];
 }
-
 export interface LoadedPolicy {
   readonly root: string;
-  readonly declaration: RootDeclaration;
-  /** Baseline, sorted integration IDs, then sorted automation IDs. */
+  readonly sources: readonly PolicySource[];
   readonly bundles: readonly LoadedBundle[];
 }
