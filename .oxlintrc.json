@@ -58,7 +58,7 @@
     "effecttsgo/strict-effect-provide": "off",
     "effecttsgo/unstable-api-usage": "off",
     "eqeqeq": "error",
-    "import/no-cycle": "error",
+    "import/no-cycle": "off",
     "import/no-mutable-exports": "error",
     "max-depth": ["error", 3],
     "max-lines": [

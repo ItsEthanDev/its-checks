@@ -98,6 +98,10 @@
         "(?:^|/)convex/_generated/"
       ]
     },
+    "enhancedResolveOptions": {
+      "exportsFields": ["exports"],
+      "conditionNames": ["import", "require", "node", "default", "types"]
+    },
     "tsConfig": { "fileName": "tsconfig.json" },
     "tsPreCompilationDeps": true
   }

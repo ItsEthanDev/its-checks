@@ -1,1 +1,1 @@
-export { headless } from "./headless.ts";
+export { headless } from "./lib/headless.ts";

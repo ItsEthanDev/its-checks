@@ -433,7 +433,7 @@ class CliChecks(unittest.TestCase):
         plan_file = self.make_plan()
         # Detect both policy changes and implementation-only changes, even without Git metadata.
         for changed in [self.policy / "typescript/base/files/.oxlintrc.json",
-                        self.policy.parent / "src/modules/policy/inputs.ts"]:
+                        self.policy.parent / "src/modules/policy/lib/inputs.ts"]:
             original = changed.read_bytes()
             changed.write_bytes(original + b"\n")
             before = self.state()

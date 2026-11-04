@@ -1,13 +1,11 @@
-export { discoverPolicy, loadPolicy } from "./bundle-loading.ts";
-export { BundleError } from "./bundle-errors.ts";
-export { json, safePath } from "./bundle-io.ts";
-export { canonical, isArray, isObject, jsonContent, type JsonObject } from "./json.ts";
+export { discoverPolicy, loadPolicy } from "./lib/bundle-loading.ts";
+export { BundleError } from "./lib/bundle-errors.ts";
 export {
   enumerateInputs,
   resolveInputs,
   type DeclaredInput,
   type ResolvedInputs,
-} from "./inputs.ts";
+} from "./lib/inputs.ts";
 export {
   Answers,
   commitPattern,
@@ -16,7 +14,7 @@ export {
   selectionFilename,
   type Answer,
   type SavedIntent,
-} from "./selections.ts";
+} from "./lib/selections.ts";
 export type {
   BundleDeclaration,
   BundleInfo,
@@ -28,4 +26,4 @@ export type {
   PolicyCatalog,
   PolicySelections,
   RootDeclaration,
-} from "./bundle-types.ts";
+} from "./lib/bundle-types.ts";

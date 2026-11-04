@@ -1,7 +1,9 @@
 {
   "$schema": "https://github.com/ItsEthanDev/its-checks/raw/main/schemas/its-checks.schema.json",
   "source": "https://github.com/ItsEthanDev/its-checks",
+  "commit": "866896a3330295c17299d03cb6141035301ceeb4",
   "integrations": [
+    "dependency-cruiser",
     "effect"
   ],
   "automation": [

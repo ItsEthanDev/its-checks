@@ -1,26 +1,15 @@
-export {
-  applyPlan,
-  ApplicationError,
-  OperationError,
-  createNodeApplicationFileSystem,
-  nodeApplicationFileSystem,
-} from "./application.ts";
+export { applyPlan, ApplicationError } from "./lib/application.ts";
 export type {
   ApplicationDependencies,
-  ApplicationFileSystem,
   ApplicationOptions,
   ApplicationOperation,
   ApplicationReport,
-} from "./application.ts";
+} from "./lib/application.ts";
 export {
   createDependencyAdapter,
   resolveTargetManager,
-  managerLockfiles,
-  nodeManagerOperations,
-} from "./package-managers.ts";
-export type {
-  TargetManager,
-  ManagerResolution,
-  CommandResult,
-  ManagerOperations,
-} from "./package-managers.ts";
+  snapshotManagerEvidence,
+} from "./lib/package-managers.ts";
+export type { TargetManager, ManagerResolution } from "./lib/package-managers.ts";
+export { OperationError } from "./operations.ts";
+export type { ApplicationFileSystem, CommandResult, ManagerOperations } from "./operations.ts";

@@ -7,14 +7,14 @@ import { test } from "node:test";
 import { Effect } from "effect";
 
 import { applyPlan } from "../src/modules/application/index.ts";
-import { planProject, createScriptPlanner } from "../src/modules/planning/index.ts";
+import { planProject } from "../src/modules/planning/index.ts";
 import {
   discoverPolicy,
   loadPolicy,
   resolveInputs,
   loadPreviousIntent,
 } from "../src/modules/policy/index.ts";
-import { defined, json, object, strings, manifest as parseManifest } from "./assertions.ts";
+import { defined, json, object, strings, manifest as parseManifest } from "./shared/assertions.ts";
 
 const run = Effect.runPromise;
 // Fixed, test-owned native policy; operational policy/ choices are not test expectations.
@@ -49,7 +49,7 @@ await test("reference policy composes, preserves shared content, reruns, and rem
   );
   const loaded = await run(loadPolicy(referencePolicy, all));
   const resolved = await run(resolveInputs(loaded, answers));
-  const options = { scripts: createScriptPlanner("npm") };
+  const options = { manager: "npm" as const };
   const initial = await run(planProject(root, resolved, options));
   assert.equal(initial.complete, true);
   assert.equal(initial.requiresConfirmation, true);
@@ -120,7 +120,7 @@ await test("native baseline/integration/declarations edits and a new directory r
     const previous = await run(loadPreviousIntent(target));
     const plan = await run(
       planProject(target, resolved, {
-        scripts: createScriptPlanner("npm"),
+        manager: "npm",
         ...(previous !== undefined ? { previous } : {}),
       }),
     );

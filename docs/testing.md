@@ -6,6 +6,10 @@ Write test names and assertions as requirements. Exercise code paths through int
 
 Prune tests that only lock down implementation details. If they protect a real requirement, move that coverage to a better interface seam. Refactoring behind an unchanged interface should not require rewriting tests.
 
+Place module-owned tests and helpers in `src/modules/<name>/tests/`. Test through public module-root entry points, not `lib/`, and do not import another module's test helpers. Keep shared test-owned fixtures in `test/shared/`. Whole-CLI, cross-module acceptance, and packaging checks remain under `test/`.
+
+`bun run test` discovers colocated `*.test.ts` files and repository-level acceptance tests. Slower `*.integration.ts` suites run through the explicit commands below. Module tests and fixtures must not ship in the installed package or affect saved-plan generator identity.
+
 ## Keep policy independent
 
 Test the CLI, not the shipped policy's opinions. A compatible change to `policy/` must not require test changes.

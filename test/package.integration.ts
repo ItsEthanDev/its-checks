@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { promisify } from "node:util";
 
-import { defined, json, strings } from "./assertions.ts";
+import { defined, json, strings } from "./shared/assertions.ts";
 
 const exec = promisify(execFile);
 const repo = path.resolve(import.meta.dirname, "..");
@@ -54,6 +54,9 @@ await test(
     const expected: string[] = ["package.json", "README.md", "LICENSE"];
     for (const directory of ["bin", "src", "policy", "schemas"]) {
       for (const relative of await files(path.join(repo, directory))) {
+        if (directory === "src" && /^modules\/[^/]+\/tests\//.test(relative)) {
+          continue;
+        }
         const file = path.join(directory, relative);
         expected.push(file);
         assert.deepEqual(
@@ -67,8 +70,14 @@ await test(
       await fs.readFile(path.join(packed, "LICENSE")),
       await fs.readFile(path.join(repo, "LICENSE")),
     );
+    const packedFiles = await files(packed);
+    assert.equal(
+      packedFiles.some((file) => /^src\/modules\/[^/]+\/tests\//.test(file)),
+      false,
+      "module tests and fixtures must not ship",
+    );
     assert.deepEqual(
-      await files(packed),
+      packedFiles,
       expected.toSorted(),
       "only runtime source/assets and package metadata ship, including policy dotfiles",
     );

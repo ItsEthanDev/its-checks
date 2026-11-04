@@ -1,3 +1,3 @@
-export { Cancelled, knownSelections, prepareSetupPlan, setup } from "./workflow.ts";
-export type { Question, SetupPresentation, SetupOptions } from "./workflow.ts";
-export { executingCommit } from "./source-revision.ts";
+export { Cancelled, knownSelections, prepareSetupPlan, setup } from "./lib/workflow.ts";
+export type { Question, SetupPresentation, SetupOptions } from "./lib/workflow.ts";
+export { executingCommit } from "./lib/source-revision.ts";

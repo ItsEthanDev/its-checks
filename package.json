@@ -9,6 +9,7 @@
   "files": [
     "bin",
     "src",
+    "!src/modules/*/tests/**",
     "policy",
     "schemas"
   ],
@@ -20,13 +21,13 @@
     "its-checks:check": "(\nnode --run fmt:check && node --run lint\n\n)",
     "its-checks:fmt": "(\noxfmt .\n\n)",
     "its-checks:fmt:check": "(\noxfmt --check .\n\n)",
-    "its-checks:lint": "(\neffect-tsgo oxlint --deny-warnings .\n\n)",
-    "its-checks:lint:fix": "(\neffect-tsgo oxlint --fix --deny-warnings .\n\n)",
+    "its-checks:lint": "(\neffect-tsgo oxlint --deny-warnings .\n\n) && (\ndepcruise .\n\n)",
+    "its-checks:lint:fix": "(\neffect-tsgo oxlint --fix --deny-warnings .\n\n) && (\ndepcruise .\n\n)",
     "lint": "bun run its-checks:lint",
     "lint:fix": "bun run its-checks:lint:fix",
-    "test": "bun test ./test/*.test.ts",
+    "test": "bun test ./src/modules/*/tests/*.test.ts ./test/*.test.ts",
     "test:cli": "python3 test/cli.pty.py",
-    "test:managers": "bun test --timeout=120000 --max-concurrency=1 ./test/real-managers.integration.ts",
+    "test:managers": "bun test --timeout=120000 --max-concurrency=1 ./src/modules/application/tests/real-managers.integration.ts",
     "test:package": "bun test --timeout=120000 ./test/package.integration.ts",
     "test:policy": "bun test --timeout=180000 --max-concurrency=1 ./test/policy-compatibility.integration.ts",
     "typecheck": "bun --bun tsc --noEmit"
@@ -43,6 +44,7 @@
     "@types/node": "24.19.2",
     "ajv": "8.17.1",
     "ajv-formats": "3.0.1",
+    "dependency-cruiser": "18.7.2",
     "husky": "9.1.7",
     "oxfmt": "0.75.0",
     "oxlint": "1.90.0",

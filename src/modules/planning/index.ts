@@ -1,14 +1,14 @@
-export { planProject } from "./planning.ts";
+export { planProject } from "./lib/planning.ts";
+export { PlanError } from "./lib/plan-errors.ts";
+export { assertTargetUnchanged, readTargetSnapshot } from "./lib/target-snapshot.ts";
 export type {
   ChangeKind,
   EntryChange,
   FileChange,
   DeferredChange,
   ChangePlan,
-  ScriptContext,
   PlanOptions,
-} from "./planning.ts";
-export { PlanError } from "./plan-errors.ts";
-export { assertTargetUnchanged, readTargetSnapshot } from "./target-snapshot.ts";
-export type { FileState, TargetSnapshot } from "./target-snapshot.ts";
-export { createScriptPlanner, type PackageManager } from "./scripts.ts";
+  FileState,
+  TargetSnapshot,
+  PackageManager,
+} from "./plan.ts";

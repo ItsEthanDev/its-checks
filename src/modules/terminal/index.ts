@@ -1,1 +1,1 @@
-export { createClackPresentation } from "./presentation.ts";
+export { createClackPresentation } from "./lib/presentation.ts";

@@ -8,11 +8,11 @@ import { promisify } from "node:util";
 
 import { Effect, Schema } from "effect";
 
+import { nodeManagerOperations } from "../src/modules/application/adapters.ts";
 import {
   applyPlan,
   createDependencyAdapter,
   resolveTargetManager,
-  nodeManagerOperations,
 } from "../src/modules/application/index.ts";
 import { planProject, type ChangePlan } from "../src/modules/planning/index.ts";
 import {
@@ -21,7 +21,7 @@ import {
   loadPreviousIntent,
   type PolicySelections,
 } from "../src/modules/policy/index.ts";
-import { defined, json, object, manifest as parseManifest } from "./assertions.ts";
+import { defined, json, object, manifest as parseManifest } from "./shared/assertions.ts";
 
 const run = Effect.runPromise;
 const exec = promisify(execFile);
@@ -164,7 +164,7 @@ await test(
       const known = previous !== undefined ? (await run(loadPolicy(policy, previous))).bundles : [];
       return await run(
         planProject(project, resolved, {
-          scripts: resolution.target.scripts,
+          manager: resolution.target.manager,
           ...(previous !== undefined ? { previous } : {}),
           currentBundles: known,
         }),

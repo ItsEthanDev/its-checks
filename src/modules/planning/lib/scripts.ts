@@ -1,0 +1,147 @@
+import assert from "node:assert/strict";
+
+import { Effect } from "effect";
+
+import { isObject, type JsonObject } from "../../policy/documents.ts";
+import type { LoadedBundle } from "../../policy/index.ts";
+import type { PackageManager } from "../plan.ts";
+import { orderedBundles } from "./composition.ts";
+import { PlanError } from "./plan-errors.ts";
+const managers: readonly PackageManager[] = ["npm", "pnpm", "yarn", "bun"];
+const prefix = "its-checks:";
+type Contribution = { command: string; replacementSource?: string };
+// Loaded bundle script names are restricted to alphanumerics, colon, underscore and hyphen.
+const runner = (manager: PackageManager, helper: string) => `${manager} run ${helper}`;
+// Two newlines terminate a last-line comment or a trailing escaped newline without inspecting shell syntax.
+const group = (command: string) => `(\n${command}\n\n)`;
+
+function recognize(command: string, helper: string): { original?: string } | undefined {
+  for (const manager of managers) {
+    const invocation = runner(manager, helper);
+    if (command === invocation) {
+      return {};
+    }
+    const end = `\n\n) && ${invocation}`;
+    if (command.startsWith("(\n") && command.endsWith(end)) {
+      return { original: command.slice(2, -end.length) };
+    }
+  }
+  return undefined;
+}
+
+/** Compose commands without executing them. Scripts require POSIX /bin/sh. */
+export function composeScripts(
+  manifest: JsonObject,
+  selected: readonly LoadedBundle[],
+  deselected: readonly LoadedBundle[],
+  manager: PackageManager,
+): Effect.Effect<Readonly<Record<string, string>>, PlanError> {
+  return Effect.gen(function* () {
+    const scripts: Record<string, string> = {};
+    Object.setPrototypeOf(scripts, null);
+    const existing = manifest.scripts;
+    if (isObject(existing)) {
+      for (const [name, command] of Object.entries(existing)) {
+        assert(typeof command === "string");
+        scripts[name] = command;
+      }
+    }
+    const contributions = yield* scriptContributions(orderedBundles(selected));
+    const known = new Set(
+      [...selected, ...deselected].flatMap((bundle) =>
+        Object.keys(bundle.declaration.scripts ?? {}),
+      ),
+    );
+    for (const name of [...known].toSorted()) {
+      yield* updateScript(scripts, name, manager, contributions.get(name));
+    }
+    return scripts;
+  });
+}
+
+function scriptContributions(selected: readonly LoadedBundle[]) {
+  return Effect.gen(function* () {
+    // Keep each ordinary contribution's identity and position until replacements resolve.
+    const contributions = new Map<string, Map<string, Contribution>>();
+    for (const bundle of selected) {
+      for (const [name, command] of Object.entries(bundle.declaration.scripts ?? {})) {
+        if (typeof command !== "string") {
+          continue;
+        }
+        const owners = contributions.get(name) ?? new Map<string, Contribution>();
+        owners.set(bundle.key, { command });
+        contributions.set(name, owners);
+      }
+    }
+    for (const bundle of selected) {
+      for (const [name, replacement] of Object.entries(bundle.declaration.scripts ?? {})) {
+        if (typeof replacement === "string") {
+          continue;
+        }
+        const target = contributions.get(name)?.get(replacement.replaces);
+        const fail = (detail: string) =>
+          Effect.fail(new PlanError({ source: bundle.source, field: `scripts.${name}`, detail }));
+        if (target === undefined) {
+          return yield* fail(
+            `Replacement target ${replacement.replaces} does not supply an ordinary command for this script in the selected bundles.`,
+          );
+        }
+        if (target.replacementSource !== undefined && target.command !== replacement.command) {
+          return yield* fail(
+            `Conflicting replacement for ${replacement.replaces}; another replacement is declared in ${target.replacementSource}.`,
+          );
+        }
+        target.command = replacement.command;
+        target.replacementSource ??= bundle.source;
+      }
+    }
+    return contributions;
+  });
+}
+
+function updateScript(
+  scripts: Record<string, string>,
+  name: string,
+  manager: PackageManager,
+  owners: ReadonlyMap<string, Contribution> | undefined,
+) {
+  return Effect.gen(function* () {
+    const helper = `${prefix}${name}`;
+    const command = Object.hasOwn(scripts, name) ? scripts[name] : undefined;
+    const wrapper = command === undefined ? undefined : recognize(command, helper);
+    const conflict = (detail: string) =>
+      Effect.fail(new PlanError({ source: "package.json", field: `scripts.${name}`, detail }));
+    if (wrapper === undefined && command?.includes(helper) === true) {
+      return yield* conflict(
+        `Edited public command references ${helper} but is not an exact generated wrapper. Restore the generated wrapper, or manually remove the helper reference and rename/remove scripts.${helper}, then retry. No shell rewrite was attempted.`,
+      );
+    }
+    if (wrapper === undefined && Object.hasOwn(scripts, helper)) {
+      return yield* conflict(
+        `Reserved namespace collision at scripts.${helper}: no exact generated public wrapper identifies ownership. Rename/remove that entry (preserving any command you need), then retry.`,
+      );
+    }
+    if (owners !== undefined) {
+      const original = wrapper !== undefined ? wrapper.original : command;
+      if (original?.includes("\0") === true) {
+        return yield* conflict("POSIX shell commands cannot contain NUL");
+      }
+      const commands = [
+        ...new Set([...owners.values()].map((contribution) => contribution.command)),
+      ];
+      scripts[helper] = commands.map(group).join(" && ");
+      scripts[name] =
+        original === undefined
+          ? runner(manager, helper)
+          : `${group(original)} && ${runner(manager, helper)}`;
+    } else if (wrapper !== undefined) {
+      delete scripts[helper];
+      if (wrapper.original === undefined) {
+        delete scripts[name];
+      } else {
+        scripts[name] = wrapper.original;
+      }
+    }
+    return undefined;
+  });
+}

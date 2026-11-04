@@ -68,6 +68,8 @@ Edit the executed checkout's `policy/` declarations and native files, then rerun
 - `terminal`: interactive prompts and presentation.
 - `headless`: noninteractive commands and saved-plan validation.
 
-Cross-module imports use each module's `index.ts`; other files are internal implementation. The authored `policy/` and `schemas/` remain separate runtime assets.
+Module-root files are deliberate public entry points: `index.ts` exposes primary operations; additional files expose distinct contracts such as planning artifacts or native adapters. Implementation lives in `lib/`, and module-owned tests live in `tests/`. Cross-module callers and tests use public entry points, never `lib/` or another module's test helpers.
+
+The authored `policy/` and `schemas/` remain separate runtime assets. Module tests are excluded from the installed package and saved-plan generator fingerprints.
 
 Follow the [project standards](STANDARDS.md) and [testing guidance](docs/testing.md).
