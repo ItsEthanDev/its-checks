@@ -11,6 +11,11 @@
   "requires": ["typescript"],
   "files": [
     {
+      "source": "files/modules.README.md",
+      "target": "src/modules/README.md",
+      "operation": "seed"
+    },
+    {
       "source": "files/.dependency-cruiser.json",
       "target": ".dependency-cruiser.json",
       "operation": "replace",
