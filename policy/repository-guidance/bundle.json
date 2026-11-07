@@ -1,6 +1,7 @@
 {
   "name": "Repository guidance",
   "description": "Seed project-owned README and agent guidance scaffolds without changing existing files",
+  "note": "If README.md or AGENTS.md contains scaffold TODOs, replace them with project-specific guidance.",
   "files": [
     {
       "source": "files/README.md",
