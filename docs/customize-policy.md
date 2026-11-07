@@ -1,6 +1,6 @@
 # Author a policy repository
 
-Create a GitHub repository with bundles directly under `policy/`. Policy authors do not need to fork or release the CLI.
+Create a GitHub repository with bundles directly under `policy/`.
 
 ```text
 policy/
