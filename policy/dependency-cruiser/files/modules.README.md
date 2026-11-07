@@ -1,5 +1,35 @@
 # Modules
 
+## TODO: Migrate to deep modules
+
+Give the following prompt to your coding agent to plan and carry out the migration. This section is temporary; remove it only after the completion criteria in the prompt are met.
+
+```text
+Refactor this codebase into cohesive deep modules: small public interfaces that hide substantial implementation complexity, improving code quality, testing, and maintenance while preserving behavior.
+
+Read `src/modules/README.md` and follow its module conventions, especially its testing guidance. The dependency-cruiser bundle is already installed.
+
+## 1. Explore and propose
+
+Explore the codebase, its callers, and its tests. Capture existing behavior and baseline check failures. Design module boundaries around responsibilities rather than the current file layout.
+
+Keep code that is already cohesive in place. Prefer fewer, deeper modules over wrappers that merely forward calls.
+
+Present a lightweight module breakdown: each module's responsibility and intended public interface, plus only the boundary tradeoffs needed to judge the design. Use your judgment for implementation details. Stop for user approval before editing.
+
+## 2. Implement after approval
+
+Refactor to the approved design. Internal interfaces and their callers may change; preserve externally consumed APIs, user-visible behavior, data formats, and side effects. Ask about ambiguous behavior or necessary breaking changes.
+
+Redesign the tests around the modules' observable behavior rather than carrying the existing test structure forward. Rewrite, merge, delete, prune, or move tests as needed, preserving meaningful behavioral coverage at the appropriate boundaries. Before replacing or deleting tests, identify the behavior they protect and account for it in the resulting suite. Follow the README's testing guidance: tests describe what a module does through its public interface, not how it works. Do not expose internals solely for testing.
+
+Update the module catalog and run the project's relevant checks, including dependency-cruiser. Verify preserved behavior against the baseline and report remaining failures or verification gaps. Passing dependency rules alone is not the goal; assess whether the resulting modules hide complexity behind cohesive interfaces.
+
+## 3. Remove this TODO after verification
+
+Once the approved migration is complete, the module catalog is current, and verification demonstrates preserved behavior with no new check failures, remove this migration TODO section, including its embedded prompt. Preserve the rest of the README. If verification gaps or migration work remain, leave the TODO in place and report them. Existing, unrelated baseline failures do not block removal.
+```
+
 ## Required structure
 
 Each module exposes public entry points at its root. All subdirectories are private to that module.
