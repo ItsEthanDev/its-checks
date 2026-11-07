@@ -18,8 +18,8 @@
       "target": ".oxfmtrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/ignorePatterns": "append-unique"
+      "fields": {
+        "/ignorePatterns": { "merge": "append-unique" }
       }
     },
     {
@@ -27,12 +27,9 @@
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/plugins": "append-unique",
-        "/jsPlugins": "append-unique",
-        "/extends": "append-unique",
-        "/overrides": "append-unique",
-        "/ignorePatterns": "append-unique"
+      "fields": {
+        "/plugins": { "merge": "append-unique" },
+        "/ignorePatterns": { "merge": "append-unique" }
       }
     }
   ]

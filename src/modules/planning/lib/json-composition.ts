@@ -55,7 +55,7 @@ const unique = (values: readonly JsonValue[]) =>
     (entry, index) => values.findIndex((other) => canonical(other) === canonical(entry)) === index,
   );
 export interface MergeContext {
-  readonly arrays: NativeFile["arrays"];
+  readonly fields: NativeFile["fields"];
   readonly source: string;
 }
 export function merge(a: JsonValue, b: JsonValue, context: MergeContext, at = ""): JsonValue {
@@ -68,7 +68,7 @@ export function merge(a: JsonValue, b: JsonValue, context: MergeContext, at = ""
     }
     return result;
   }
-  if (context.arrays[at] === "append-unique" && isArray(a) && isArray(b)) {
+  if (context.fields[at]?.merge === "append-unique" && isArray(a) && isArray(b)) {
     return unique([...a, ...b]);
   }
   if (canonical(a) === canonical(b)) {
@@ -81,60 +81,95 @@ export function merge(a: JsonValue, b: JsonValue, context: MergeContext, at = ""
   );
 }
 /** Remove only declared leaves/items, without retaining an output baseline. */
-function subtractObject(
-  target: JsonObject,
-  prior: JsonObject,
-  arrays: NativeFile["arrays"],
-  at: string,
-) {
+interface Cleanup {
+  readonly prior: NativeFile;
+  readonly current: NativeFile | undefined;
+}
+function subtractObject(target: JsonObject, prior: JsonObject, context: Cleanup, at: string) {
   const result: Record<string, JsonValue> = { ...target };
+  let removed = false;
   for (const [key, value] of Object.entries(prior)) {
     const current = Object.hasOwn(result, key) ? result[key] : undefined;
     if (current === undefined) {
       continue;
     }
-    const next = subtract(current, value, arrays, pointer(at, key));
+    const next = subtract(current, value, context, pointer(at, key));
     if (next === undefined) {
       delete result[key];
+      removed = true;
     } else {
       result[key] = next;
     }
   }
-  return Object.keys(result).length === 0 && Object.keys(prior).length > 0 ? undefined : result;
+  return Object.keys(result).length === 0 && removed ? undefined : result;
+}
+function handedOff(current: NativeFile | undefined, prior: JsonValue, at: string) {
+  if (current === undefined || current.format === "text" || current.fields[at]?.mode !== "seed") {
+    return false;
+  }
+  const selected = fieldAt(current.value, at);
+  return selected !== undefined && (!isObject(selected) || !isObject(prior));
 }
 function subtract(
   target: JsonValue,
   prior: JsonValue,
-  arrays: NativeFile["arrays"],
+  context: Cleanup,
   at = "",
 ): JsonValue | undefined {
-  if (isObject(prior) && isObject(target)) {
-    return subtractObject(target, prior, arrays, at);
+  if (handedOff(context.current, prior, at)) {
+    return target;
   }
-  if (arrays[at] === "append-unique" && isArray(target) && isArray(prior)) {
+  if (isObject(prior) && isObject(target)) {
+    return subtractObject(target, prior, context, at);
+  }
+  if (context.prior.fields[at]?.mode === "seed") {
+    return target;
+  }
+  if (context.prior.fields[at]?.merge === "append-unique" && isArray(target) && isArray(prior)) {
     return target.filter((item) => !prior.some((old) => canonical(old) === canonical(item)));
   }
   return undefined;
 }
 function overlay(
-  target: JsonValue,
+  target: JsonValue | undefined,
   selected: JsonValue,
-  arrays: NativeFile["arrays"],
+  file: NativeFile,
   at = "",
 ): JsonValue {
-  if (isObject(target) && isObject(selected)) {
+  if ((target === undefined || isObject(target)) && isObject(selected)) {
     const result: Record<string, JsonValue> = { ...target };
     for (const [key, value] of Object.entries(selected)) {
       const previous = Object.hasOwn(result, key) ? result[key] : undefined;
-      result[key] =
-        previous === undefined ? value : overlay(previous, value, arrays, pointer(at, key));
+      result[key] = overlay(previous, value, file, pointer(at, key));
     }
     return result;
   }
-  if (arrays[at] === "append-unique" && isArray(target) && isArray(selected)) {
-    return unique([...target, ...selected]);
+  if (target !== undefined && file.fields[at]?.mode === "seed") {
+    return target;
+  }
+  if (file.fields[at]?.merge === "append-unique" && isArray(selected)) {
+    return unique([...(isArray(target) ? target : []), ...selected]);
   }
   return selected;
+}
+function checkStructure(target: JsonValue, selected: JsonValue, file: NativeFile, at = "") {
+  if (isObject(selected)) {
+    if (!isObject(target)) {
+      conflict(
+        file.source,
+        at.length === 0 ? "$" : at,
+        "Cannot compose fields into a non-object project value",
+      );
+    }
+    for (const [key, value] of Object.entries(selected)) {
+      const existing = Object.hasOwn(target, key) ? target[key] : undefined;
+      if (existing !== undefined) {
+        checkStructure(existing, value, file, pointer(at, key));
+      }
+    }
+  } else if (file.fields[at]?.merge === "append-unique" && !isArray(target)) {
+    conflict(file.source, at, "Cannot append items to a non-array project value");
+  }
 }
 function composing(
   file: NativeFile | undefined,
@@ -154,11 +189,14 @@ export function composeTarget(
     );
   }
   let result: JsonValue = target;
+  if (composing(current)) {
+    checkStructure(target, current.value, current);
+  }
   if (composing(prior)) {
-    result = subtract(result, prior.value, prior.arrays) ?? {};
+    result = subtract(result, prior.value, { prior, current }) ?? {};
   }
   if (composing(current)) {
-    result = overlay(result, current.value, current.arrays);
+    result = overlay(result, current.value, current);
   }
   if (!isObject(result)) {
     return conflict(current?.source ?? "target", "$", "Compose contributions must be objects");

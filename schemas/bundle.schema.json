@@ -37,21 +37,24 @@
             "type": "string",
             "enum": ["json", "jsonc"]
           },
-          "arrays": {
+          "defaultMode": {
+            "type": "string",
+            "enum": ["seed", "replace"]
+          },
+          "fields": {
             "type": "object",
             "additionalProperties": {
-              "type": "string",
-              "enum": ["append-unique"]
+              "type": "object",
+              "properties": {
+                "mode": { "type": "string", "enum": ["seed", "replace"] },
+                "merge": { "type": "string", "enum": ["append-unique"] },
+                "replaces": { "type": "string" }
+              },
+              "additionalProperties": false
             }
           },
           "executable": {
             "type": "boolean"
-          },
-          "replaces": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
           }
         },
         "required": ["source", "target", "operation"],

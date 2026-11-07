@@ -33,22 +33,15 @@
       "source": "files/.oxfmtrc.json",
       "target": ".oxfmtrc.json",
       "operation": "compose",
-      "format": "json",
-      "arrays": {
-        "/ignorePatterns": "append-unique"
-      }
+      "format": "json"
     },
     {
       "source": "files/.oxlintrc.json",
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/plugins": "append-unique",
-        "/jsPlugins": "append-unique",
-        "/extends": "append-unique",
-        "/overrides": "append-unique",
-        "/ignorePatterns": "append-unique"
+      "fields": {
+        "/jsPlugins": { "merge": "append-unique" }
       }
     }
   ]

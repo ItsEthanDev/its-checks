@@ -11,7 +11,7 @@ import { fixture } from "../../../../test/shared/fixtures.ts";
 import { resolveInputs, loadPolicy } from "../../policy/index.ts";
 import { planProject } from "../index.ts";
 const run = Effect.runPromise;
-async function setup(t: Parameters<typeof fixture>[0], a: object, b: object, arrays?: object) {
+async function setup(t: Parameters<typeof fixture>[0], a: object, b: object, fields?: object) {
   const f = await fixture(t);
   for (const [id, value] of [
     ["one", a],
@@ -26,7 +26,7 @@ async function setup(t: Parameters<typeof fixture>[0], a: object, b: object, arr
           target: "config.json",
           operation: "compose",
           format: "json",
-          ...(arrays === undefined ? {} : { arrays }),
+          ...(fields === undefined || !("ignores" in value) ? {} : { fields }),
         },
       ],
     });
@@ -68,7 +68,7 @@ await test("only explicitly declared arrays append with exact duplicate removal"
     t,
     { ignores: ["dist", "coverage"] },
     { ignores: ["coverage", "generated"] },
-    { "/ignores": "append-unique" },
+    { "/ignores": { merge: "append-unique" } },
   );
   const file = (await f.plan()).files.find((candidate) => candidate.path === "config.json")?.after;
   assert.ok(file?.kind === "file");
@@ -81,12 +81,12 @@ await test("incompatible composition declarations fail", async (t) => {
     t,
     { ignores: ["one"] },
     { ignores: ["two"] },
-    { "/ignores": "append-unique" },
+    { "/ignores": { merge: "append-unique" } },
   );
   const file = path.join(f.policy, "two/bundle.json");
   const declaration = json(await fs.readFile(file, "utf8"));
   const entry = { ...defined(objects(declaration.files)[0]) };
-  delete entry.arrays;
+  delete entry.fields;
   const files = [entry];
   await fs.writeFile(file, JSON.stringify({ ...declaration, files }));
   await assert.rejects(f.plan(), /composition declarations/);
@@ -96,7 +96,7 @@ await test("unrelated object fragments need not repeat another bundle's array de
     t,
     { ignores: ["dist"] },
     { rules: { check: true } },
-    { "/ignores": "append-unique" },
+    { "/ignores": { merge: "append-unique" } },
   );
   await f.add("two", {
     name: "Two",
@@ -119,7 +119,7 @@ await test("explicit source-local field replacement restores the original on des
       target: "config.json",
       operation: "compose",
       format: "json",
-      replaces: { "/rules/example~1rule": "one" },
+      fields: { "/rules/example~1rule": { replaces: "one" } },
     },
   ];
   await f.add("two", { name: "Two", requires: ["one"], files });
@@ -169,7 +169,7 @@ await test("explicit source-local field replacement restores the original on des
   await f.add("two", {
     name: "Two",
     requires: ["one"],
-    files: [{ ...defined(files[0]), replaces: { "/rules/example~1rule": "missing" } }],
+    files: [{ ...defined(files[0]), fields: { "/rules/example~1rule": { replaces: "missing" } } }],
   });
   await assert.rejects(f.plan(), /selected ordinary contribution/);
 });

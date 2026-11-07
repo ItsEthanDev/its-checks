@@ -21,13 +21,11 @@
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/plugins": "append-unique",
-        "/extends": "append-unique"
-      },
-      "replaces": {
-        "/$schema": "typescript",
-        "/rules/unicorn~1throw-new-error": "typescript"
+      "fields": {
+        "/plugins": { "merge": "append-unique" },
+        "/extends": { "merge": "append-unique" },
+        "/$schema": { "replaces": "typescript" },
+        "/rules/unicorn~1throw-new-error": { "replaces": "typescript" }
       }
     }
   ]

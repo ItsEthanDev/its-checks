@@ -51,21 +51,30 @@ Bundle directories contain only `bundle.json` and `files/`. No executable instal
 
 Every file contribution declares `source`, `target`, and `operation`:
 
-| Operation | Application                                       | Deselection or source removal                                  |
-| --------- | ------------------------------------------------- | -------------------------------------------------------------- |
-| `seed`    | Create only if absent; preserve existing bytes    | Leave behind as project-owned content                          |
-| `replace` | Write the complete declared file                  | Propose deleting it if no selected bundle supplies it          |
-| `compose` | Manage declared JSON fields using the rules below | Remove prior declared contributions; preserve unrelated fields |
+| Operation | Application                                        | Deselection or source removal                                   |
+| --------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| `seed`    | Create only if absent; preserve existing bytes     | Leave behind as project-owned content                           |
+| `replace` | Write the complete declared file                   | Propose deleting it if no selected bundle supplies it           |
+| `compose` | Combine declared JSON fields using the rules below | Remove managed contributions; leave seeded and unrelated fields |
 
 `source` must be under the bundle's `files/`; `target` is relative to the target project. Paths must not escape the project or traverse `.git`, `node_modules`, or symlinks. Root `package.json` and `.its-checks.json` use dedicated contracts and cannot be file targets. Set `executable: true` when the output needs executable permissions; source-file mode is not an ownership declaration.
 
 For typed inputs or composition, declare `format: "json"` or `"jsonc"`. Composition requires an object document. Seed/replace can write other UTF-8 formats, including Markdown, YAML, shell hooks, and extensionless files. The CLI does not infer behavior from filenames.
 
-Compose and replace overwrite edits within their managed scope. No override declaration, output baseline, or edit tracking is required. Use seed for documents intentionally handed off to the project. In particular, a project-owned module index should be seeded rather than replaced.
+Replace overwrites edits within its managed scope. Compose declares ownership per field. No output baseline or edit tracking is required. Use seed for documents intentionally handed off to the project. In particular, a project-owned module index should be seeded rather than replaced.
 
 ### JSON composition
 
-Object keys combine recursively. Identical values coalesce; incompatible values fail. There is no implicit array concatenation or source-order winner.
+Object keys combine recursively. Scalars and arrays are atomic unless an array merge is explicitly declared. Identical values with matching ownership and merge settings coalesce; incompatible contributions fail. There is no implicit array concatenation or source-order winner.
+
+`defaultMode` sets ownership for contributed fields and defaults to `replace`. Every `fields` entry is an object keyed by a JSON Pointer. `mode` applies to the contributed subtree, and more-specific modes take precedence. A parent setting does not claim unrelated project fields. Pointers must exist in the contribution and traverse object keys, not array indexes. Escape `/` as `~1` and `~` as `~0`.
+
+| Field mode | Application                                                                                             | Updates and removal                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `seed`     | Set only if the key is absent; preserve any existing value, including `false`, `null`, and empty values | Project-owned once present; do not update or remove it |
+| `replace`  | Enforce the declared value within its scope                                                             | Update managed values and remove prior contributions   |
+
+This example supplies overridable defaults except for one enforced rule:
 
 ```json
 {
@@ -73,19 +82,44 @@ Object keys combine recursively. Identical values coalesce; incompatible values 
   "target": ".linter.json",
   "operation": "compose",
   "format": "json",
-  "arrays": {
-    "/ignorePatterns": "append-unique"
+  "defaultMode": "seed",
+  "fields": {
+    "/rules/example~1rule": { "mode": "replace" }
   }
 }
 ```
 
-Array keys are JSON Pointers: escape `/` as `~1` and `~` as `~0`. `append-unique` appends in deterministic dependency-first, then source-qualified lexical bundle order, removing exact duplicates. Bundles contributing to the same array must declare the same operation. Bundles contributing only other fields do not need to repeat that declaration. Undeclared arrays are atomic: identical arrays coalesce; different arrays conflict. Do not use concatenation for arrays whose order requires different semantics.
+Changing a managed field to `seed` preserves the current project value rather than deleting and reseeding it. Seeded defaults never update automatically. If a contributed child needs an object parent but the project has a scalar or array there, planning fails instead of overwriting the parent.
 
-Prior pinned declarations and saved answers identify fields and array items to remove before recomposition. This is not a historical output baseline: direct edits to declared fields may be removed, while unrelated fields/items remain. JSON comments and formatting are not preserved when composition changes values.
+### Array merging
+
+Declare array behavior in the same field object:
+
+```json
+{
+  "source": "files/linter.json",
+  "target": ".linter.json",
+  "operation": "compose",
+  "format": "json",
+  "defaultMode": "seed",
+  "fields": {
+    "/ignorePatterns": {
+      "mode": "replace",
+      "merge": "append-unique"
+    }
+  }
+}
+```
+
+`append-unique` requires `replace` mode, whether explicit or inherited. It makes the bundle's array items the managed scope, not the whole array. Unrelated project items remain; policy updates remove prior contributed items and append current items. Existing non-array project values cause a conflict.
+
+Items append in deterministic dependency-first, then source-qualified lexical bundle order, removing exact duplicates. Bundles contributing to the same array must declare the same merge and mode. Bundles contributing only other fields do not repeat that declaration. Without `merge`, an array is one value: `seed` preserves it if present, and `replace` overwrites it in full. Do not concatenate arrays whose order requires different semantics, such as linter rule tuples.
+
+Prior pinned declarations and saved answers identify managed fields and array items to remove before recomposition. This is not a historical output baseline: direct edits to managed fields may be removed, while seeded and unrelated fields/items remain. JSON comments and formatting are not preserved when composition changes values.
 
 ### Explicit field replacement
 
-For intentional incompatible values, a composing bundle can replace a selected ordinary contribution from the same source:
+For intentional incompatible values or ownership modes, a composing bundle can replace a selected ordinary contribution from the same source:
 
 ```json
 {
@@ -93,13 +127,18 @@ For intentional incompatible values, a composing bundle can replace a selected o
   "target": ".linter.json",
   "operation": "compose",
   "format": "json",
-  "replaces": {
-    "/rules/example~1rule": "typescript"
+  "fields": {
+    "/rules/example~1rule": {
+      "mode": "replace",
+      "replaces": "typescript"
+    }
   }
 }
 ```
 
-The pointer must exist in both contributions. The target is a stable source-local bundle ID, not display text. Require the target bundle when the replacement relies on it. Cross-source replacement and replacement chains are unsupported; different replacements of the same field conflict. Removing the replacement restores the target's declared value. Other sources still participate in conflict checks.
+The pointer must exist in both contributions. Replacement supersedes the target's value, ownership mode, and merge settings at that subtree. A `replace` contribution can explicitly supersede a `seed`; it does not win automatically. Even identical values conflict if their ownership modes differ without explicit replacement.
+
+The target is a stable source-local bundle ID, not display text. Require the target bundle when the replacement relies on it. Cross-source replacement and replacement chains are unsupported; incompatible replacements of the same field conflict. Removing the replacement restores the target's declaration, not a historical project value. If the restored declaration is a seed, the current project value remains. Other sources still participate in conflict checks.
 
 Overlapping complete-file operations must be compatible and identical, including seeds even when the target already exists. Different operations, composition declarations, case aliases, and file/directory destination overlaps fail before application.
 

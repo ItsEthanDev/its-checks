@@ -41,7 +41,7 @@ await test("seed, compose, replace and removal respect declared ownership and pr
         target: "config.json",
         operation: "compose",
         format: "json",
-        arrays: { "/ignore": "append-unique" },
+        fields: { "/ignore": { merge: "append-unique" } },
       },
       { source: "files/workflow.yml", target: ".github/workflows/check.yml", operation: "replace" },
     ],

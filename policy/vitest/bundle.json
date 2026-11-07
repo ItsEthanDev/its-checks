@@ -8,8 +8,8 @@
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/overrides": "append-unique"
+      "fields": {
+        "/overrides": { "merge": "append-unique" }
       }
     }
   ]

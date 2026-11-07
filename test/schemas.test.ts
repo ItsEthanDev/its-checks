@@ -38,11 +38,23 @@ await test("published schemas describe source-pinned state, headless manager sel
         target: "config.json",
         operation: "compose",
         format: "json",
-        arrays: { "/ignores": "append-unique" },
+        fields: { "/ignores": { merge: "append-unique" } },
       },
     ],
   };
   assert.equal(bundle(declaration), true, ajv.errorsText(bundle.errors));
+  for (const options of [
+    { arrays: { "/ignores": "append-unique" } },
+    { replaces: { "/ignores": "base" } },
+    { fields: { "/ignores": "replace" } },
+    { fields: { "/ignores": { operation: "replace" } } },
+    { defaultMode: "compose" },
+  ]) {
+    assert.equal(
+      bundle({ ...declaration, files: [{ ...declaration.files[0], ...options }] }),
+      false,
+    );
+  }
   assert.equal(
     bundle({ ...declaration, files: [{ source: "files/doc", target: "doc", operation: "merge" }] }),
     false,

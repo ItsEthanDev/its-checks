@@ -156,24 +156,21 @@ function checkFile(ctx: Context, file: FileDeclaration) {
       "files",
       file.operation === "compose"
         ? file.format !== undefined
-        : file.arrays === undefined && file.replaces === undefined,
-      "Compose requires a JSON format; array operations apply only to compose",
+        : file.fields === undefined && file.defaultMode === undefined,
+      "Compose requires a JSON format; fields and defaultMode apply only to compose",
     );
-    for (const target of Object.values(file.replaces ?? {})) {
+    for (const [pointer, options] of Object.entries(file.fields ?? {})) {
+      if (options.replaces !== undefined) {
+        yield* validate(
+          ctx,
+          "files.fields.replaces",
+          identifier.test(options.replaces),
+          "Replacement targets must use source-local bundle IDs",
+        );
+      }
       yield* validate(
         ctx,
-        "files.replaces",
-        identifier.test(target),
-        "Replacement targets must use source-local bundle IDs",
-      );
-    }
-    for (const pointer of [
-      ...Object.keys(file.arrays ?? {}),
-      ...Object.keys(file.replaces ?? {}),
-    ]) {
-      yield* validate(
-        ctx,
-        "files.arrays",
+        "files.fields",
         pointer.startsWith("/") &&
           !/~(?![01])/u.test(pointer) &&
           !pointer

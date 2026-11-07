@@ -15,27 +15,50 @@ import type {
 
 function checkComposition(ctx: Context, declaration: FileDeclaration, value: JsonValue) {
   return Effect.gen(function* () {
+    const fields: Record<string, NativeFile["fields"][string]> = {};
     if (declaration.operation !== "compose") {
-      return undefined;
+      return fields;
     }
     yield* validate(ctx, "$", isObject(value), "Compose contributions must be objects");
-    for (const pointer of Object.keys(declaration.arrays ?? {})) {
-      let field: unknown = value;
-      const keys = pointer
-        .slice(1)
-        .split("/")
-        .map((key) => key.replaceAll("~1", "/").replaceAll("~0", "~"));
-      for (const key of keys) {
-        field = isObject(field) && Object.hasOwn(field, key) ? field[key] : undefined;
+    const values = new Map<string, JsonValue>();
+    const visit = (node: JsonValue, at: string, inherited: "seed" | "replace") => {
+      const options = declaration.fields?.[at];
+      const mode = options?.mode ?? inherited;
+      if (at !== "") {
+        fields[at] = { ...options, mode };
+        values.set(at, node);
       }
+      if (isObject(node)) {
+        for (const [key, child] of Object.entries(node)) {
+          visit(child, `${at}/${key.replaceAll("~", "~0").replaceAll("/", "~1")}`, mode);
+        }
+      }
+    };
+    visit(value, "", declaration.defaultMode ?? "replace");
+    for (const [pointer, options] of Object.entries(declaration.fields ?? {})) {
+      const field = values.get(pointer);
       yield* validate(
         ctx,
         pointer,
-        field === undefined || Array.isArray(field),
-        "Declared array operation requires an array",
+        field !== undefined,
+        "Declared field must exist and use object keys",
       );
+      if (options.merge !== undefined) {
+        yield* validate(
+          ctx,
+          pointer,
+          Array.isArray(field),
+          "Declared array operation requires an array",
+        );
+        yield* validate(
+          ctx,
+          pointer,
+          fields[pointer]?.mode === "replace",
+          "append-unique requires replace mode",
+        );
+      }
     }
-    return undefined;
+    return fields;
   });
 }
 function readFile(info: BundleInfo, declaration: FileDeclaration) {
@@ -53,15 +76,13 @@ function readFile(info: BundleInfo, declaration: FileDeclaration) {
       content,
       executable: declaration.executable ?? false,
       operation: declaration.operation,
-      arrays: declaration.arrays ?? {},
-      replaces: declaration.replaces ?? {},
     };
     if (declaration.format === undefined) {
-      return { ...common, format: "text" as const };
+      return { ...common, fields: {}, format: "text" as const };
     }
     const value = yield* json(ctx, content, declaration.format === "jsonc");
-    yield* checkComposition(ctx, declaration, value);
-    return { ...common, format: declaration.format, value };
+    const fields = yield* checkComposition(ctx, declaration, value);
+    return { ...common, fields, format: declaration.format, value };
   });
 }
 type Input = NonNullable<BundleInfo["declaration"]["inputs"]>[number];

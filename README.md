@@ -41,7 +41,7 @@ Running without configured sources explains how to add one; it does not select a
 
 Sources are cached by repository and commit under `$XDG_CACHE_HOME/its-checks/policies` (default `~/.cache/its-checks/policies`). Pinned reruns use cached content or fetch that exact commit, never a newer substitute. Installation may still need network access.
 
-Policy declares ownership explicitly: seeded files are created only if absent and left behind on removal; composed fields are managed within their declared scope; replacement files are managed in full and proposed for deletion on removal. Direct edits within managed content may be overwritten. Inspect the Git diff and restore exceptions as needed. No override file or edit tracking is required.
+Policy declares ownership explicitly: seeded files and fields are created only if absent and left behind on removal; composed fields can be seeded or policy-managed; replacement files are managed in full and proposed for deletion on removal. Direct edits within managed content may be overwritten. Inspect the Git diff and restore exceptions as needed. No override file or edit tracking is required.
 
 Application is not transactional. Failures leave completed changes in place and report partial state. Source pins and answers are saved only after configuration and dependency installation succeed. Inspect failures and build a fresh plan before retrying.
 

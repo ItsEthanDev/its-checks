@@ -11,8 +11,8 @@
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/jsPlugins": "append-unique"
+      "fields": {
+        "/jsPlugins": { "merge": "append-unique" }
       }
     }
   ]

@@ -8,6 +8,77 @@ import { Effect } from "effect";
 import { fixture, revision, snapshot } from "../../../../test/shared/fixtures.ts";
 import { discoverPolicy, decodeSavedIntent } from "../index.ts";
 const run = Effect.runPromise;
+for (const [label, options] of [
+  ["unknown file settings", { arrays: { "/values": "append-unique" } }],
+  ["unknown replacement map", { replaces: { "/value": "base" } }],
+  ["string field settings", { fields: { "/value": "seed" } }],
+  ["unknown field settings", { fields: { "/value": { operation: "seed" } } }],
+  ["invalid modes", { defaultMode: "merge" }],
+  ["invalid replacement identities", { fields: { "/value": { replaces: "owner/repo:base" } } }],
+  ["invalid pointers", { fields: { value: { mode: "seed" } } }],
+  ["invalid pointer escapes", { fields: { "/bad~2key": { mode: "seed" } } }],
+  ["prototype pointers", { fields: { "/constructor": { mode: "seed" } } }],
+  ["missing fields", { fields: { "/missing": { mode: "seed" } } }],
+  ["array indexes as fields", { fields: { "/values/0": { mode: "seed" } } }],
+  ["non-array merges", { fields: { "/value": { merge: "append-unique" } } }],
+  [
+    "seeded append arrays",
+    { defaultMode: "seed", fields: { "/values": { merge: "append-unique" } } },
+  ],
+  [
+    "inherited seeded append arrays",
+    { fields: { "/nested": { mode: "seed" }, "/nested/values": { merge: "append-unique" } } },
+  ],
+  ["field settings on whole-file operations", { operation: "seed", fields: {} }],
+  ["field defaults on whole-file operations", { operation: "replace", defaultMode: "seed" }],
+] as const) {
+  await test(`policy loading rejects ${label}`, async (t) => {
+    const f = await fixture(t);
+    await f.add("invalid", { name: "Invalid" });
+    await f.write("invalid/files/config.json", {
+      value: true,
+      values: [1],
+      nested: { values: [1] },
+    });
+    await f.add("invalid", {
+      files: [
+        {
+          source: "files/config.json",
+          target: "config.json",
+          operation: "compose",
+          format: "json",
+          ...options,
+        },
+      ],
+    });
+    await assert.rejects(f.load(["invalid"]));
+  });
+}
+await test("policy loading accepts object-only fields with inherited modes and escaped pointers", async (t) => {
+  const f = await fixture(t);
+  await f.add("valid", { name: "Valid" });
+  await f.write("valid/files/config.json", {
+    rules: { "example/rule~name": "error" },
+    nested: { values: [1] },
+  });
+  await f.add("valid", {
+    files: [
+      {
+        source: "files/config.json",
+        target: "config.json",
+        operation: "compose",
+        format: "json",
+        defaultMode: "seed",
+        fields: {
+          "/rules/example~1rule~0name": {},
+          "/nested": { mode: "replace" },
+          "/nested/values": { merge: "append-unique" },
+        },
+      },
+    ],
+  });
+  await f.load(["valid"]);
+});
 await test("flat discovery uses directory identities, descriptions, and no mandatory bundle", async (t) => {
   const f = await fixture(t);
   await f.add("optional", { name: "Display name", description: "Purpose" });

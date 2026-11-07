@@ -5,14 +5,20 @@ const Text = Schema.String.check(
 );
 const Strings = Schema.Record(Schema.String, Text);
 const InputValue = Schema.Union([Schema.String, Schema.Finite, Schema.Boolean]);
+const FieldMode = Schema.Literals(["seed", "replace"]);
+const FieldDeclaration = Schema.Struct({
+  mode: Schema.optionalKey(FieldMode),
+  merge: Schema.optionalKey(Schema.Literal("append-unique")),
+  replaces: Schema.optionalKey(Text),
+});
 export const FileDeclaration = Schema.Struct({
   source: Text,
   target: Text,
   operation: Schema.Literals(["seed", "compose", "replace"]),
   format: Schema.optionalKey(Schema.Literals(["json", "jsonc"])),
-  arrays: Schema.optionalKey(Schema.Record(Schema.String, Schema.Literal("append-unique"))),
+  defaultMode: Schema.optionalKey(FieldMode),
+  fields: Schema.optionalKey(Schema.Record(Schema.String, FieldDeclaration)),
   executable: Schema.optionalKey(Schema.Boolean),
-  replaces: Schema.optionalKey(Schema.Record(Schema.String, Text)),
 });
 export type FileDeclaration = typeof FileDeclaration.Type;
 export const BundleDeclaration = Schema.Struct({
@@ -84,8 +90,9 @@ export type NativeFile = {
   readonly content: string;
   readonly executable: boolean;
   readonly operation: "seed" | "compose" | "replace";
-  readonly arrays: Readonly<Record<string, "append-unique">>;
-  readonly replaces: Readonly<Record<string, string>>;
+  readonly fields: Readonly<
+    Record<string, typeof FieldDeclaration.Type & { readonly mode: "seed" | "replace" }>
+  >;
 } & (
   | { readonly format: "json" | "jsonc"; readonly value: JsonValue }
   | { readonly format: "text" }

@@ -11,10 +11,10 @@
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "arrays": {
-        "/jsPlugins": "append-unique",
-        "/overrides": "append-unique",
-        "/ignorePatterns": "append-unique"
+      "fields": {
+        "/jsPlugins": { "merge": "append-unique" },
+        "/overrides": { "merge": "append-unique" },
+        "/ignorePatterns": { "merge": "append-unique" }
       }
     }
   ]

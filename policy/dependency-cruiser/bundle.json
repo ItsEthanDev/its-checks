@@ -26,8 +26,8 @@
       "target": ".oxlintrc.json",
       "operation": "compose",
       "format": "json",
-      "replaces": {
-        "/rules/import~1no-cycle": "typescript"
+      "fields": {
+        "/rules/import~1no-cycle": { "replaces": "typescript" }
       }
     }
   ]
