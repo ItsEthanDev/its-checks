@@ -3,7 +3,7 @@
   "sources": [
     {
       "repository": "itsethandev/its-checks",
-      "commit": "3f82bdc1f5bdca70f13383f7f2ee671eb12abcf7",
+      "commit": "29cd18991781564d52908627f645679d8c04aad5",
       "bundles": [
         "dependency-cruiser",
         "effect",
