@@ -1,4 +1,13 @@
+import { Schema } from "effect";
+
 import type { LoadedBundle } from "../policy/index.ts";
+
+export const BundleNote = Schema.Struct({
+  bundle: Schema.String,
+  name: Schema.String,
+  message: Schema.String,
+});
+export type BundleNote = typeof BundleNote.Type;
 
 /** Target-manager choice determines generated script invocations. */
 export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
@@ -34,6 +43,7 @@ export interface DeferredChange {
 }
 /** The approval artifact shared by planning, presentation, persistence, and application. */
 export interface ChangePlan {
+  readonly notes?: readonly BundleNote[];
   readonly sources?: readonly { readonly repository: string; readonly commit: string }[];
   readonly bundles?: readonly {
     readonly key: string;

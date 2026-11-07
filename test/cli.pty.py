@@ -88,7 +88,8 @@ class CliChecks(unittest.TestCase):
         source = self.root / "source"
         self.policy = source / "policy"
         self.write(self.policy / "base/bundle.json", {
-            "name": "Fixture tooling", "description": "Typed inputs", "inputs": [
+            "name": "Fixture tooling", "description": "Typed inputs",
+            "note": "**MIGRATION NOTE**\n\nRead docs/guide.md and work through its TODO.", "inputs": [
                 {"id": "count", "prompt": "Number of fixtures?", "type": "number", "default": 0,
                  "destination": {"file": "config.json", "field": ["count"]}},
                 {"id": "enabled", "prompt": "Enable fixture?", "type": "boolean", "default": False,
@@ -138,7 +139,10 @@ class CliChecks(unittest.TestCase):
         first.expect("Read-only change plan")
         first.expect("Apply this plan")
         first.send("y\r")
-        self.assertIn("Completed:", first.finish(0))
+        output = first.finish(0)
+        self.assertIn("MIGRATION NOTE", output)
+        self.assertLess(output.index("Completed:"), output.index("MIGRATION NOTE"))
+        self.assertNotIn("**MIGRATION NOTE**", output)
         state = json.loads((self.project / ".its-checks.json").read_text())
         self.assertEqual(state["sources"][0]["commit"], self.commit)
         self.assertEqual(state["sources"][0]["bundles"], ["base", "ci", "example"])
@@ -153,13 +157,17 @@ class CliChecks(unittest.TestCase):
         second.send("\r")
         second.expect("Apply this plan")
         second.send("y\r")
-        self.assertIn("Completed: 0 file changes", second.finish(0))
+        output = second.finish(0)
+        self.assertIn("Completed: 0 file changes", output)
+        self.assertIn("MIGRATION NOTE", output)
         before = self.state()
         third = self.terminal("remove", "example/fork")
         third.expect("removal: .github/workflows/quality.yml")
         third.expect("Apply this plan")
         third.send("\r")
-        self.assertIn("Plan declined", third.finish(0))
+        output = third.finish(0)
+        self.assertIn("Plan declined", output)
+        self.assertNotIn("MIGRATION NOTE", output)
         self.assertEqual(self.state(), before)
 
     def test_no_implicit_source_and_cancellation_are_read_only(self):
@@ -180,6 +188,7 @@ class CliChecks(unittest.TestCase):
         self.assertEqual(planned.returncode, 0, planned.stderr)
         applied = self.cli("apply", str(plan))
         self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertNotIn("MIGRATION NOTE", applied.stdout)
         self.write(self.policy / "ci/bundle.json", {"name": "Fixture workflow", "description": "Retired output", "files": []})
         source = self.policy.parent
         subprocess.run(["git", "add", "."], cwd=source, check=True, capture_output=True)
@@ -208,13 +217,26 @@ class CliChecks(unittest.TestCase):
         before = self.state()
         planned = self.cli("plan", "--config", str(config), "--out", str(plan), "--json")
         self.assertEqual(planned.returncode, 0, planned.stderr)
+        expected_notes = [{"bundle": "example/fork:base", "name": "Fixture tooling",
+                           "message": "**MIGRATION NOTE**\n\nRead docs/guide.md and work through its TODO."}]
+        self.assertEqual(json.loads(planned.stdout)["plan"]["notes"], expected_notes)
         self.assertEqual(self.state(), before)
         applied = self.cli("apply", str(plan), "--json")
         self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertEqual(json.loads(applied.stdout)["notes"], expected_notes)
         self.assertEqual(json.loads((self.project / "config.json").read_text()), {"count": 3, "enabled": True})
         stale = self.cli("apply", str(plan), "--json")
         self.assertEqual(stale.returncode, 1)
         self.assertIn("changed", stale.stderr.lower())
+        self.assertNotIn("MIGRATION NOTE", stale.stdout + stale.stderr)
+
+        next_plan = self.root / "rerun.plan.json"
+        self.assertEqual(self.cli("plan", "--config", str(config), "--out", str(next_plan)).returncode, 0)
+        plain = self.cli("apply", str(next_plan))
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        self.assertLess(plain.stdout.index("Completed:"), plain.stdout.index("MIGRATION NOTE"))
+        self.assertIn("Fixture tooling", plain.stdout)
+        self.assertNotIn("**MIGRATION NOTE**", plain.stdout)
 
 
 if __name__ == "__main__":

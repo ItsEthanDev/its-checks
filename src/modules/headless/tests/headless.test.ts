@@ -24,6 +24,7 @@ await test("options reports an exact source revision, visibility, dependencies a
 });
 await test("headless plans are read-only, reject stale targets/runtime, and ignore policy and test edits in executable identity", async (t) => {
   const f = await fixture(t);
+  await f.add("base", { name: "Tools", note: "**Review** docs/guide.md." });
   await fs.mkdir(path.join(f.root, "bin"));
   await fs.mkdir(path.join(f.root, "schemas"));
   await fs.mkdir(path.join(f.root, "src/modules/example/tests"), { recursive: true });
@@ -52,6 +53,9 @@ await test("headless plans are read-only, reject stale targets/runtime, and igno
       ).result,
     );
   const first = await create("first.plan");
+  assert.deepEqual(object(first.plan).notes, [
+    { bundle: "example/fork:base", name: "Tools", message: "**Review** docs/guide.md." },
+  ]);
   await fs.writeFile(testFile, "// test edit");
   await fs.writeFile(path.join(f.policy, "README.md"), "policy docs");
   assert.equal((await create("second.plan")).generator, first.generator);

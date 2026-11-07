@@ -9,6 +9,10 @@
     "description": {
       "type": "string"
     },
+    "note": {
+      "type": "string",
+      "pattern": "\\S"
+    },
     "requires": {
       "type": "array",
       "items": {

@@ -13,7 +13,7 @@ import {
   snapshotManagerEvidence,
   resolveTargetManager,
 } from "../../application/index.ts";
-import { assertTargetUnchanged, type PlanError } from "../../planning/index.ts";
+import { assertTargetUnchanged, BundleNote, type PlanError } from "../../planning/index.ts";
 import {
   discoverPolicy,
   createSourceStore,
@@ -49,6 +49,7 @@ const SavedPlan = Schema.Struct({
         requiredBy: Schema.Array(Schema.String),
       }),
     ),
+    notes: Schema.Array(BundleNote),
     snapshot: Schema.Struct({
       root: Schema.String,
       files: Schema.Record(Schema.String, FileState),
@@ -134,7 +135,12 @@ export function headless(
   packageRoot: string,
   sources: SourceStore = createSourceStore(),
 ): Effect.Effect<
-  { readonly json: boolean; readonly result: unknown; readonly text?: string },
+  {
+    readonly json: boolean;
+    readonly result: unknown;
+    readonly text?: string;
+    readonly notes?: readonly BundleNote[];
+  },
   OperationError | BundleError | PlanError | ApplicationError
 > {
   return Effect.gen(function* () {
@@ -189,6 +195,7 @@ export function headless(
             json: values.json === true,
             result: report,
             text: `Completed: ${report.completed.length} operations; dependencies ${report.dependencyWork}.`,
+            notes: report.notes,
           };
         }
         break;
@@ -259,6 +266,7 @@ function savePlan(options: {
         ...plan,
         sources: plan.sources ?? [],
         bundles: plan.bundles ?? [],
+        notes: plan.notes ?? [],
         snapshot: {
           root: plan.snapshot.root,
           files: { ...evidence.files, ...plan.snapshot.files },

@@ -25,6 +25,10 @@ await test("declined and unapproved plans perform zero writes and no external op
   await f.put(".oxlintrc.json", "local edits");
   const plan = await f.plan();
   assert.equal(plan.requiresConfirmation, true);
+  const notedPlan = {
+    ...plan,
+    notes: [{ bundle: "example/fork:base", name: "Tools", message: "Follow up." }],
+  };
   const before = await snapshot(f.project);
   const times = await mtimes(f.project);
   const forbidden: ApplicationDependencies = {
@@ -32,10 +36,14 @@ await test("declined and unapproved plans perform zero writes and no external op
   };
   for (const approved of [false, undefined]) {
     const report = await run(
-      applyPlan(plan, { ...(approved === undefined ? {} : { approved }), dependencies: forbidden }),
+      applyPlan(notedPlan, {
+        ...(approved === undefined ? {} : { approved }),
+        dependencies: forbidden,
+      }),
     );
     assert.equal(report.status, "declined");
     assert.deepEqual(report.completed, []);
+    assert.deepEqual(report.notes, []);
   }
   assert.deepEqual(await snapshot(f.project), before);
   assert.deepEqual(await mtimes(f.project), times);
@@ -45,10 +53,18 @@ await test("incomplete and stale plans fail before writes, including stale modes
   const plan = await f.plan();
   const before = await snapshot(f.project);
   const incomplete = await failure(
-    applyPlan({ ...plan, complete: false }, { approved: true, dependencies: noInstall }),
+    applyPlan(
+      {
+        ...plan,
+        complete: false,
+        notes: [{ bundle: "example/fork:base", name: "Tools", message: "Follow up." }],
+      },
+      { approved: true, dependencies: noInstall },
+    ),
   );
   assert.equal(incomplete.phase, "validation");
   assert.deepEqual(incomplete.report.completed, []);
+  assert.deepEqual(incomplete.report.notes, []);
   assert.deepEqual(await snapshot(f.project), before);
   await fs.chmod(path.join(f.project, "package.json"), 0o600);
   assert.match(

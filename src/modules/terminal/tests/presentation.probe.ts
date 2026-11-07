@@ -36,6 +36,18 @@ switch (process.argv[2]) {
       completed: [{ kind: "write-file", path: "config.json" }],
       incomplete: [],
       dependencyWork: "completed",
+      notes: [
+        {
+          bundle: "example/fork:base",
+          name: "Fixture tools",
+          message: "**MIGRATION NOTE**\n\nRead docs/guide.md.\nKeep this second line.",
+        },
+        {
+          bundle: "other/policy:extra",
+          name: "Other tools",
+          message: "Review the generated files.",
+        },
+      ],
     });
     break;
   case "failure":
@@ -48,6 +60,7 @@ switch (process.argv[2]) {
           completed: [{ kind: "write-file", path: "config.json" }],
           incomplete: [{ kind: "install-dependencies", path: "package.json" }],
           dependencyWork: "started",
+          notes: [],
           retry: "Fix installation and retry.",
         },
       }),

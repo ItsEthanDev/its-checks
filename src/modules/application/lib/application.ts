@@ -5,6 +5,7 @@ import { Effect, Schema } from "effect";
 
 import {
   assertTargetUnchanged,
+  BundleNote,
   readTargetSnapshot,
   type PlanError,
   type ChangePlan,
@@ -38,6 +39,7 @@ const Report = Schema.Struct({
   completed: Schema.Array(Operation),
   incomplete: Schema.Array(Operation),
   dependencyWork: Schema.Literals(["not-started", "started", "completed"]),
+  notes: Schema.Array(BundleNote),
   failed: Schema.optionalKey(Operation),
   /** State observed after a failed file operation; unavailable means inspection also failed. */
   observed: Schema.optionalKey(Observed),
@@ -88,7 +90,7 @@ export function applyPlan(
     let incomplete = [...configuration.map(operation), install, ...intent.map(operation)];
     let dependencyWork: ApplicationReport["dependencyWork"] = "not-started";
     if (options.approved !== true) {
-      return { status: "declined", completed, incomplete, dependencyWork };
+      return { status: "declined", completed, incomplete, dependencyWork, notes: [] };
     }
     const failure = (
       phase: ApplicationError["phase"],
@@ -101,6 +103,7 @@ export function applyPlan(
         detail,
         report: {
           status: "failed",
+          notes: [],
           completed: [...completed],
           incomplete:
             failed !== undefined &&
@@ -140,7 +143,7 @@ export function applyPlan(
       incomplete = incomplete.slice(1);
     }
     incomplete = [];
-    return { status: "completed", completed, incomplete, dependencyWork };
+    return { status: "completed", completed, incomplete, dependencyWork, notes: plan.notes ?? [] };
   });
 }
 

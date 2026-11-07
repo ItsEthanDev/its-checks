@@ -5,6 +5,7 @@ import { ApplicationError, OperationError } from "../../application/index.ts";
 import { safePath } from "../../policy/documents.ts";
 import type { DeclaredInput, Answer } from "../../policy/index.ts";
 import { Cancelled, type Question, type SetupPresentation } from "../../setup/index.ts";
+import { showBundleNotes } from "./notes.ts";
 
 const ask = <A>(prompt: () => Promise<A | typeof clack.CANCEL_SYMBOL>): Question<A> =>
   Effect.gen(function* () {
@@ -123,6 +124,7 @@ export function createClackPresentation(): {
       clack.outro(
         `Completed: ${files.length} file changes; dependencies ${report.dependencyWork}.`,
       );
+      showBundleNotes(report.notes);
     },
   };
   return {

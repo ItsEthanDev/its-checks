@@ -24,6 +24,7 @@ export type FileDeclaration = typeof FileDeclaration.Type;
 export const BundleDeclaration = Schema.Struct({
   name: Text,
   description: Text,
+  note: Schema.optionalKey(Text),
   requires: Schema.optionalKey(Schema.Array(Text)),
   hidden: Schema.optionalKey(Schema.Boolean),
   files: Schema.optionalKey(Schema.Array(FileDeclaration)),

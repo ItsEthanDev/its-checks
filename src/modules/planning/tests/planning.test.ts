@@ -29,6 +29,29 @@ async function plan(project: string, policy: LoadedPolicy, prior?: LoadedPolicy)
     }),
   );
 }
+await test("plans capture notes from selected bundles and dependencies, retain them on reruns, and omit deselected notes", async (t) => {
+  const f = await fixture(t);
+  await f.add("base", { name: "Shared tools", note: "**Review** the generated configuration." });
+  await f.add("extra", { name: "Extra tools", note: "Read docs/guide.md." });
+  await f.add("unused", { name: "Unused", note: "Do not show this." });
+  const loaded = await f.load(["extra"]);
+  const initial = await plan(f.project, loaded);
+  const expected = [
+    {
+      bundle: "example/fork:base",
+      name: "Shared tools",
+      message: "**Review** the generated configuration.",
+    },
+    { bundle: "example/fork:extra", name: "Extra tools", message: "Read docs/guide.md." },
+  ];
+  assert.deepEqual(initial.notes, expected);
+  const report = await apply(initial);
+  assert.deepEqual(report.notes, expected);
+  const rerun = await plan(f.project, loaded, loaded);
+  assert.ok(rerun.files.every((file) => file.kind === "noop"));
+  assert.deepEqual((await apply(rerun)).notes, expected);
+  assert.deepEqual((await plan(f.project, await f.load([]), loaded)).notes, []);
+});
 await test("seed, compose, replace and removal respect declared ownership and preserve unrelated data", async (t) => {
   const f = await fixture(t);
   await f.add("docs", {

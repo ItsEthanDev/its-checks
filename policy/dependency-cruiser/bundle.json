@@ -1,6 +1,7 @@
 {
   "name": "Dependency Cruiser",
   "description": "Public module entry points, public-interface tests, and dependency hygiene",
+  "note": "**MIGRATION NOTE**\n\nTo adopt deep modules, ask your agent:\n\n\"Read src/modules/README.md. If it contains a migration TODO, work through it.\"",
   "devDependencies": {
     "dependency-cruiser": "18.7.2"
   },

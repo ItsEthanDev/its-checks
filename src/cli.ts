@@ -5,7 +5,7 @@ import { Effect, Schema } from "effect";
 
 import { headless } from "./modules/headless/index.ts";
 import { Cancelled, setup } from "./modules/setup/index.ts";
-import { createClackPresentation } from "./modules/terminal/index.ts";
+import { createClackPresentation, showBundleNotes } from "./modules/terminal/index.ts";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -65,12 +65,16 @@ if (command === undefined || command === "add" || command === "update" || comman
           );
           process.exitCode = 1;
         },
-        onSuccess: (output) =>
+        onSuccess: (output) => {
           console.log(
             output.json
               ? JSON.stringify(output.result)
               : (output.text ?? JSON.stringify(output.result, null, 2)),
-          ),
+          );
+          if (!output.json) {
+            showBundleNotes(output.notes ?? []);
+          }
+        },
       }),
     ),
   );

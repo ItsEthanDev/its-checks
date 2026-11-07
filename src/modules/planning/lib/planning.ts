@@ -200,6 +200,17 @@ export function planProject(
     return {
       sources,
       bundles,
+      notes: selected.flatMap((bundle) =>
+        bundle.declaration.note === undefined
+          ? []
+          : [
+              {
+                bundle: bundle.key,
+                name: bundle.declaration.name,
+                message: bundle.declaration.note,
+              },
+            ],
+      ),
       snapshot,
       files,
       packageEntries: manifest.packageEntries,

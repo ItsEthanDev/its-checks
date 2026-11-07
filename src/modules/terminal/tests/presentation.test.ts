@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { promisify, stripVTControlCharacters } from "node:util";
 
 const exec = promisify(execFile);
-const render = async (scenario: string): Promise<string> => {
+const render = async (scenario: string, color = false): Promise<string> => {
   const result = await exec(
     "node",
     [
@@ -14,7 +14,7 @@ const render = async (scenario: string): Promise<string> => {
       fileURLToPath(new URL("./presentation.probe.ts", import.meta.url)),
       scenario,
     ],
-    { env: { ...process.env, NO_COLOR: "1" } },
+    { env: { ...process.env, NO_COLOR: color ? undefined : "1", FORCE_COLOR: color ? "1" : "0" } },
   );
   return result.stdout + result.stderr;
 };
@@ -27,6 +27,22 @@ await test("terminal preview identifies conflicts, package changes, lifecycle ef
   assert.match(output, /scripts.check: "old" → "new"/);
   assert.match(output, /may run lifecycle scripts/);
   assert.match(output, /Completed: 1 file changes; dependencies completed/);
+});
+
+await test("completion ends with titled bundle boxes and renders emphasis with and without color", async () => {
+  const plain = await render("preview");
+  assert.ok(plain.indexOf("Completed:") < plain.indexOf("Fixture tools"));
+  assert.ok(plain.indexOf("Fixture tools") < plain.indexOf("Other tools"));
+  assert.match(plain, /Fixture tools ─+╮/);
+  assert.match(plain, /MIGRATION NOTE/);
+  assert.match(plain, /Read docs\/guide.md\./);
+  assert.match(plain, /Keep this second line\./);
+  assert.doesNotMatch(plain, /\*\*/);
+  assert.equal(stripVTControlCharacters(plain), plain);
+  const colored = await render("preview", true);
+  assert.ok(colored.includes("\u001b[1m"));
+  assert.ok(colored.includes("\u001b[36m"));
+  assert.match(stripVTControlCharacters(colored), /MIGRATION NOTE/);
 });
 
 await test("terminal failure distinguishes retained partial work from cancellation before application", async () => {

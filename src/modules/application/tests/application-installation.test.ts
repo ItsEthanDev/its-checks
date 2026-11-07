@@ -20,6 +20,7 @@ const run = Effect.runPromise;
 const empty: PolicySelections = ["base"];
 await test("installation failure retains configuration but does not advance intent; retry completes intent", async (t) => {
   const f = await setup(t);
+  await f.add("base", { name: "Tools", note: "Review the generated configuration." });
   let attempts = 0;
   const dependencies: ApplicationDependencies = {
     install: (plan: ChangePlan) =>
@@ -47,6 +48,7 @@ await test("installation failure retains configuration but does not advance inte
   const error = await failure(applyPlan(await f.plan(), { approved: true, dependencies }));
   assert.equal(error.phase, "dependencies");
   assert.equal(error.report.dependencyWork, "started");
+  assert.deepEqual(error.report.notes, []);
   assert.deepEqual(error.report.incomplete, [
     { kind: "install-dependencies", path: "package.json" },
     { kind: "write-file", path: selectionFilename },
@@ -60,6 +62,9 @@ await test("installation failure retains configuration but does not advance inte
   const times = await mtimes(f.project);
   const report = await run(applyPlan(retry, { approved: true, dependencies }));
   assert.equal(report.dependencyWork, "completed");
+  assert.deepEqual(report.notes, [
+    { bundle: "example/fork:base", name: "Tools", message: "Review the generated configuration." },
+  ]);
   assert.equal(attempts, 2);
   const after = await mtimes(f.project);
   delete after[selectionFilename];

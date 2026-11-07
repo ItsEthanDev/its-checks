@@ -47,6 +47,22 @@ Bundles install policy tooling, not application libraries, frameworks, or compil
 
 Bundle directories contain only `bundle.json` and `files/`. No executable installers, symlinks, or code evaluation are supported. Package scripts are declared contributions and may execute later through the project's normal package-manager lifecycle; disclose their purpose in the bundle description.
 
+### Completion notes
+
+Declare an optional `note` in `bundle.json` for follow-up guidance:
+
+```json
+{
+  "name": "Project conventions",
+  "description": "Starter contributor guidance.",
+  "note": "**NEXT STEP**\n\nReview CONTRIBUTING.md and fill in the project-specific guidance."
+}
+```
+
+After successful application, the CLI displays each selected bundle's note in a box titled with its name, after the completion summary. Required bundles' notes are included. Notes repeat on successful reruns, even when no configuration changes; write them so they remain accurate after the suggested work is done. Failed or declined applications do not emit completion notes.
+
+Notes support newlines and `**bold emphasis**`, not general Markdown. The CLI controls title colors and strips terminal escape sequences for display. Without color, the boxes and text remain readable. Notes are informational text, not executable hooks. Saved plans capture them; JSON application results expose them as `notes` entries containing `bundle` (the source-qualified key), `name`, and the original `message` text.
+
 ## Declare file ownership
 
 Every file contribution declares `source`, `target`, and `operation`:
