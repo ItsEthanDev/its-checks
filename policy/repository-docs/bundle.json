@@ -1,0 +1,16 @@
+{
+  "name": "Repository documentation",
+  "description": "Seed project-owned README and agent guidance scaffolds without changing existing files",
+  "files": [
+    {
+      "source": "files/README.md",
+      "target": "README.md",
+      "operation": "seed"
+    },
+    {
+      "source": "files/AGENTS.md",
+      "target": "AGENTS.md",
+      "operation": "seed"
+    }
+  ]
+}
