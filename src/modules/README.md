@@ -29,5 +29,11 @@ Write module tests as executable requirements. Test names, scenarios, and assert
 
 List each module below with a link to its directory and a brief description of its responsibility. Update this catalog when adding, renaming, or removing a module.
 
-| Module | Responsibility |
-| ------ | -------------- |
+| Module                      | Responsibility                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| [application](application/) | Apply approved change plans, install dependencies with the target package manager, and report completed and incomplete work. |
+| [headless](headless/)       | Handle noninteractive commands for inspecting policy options, saving change plans, and applying saved plans.                 |
+| [planning](planning/)       | Compose policy contributions into project change plans, identify conflicts, and detect target changes.                       |
+| [policy](policy/)           | Resolve policy sources, discover and load bundles, validate selections and inputs, and read saved intent.                    |
+| [setup](setup/)             | Coordinate source selection, input collection, plan preparation, approval, and application through a presentation interface. |
+| [terminal](terminal/)       | Provide terminal prompts and display change plans, progress, results, and bundle notes.                                      |
