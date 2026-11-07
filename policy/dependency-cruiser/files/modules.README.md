@@ -17,6 +17,14 @@ src/modules/
 - **Private implementation:** Put implementation in `lib/` or other subdirectories. Code within a module may import its own implementation directly. Application code and other modules must use its public entry points.
 - **Tests:** Keep tests, helpers, and fixtures in `tests/`. Tests must exercise public entry points, not import private implementation. Tests may import helpers and fixtures from their own module's `tests/` directory. Production code must not import test code.
 
+## Test observable behavior
+
+Test what a module does, not how it is implemented. Exercise behavior through the module's public entry points and assert observable results and effects, not private helpers or internal call sequences.
+
+Do not expose implementation details through the public interface solely to test them. If a private function contains behavior worth testing, cover that behavior through the public operation that depends on it. Move the coverage to a better test boundary; do not drop it.
+
+Write module tests as executable requirements. Test names, scenarios, and assertions should explain the module's responsibilities and expected behavior, including failure cases. Reading `tests/` should teach a reader what the module promises, not how its implementation works. Refactoring internals without changing observable behavior should not require rewriting tests.
+
 ## Module catalog
 
 List each module below with a link to its directory and a brief description of its responsibility. Update this catalog when adding, renaming, or removing a module.
